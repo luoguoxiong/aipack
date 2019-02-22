@@ -2,6 +2,7 @@
   "name": "easyMarketApp",
   "version": "0.1.0",
   "private": true,
+  "homepage": "./",
   "dependencies": {
     "babel-loader": "8.0.4",
     "antd-mobile": "^2.2.8",
@@ -24,7 +25,7 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
-  "proxy": "",
+  "proxy": "http://localhost:8888",
   "eslintConfig": {
     "extends": "react-app"
   },

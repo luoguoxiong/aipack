@@ -42,8 +42,15 @@
 
 >* EasyMarket 正在更新维护状态，部分功能尚未没完成。
 >* 倘若您发现Bug或者有优化意见及其他宝贵意见，欢迎您提交issue或者联系我 qq = 1025558554 、Email = 1025558554@qq.com
->* 本项目API接口来自[NideShop](https://github.com/tumobi/nideshop-mini-program/)，在此感谢NideShop作者。
->* API接口我会在NideShop 服务端的基础上，进行完善。
+>* EasyMarket 服务端 ，请移步至 [EasyMarketSever](https://github.com/Peroluo/easyMarketSever)。
+
+## EasyMrket 本地部署
+
+> 1. git  clone https://github.com/Peroluo/easyMarketApp.git
+> 2. 安装依赖 cnpm install
+> 3.  修改package.json文件中proxy字段的值 = 你本地服务器的ip地址 （"proxy": "http:127.0.0.1:8888"）
+> 4. npm start
+> 5. 部署到服务端 npm run build ,将build文件夹中的文件放到 [EasyMarketSever](https://github.com/Peroluo/easyMarketSever) 的www/web/easyMarket目录中
 
 ## EasyMarket 未完成功能
 
@@ -51,7 +58,7 @@
 
 ##  End
 
-> * 此项目对您有帮助，帮忙点个Star吧!
+> * 喜欢 EasyMarket，帮忙点个Star吧!
 > * 作者还会不断更新， 您的支持是作者不断更新的动力!
 > * Thanks!
 
