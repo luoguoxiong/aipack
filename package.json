@@ -6,7 +6,6 @@
     "babel-loader": "8.0.4",
     "antd-mobile": "^2.2.8",
     "axios": "^0.18.0",
-    "font-awesome": "^4.7.0",
     "history": "^4.7.2",
     "prop-types": "^15.6.2",
     "react": "^16.7.0",
@@ -25,7 +24,7 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
-  "proxy": "http://202.96.155.121:8888",
+  "proxy": "",
   "eslintConfig": {
     "extends": "react-app"
   },
