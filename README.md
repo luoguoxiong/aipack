@@ -1,9 +1,6 @@
 # EasyMarket [易购](https://github.com/Peroluo/easyMarket) 
 
 > ​	EasyMarket是仿网易严选UI设计的H5 webApp。项目是基于React+Redux+Redux-saga+Axios+React-router架构。
->
-> ​	EasyMarket采用模块化、组件化的设计方式，实现页面、组件、Api、路由模块化。
->
 > ​	EasyMarket采用阿里antd-design-mobile的UI组件。
 
 ## EasyMarket  扫码预览
@@ -54,7 +51,7 @@
 
 ##  End
 
-> * 此项目对您有帮助，帮忙点个Start吧!
+> * 此项目对您有帮助，帮忙点个Star吧!
 > * 作者还会不断更新， 您的支持是作者不断更新的动力!
 > * Thanks!
 
