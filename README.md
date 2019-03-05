@@ -4,17 +4,12 @@
 > ​	EasyMarket采用阿里antd-design-mobile的UI组件。
 
 ## EasyMarket  扫码预览
-
-> 登录号码： 15323807318或15818264086
->
-> 登录密码： 123456
-
 <figure >
 <img src="./imgs/qrCode.png" width="200"/>
 </figure >
 
 
-## EasyMarket Screenshotss
+## EasyMarket Screenshots
 
 |         首页         |        制造商         |         商品分类         |
 | :------------------: | :-------------------: | :----------------------: |

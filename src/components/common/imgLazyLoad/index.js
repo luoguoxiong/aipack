@@ -11,30 +11,23 @@ class ImgLazyLoad extends Component{
     this.handler()
     this.regScroll(this.handler.bind(this));
   }
-  loadingImg (imgSrc) {
-    return new Promise((res,rej) => {
-      let imgObj = new Image()
-      imgObj.src = imgSrc
-      imgObj.onload = function(){
-        res(true)
-      }
-    })
-  }
   handler () {
-    const {offSetTop, realUrl} = this.props
-    const visibleBottom = window.scrollY + document.documentElement.clientHeight -offSetTop;
-    const imgTop = this.refs.imgLazyLoad.offsetTop
-    if(imgTop < visibleBottom && !this.state.isLoading){
-      this.setState({isLoading: true})
-      new Promise((resolve, reject)=>{
-        let imgObj = new Image()
-        imgObj.src = realUrl
-        imgObj.onload = function(){
-          resolve(imgObj)
-        }
-      }).then((imgObj)=>{
-        this.setState({isLoad: true})
-      })
+    if(!this.state.isLoading){
+      const {offSetTop, realUrl} = this.props
+      const visibleBottom = window.scrollY + document.documentElement.clientHeight -offSetTop;
+      const imgTop = this.refs.imgLazyLoad.offsetTop
+      if(imgTop < visibleBottom){
+        this.setState({isLoading: true})
+        new Promise((resolve, reject)=>{
+          let imgObj = new Image()
+          imgObj.src = realUrl
+          imgObj.onload = function(){
+            resolve(imgObj)
+          }
+        }).then((imgObj)=>{
+          this.setState({isLoad: true})
+        })
+      }
     }
   }
   componentWillUnmount () {
@@ -44,7 +37,7 @@ class ImgLazyLoad extends Component{
     if (window.onscroll === null) {
       window.onscroll = myHandler
     } else if (typeof window.onscroll === 'function') {
-      var oldHandler = window.onscroll;
+      let oldHandler = window.onscroll;
       window.onscroll = function () {
         myHandler();
         oldHandler();
