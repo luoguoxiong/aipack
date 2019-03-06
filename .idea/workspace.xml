@@ -2,53 +2,19 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="8c651807-3327-4411-a9cb-a8c73fa6b1cc" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/watcherTasks.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/page/login/index.js" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/page/login/index.scss" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/redux/actions/collect.js" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/redux/reducers/collect.js" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/redux/sagas/collect.js" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/imgs/likeList.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/components/touchClear/index.js" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/components/touchClear/index.scss" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/App/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/App/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/brandDetail/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/brandDetail/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/brandDetail/index.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/brandDetail/index.scss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/cart/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/cart/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/cart/index.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/cart/index.scss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/categorys/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/categorys/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/categorys/index.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/categorys/index.scss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/catelog/index.css" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/catelog/index.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/catelog/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/catelog/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/comment/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/comment/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/comment/index.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/comment/index.scss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/common/goodsList/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/common/goodsList/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/common/imgLazyLoad/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/imgLazyLoad/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/common/imgLazyLoad/index.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/imgLazyLoad/index.scss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/goods/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/goods/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/goods/index.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/goods/index.scss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/goodsSearch/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/goodsSearch/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/goodsSearch/index.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/goodsSearch/index.scss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/home/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/home/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/home/index.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/home/index.scss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/login/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/collect/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/login/index.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/collect/index.scss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/mine/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/mine/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/mine/index.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/mine/index.scss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/tab/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/tab/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/topic/index.css" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/topic/index.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/topic/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/topic/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/topicCommentWrite/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/topicCommentWrite/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/topicCommentWrite/index.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/topicCommentWrite/index.scss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/topicDetail/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/topicDetail/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/topicDetail/index.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/topicDetail/index.scss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/http/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/http/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/index.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/assets/common.scss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/redux/actions/actionTypes.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/redux/actions/actionTypes.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/redux/reducers/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/redux/reducers/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/redux/sagas/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/redux/sagas/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/reset.css" beforeDir="false" afterPath="$PROJECT_DIR$/src/assets/reset.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/routers.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/router/index.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/page/cart/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/cart/index.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/page/collect/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/collect/index.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/page/collect/index.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/collect/index.scss" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/page/login/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/login/index.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/page/mine/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/mine/index.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/redux/actions/collect.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/redux/actions/collect.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/redux/sagas/collect.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/redux/sagas/collect.js" afterDir="false" />
     </list>
     <ignored path="$PROJECT_DIR$/.tmp/" />
     <ignored path="$PROJECT_DIR$/temp/" />
@@ -60,74 +26,76 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="FileEditorManager">
-    <leaf>
-      <file pinned="false" current-in-tab="true">
+    <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
+      <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/src/page/collect/index.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="216">
-              <caret line="23" column="35" selection-start-line="23" selection-start-column="35" selection-end-line="23" selection-end-column="35" />
+            <state relative-caret-position="309">
+              <caret line="63" column="110" selection-start-line="63" selection-start-column="72" selection-end-line="63" selection-end-column="110" />
               <folding>
                 <element signature="e#0#38#0" expanded="true" />
-                <element signature="e#203#241#0" expanded="true" />
+                <element signature="e#256#294#0" expanded="true" />
               </folding>
             </state>
           </provider>
         </entry>
       </file>
       <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/src/redux/sagas/collect.js">
+        <entry file="file://$PROJECT_DIR$/src/page/cart/index.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="76">
-              <caret line="7" selection-start-line="7" selection-end-line="7" />
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/src/redux/reducers/collect.js">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="114">
-              <caret line="6" selection-start-line="6" selection-end-line="6" />
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/src/http/http.js">
-          <provider selected="true" editor-type-id="text-editor" />
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/src/redux/sagas/index.js">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="418">
-              <caret line="22" column="16" selection-start-line="22" selection-start-column="16" selection-end-line="22" selection-end-column="16" />
+            <state relative-caret-position="13">
+              <caret line="237" column="90" selection-start-line="237" selection-start-column="90" selection-end-line="237" selection-end-column="90" />
               <folding>
-                <element signature="e#0#47#0" expanded="true" />
+                <element signature="e#0#48#0" expanded="true" />
               </folding>
             </state>
           </provider>
         </entry>
       </file>
       <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/src/http/index.js">
+        <entry file="file://$PROJECT_DIR$/src/components/touchClear/index.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="75">
-              <caret line="93" column="10" selection-start-line="93" selection-start-column="6" selection-end-line="93" selection-end-column="10" />
+            <state relative-caret-position="38">
+              <caret line="18" column="39" selection-start-line="18" selection-start-column="39" selection-end-line="18" selection-end-column="39" />
+              <folding>
+                <element signature="e#0#38#0" expanded="true" />
+              </folding>
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file pinned="false" current-in-tab="true">
+        <entry file="file://$PROJECT_DIR$/package.json">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="551">
+              <caret line="29" column="21" selection-start-line="29" selection-start-column="21" selection-end-line="29" selection-end-column="21" />
             </state>
           </provider>
         </entry>
       </file>
       <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/src/redux/actions/collect.js">
+        <entry file="file://$PROJECT_DIR$/src/page/goods/index.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="95">
-              <caret line="5" column="3" lean-forward="true" selection-start-line="5" selection-start-column="3" selection-end-line="5" selection-end-column="3" />
+            <state relative-caret-position="472">
+              <caret line="374" column="69" selection-start-line="374" selection-start-column="69" selection-end-line="374" selection-end-column="69" />
+              <folding>
+                <element signature="e#0#38#0" expanded="true" />
+                <element signature="n#!!block;n#fetchData#0;n#Goods#0" />
+                <element signature="n#!!block;n#fetchCartNum#0;n#Goods#0" />
+                <element signature="n#!!block;n#changeLikes#0;n#Goods#0" />
+              </folding>
             </state>
           </provider>
         </entry>
       </file>
     </leaf>
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="JavaScript File" />
+      </list>
+    </option>
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
@@ -141,7 +109,6 @@
     <option name="CHANGED_PATHS">
       <list>
         <option value="$PROJECT_DIR$/src/components/login/index.js" />
-        <option value="$PROJECT_DIR$/package.json" />
         <option value="$PROJECT_DIR$/src/components/common/imgLazyLoad/index.js" />
         <option value="$PROJECT_DIR$/src/routers.js" />
         <option value="$PROJECT_DIR$/src/router/routers.js" />
@@ -155,23 +122,31 @@
         <option value="$PROJECT_DIR$/src/page/App/index.js" />
         <option value="$PROJECT_DIR$/README.md" />
         <option value="$PROJECT_DIR$/src/router/index.js" />
-        <option value="$PROJECT_DIR$/src/page/collect/index.scss" />
         <option value="$PROJECT_DIR$/src/redux/actions/actionTypes.js" />
         <option value="$PROJECT_DIR$/src/redux/reducers/index.js" />
-        <option value="$PROJECT_DIR$/src/redux/actions/collect.js" />
         <option value="$PROJECT_DIR$/src/http/index.js" />
         <option value="$PROJECT_DIR$/src/redux/sagas/index.js" />
-        <option value="$PROJECT_DIR$/src/redux/sagas/collect.js" />
         <option value="$PROJECT_DIR$/src/redux/reducers/collect.js" />
+        <option value="$PROJECT_DIR$/src/page/mine/index.js" />
+        <option value="$PROJECT_DIR$/src/page/collect/index.scss" />
+        <option value="$PROJECT_DIR$/src/page/login/index.js" />
+        <option value="$PROJECT_DIR$/src/components/Slider/Slider.scss" />
+        <option value="$PROJECT_DIR$/src/components/Slider/index.js" />
+        <option value="$PROJECT_DIR$/src/components/touchClear/index.scss" />
+        <option value="$PROJECT_DIR$/src/redux/sagas/collect.js" />
+        <option value="$PROJECT_DIR$/src/redux/actions/collect.js" />
         <option value="$PROJECT_DIR$/src/page/collect/index.js" />
+        <option value="$PROJECT_DIR$/src/page/cart/index.js" />
+        <option value="$PROJECT_DIR$/src/components/touchClear/index.js" />
+        <option value="$PROJECT_DIR$/package.json" />
       </list>
     </option>
   </component>
   <component name="ProjectFrameBounds" extendedState="6">
-    <option name="x" value="-12" />
-    <option name="y" value="-12" />
-    <option name="width" value="1944" />
-    <option name="height" value="1044" />
+    <option name="x" value="-11" />
+    <option name="y" value="-11" />
+    <option name="width" value="1943" />
+    <option name="height" value="1043" />
   </component>
   <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
   <component name="ProjectView">
@@ -187,23 +162,6 @@
               <item name="easyMarketApp" type="b2602c69:ProjectViewProjectNode" />
               <item name="easyMarketApp" type="462c0819:PsiDirectoryNode" />
             </path>
-            <path>
-              <item name="easyMarketApp" type="b2602c69:ProjectViewProjectNode" />
-              <item name="easyMarketApp" type="462c0819:PsiDirectoryNode" />
-              <item name="src" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="easyMarketApp" type="b2602c69:ProjectViewProjectNode" />
-              <item name="easyMarketApp" type="462c0819:PsiDirectoryNode" />
-              <item name="src" type="462c0819:PsiDirectoryNode" />
-              <item name="http" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="easyMarketApp" type="b2602c69:ProjectViewProjectNode" />
-              <item name="easyMarketApp" type="462c0819:PsiDirectoryNode" />
-              <item name="src" type="462c0819:PsiDirectoryNode" />
-              <item name="redux" type="462c0819:PsiDirectoryNode" />
-            </path>
           </expand>
           <select />
         </subPane>
@@ -212,7 +170,7 @@
   </component>
   <component name="PropertiesComponent">
     <property name="WebServerToolWindowFactoryState" value="false" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$/node_modules/_eslint@5.12.0@eslint" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$/../easyMarketSever" />
     <property name="node.js.detected.package.eslint" value="true" />
     <property name="node.js.detected.package.standard" value="true" />
     <property name="node.js.path.for.package.eslint" value="project" />
@@ -224,17 +182,17 @@
     <property name="nodejs_package_manager_path" value="yarn" />
   </component>
   <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="D:\gitHub\easyMarketApp\imgs" />
+      <recent name="D:\gitHub\easyMarketApp\src\components" />
+      <recent name="D:\gitHub\easyMarketApp\src\redux\sagas" />
+      <recent name="D:\gitHub\easyMarketApp\src\redux\actions" />
+      <recent name="D:\gitHub\easyMarketApp\src\redux\reducers" />
+    </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="D:\gitHub\easyMarketApp\src\page" />
       <recent name="D:\gitHub\easyMarketApp\src\router" />
       <recent name="D:\gitHub\easyMarketApp\src\components" />
-    </key>
-    <key name="CopyFile.RECENT_KEYS">
-      <recent name="D:\gitHub\easyMarketApp\src\redux\sagas" />
-      <recent name="D:\gitHub\easyMarketApp\src\redux\actions" />
-      <recent name="D:\gitHub\easyMarketApp\src\redux\reducers" />
-      <recent name="D:\gitHub\easyMarketApp\src\page" />
-      <recent name="D:\gitHub\easyMarketApp\src\assets" />
     </key>
   </component>
   <component name="RunDashboard">
@@ -249,7 +207,7 @@
       </list>
     </option>
   </component>
-  <component name="RunManager" selected="npm.start">
+  <component name="RunManager" selected="npm.build">
     <configuration name="build" type="js.build_tools.npm" temporary="true" nameIsGenerated="true">
       <package-json value="$PROJECT_DIR$/package.json" />
       <command value="run" />
@@ -272,8 +230,8 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="npm.start" />
         <item itemvalue="npm.build" />
+        <item itemvalue="npm.start" />
       </list>
     </recent_temporary>
   </component>
@@ -297,7 +255,8 @@
       <workItem from="1551259680501" duration="642000" />
       <workItem from="1551260903289" duration="634000" />
       <workItem from="1551757754147" duration="1288000" />
-      <workItem from="1551861213151" duration="3640000" />
+      <workItem from="1551861213151" duration="5796000" />
+      <workItem from="1551873298839" duration="12314000" />
     </task>
     <task id="LOCAL-00001" summary="antd-design-mobile按需加载，优化首屏">
       <created>1551260096639</created>
@@ -320,11 +279,27 @@
       <option name="project" value="LOCAL" />
       <updated>1551757835669</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="优化目录结构">
+      <created>1551864989174</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1551864989174</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="8376000" />
+    <option name="totallyTimeSpent" value="22846000" />
+  </component>
+  <component name="TodoView" selected-index="2">
+    <todo-panel id="selected-file">
+      <is-autoscroll-to-source value="true" />
+    </todo-panel>
+    <todo-panel id="all">
+      <are-packages-shown value="true" />
+      <is-autoscroll-to-source value="true" />
+    </todo-panel>
   </component>
   <component name="ToolWindowManager">
     <frame x="-7" y="-7" width="1295" height="695" extended-state="6" />
@@ -335,12 +310,12 @@
       <window_info id="npm" order="2" side_tool="true" />
       <window_info id="Favorites" order="3" side_tool="true" />
       <window_info anchor="bottom" id="Message" order="0" />
-      <window_info anchor="bottom" id="Find" order="1" />
-      <window_info anchor="bottom" id="Run" order="2" visible="true" weight="0.08348135" />
+      <window_info anchor="bottom" id="Find" order="1" weight="0.3285968" />
+      <window_info anchor="bottom" id="Run" order="2" visible="true" weight="0.053285968" />
       <window_info anchor="bottom" id="Debug" order="3" weight="0.4" />
       <window_info anchor="bottom" id="Cvs" order="4" weight="0.25" />
       <window_info anchor="bottom" id="Inspection" order="5" weight="0.4" />
-      <window_info anchor="bottom" id="TODO" order="6" />
+      <window_info anchor="bottom" id="TODO" order="6" weight="0.3285968" />
       <window_info anchor="bottom" id="Docker" order="7" show_stripe_button="false" />
       <window_info anchor="bottom" id="Version Control" order="8" />
       <window_info anchor="bottom" id="Event Log" order="9" side_tool="true" />
@@ -356,16 +331,21 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="antd-design-mobile按需加载，优化首屏" />
     <MESSAGE value="优化组件图片预加载" />
-    <option name="LAST_COMMIT_MESSAGE" value="优化组件图片预加载" />
+    <MESSAGE value="优化目录结构" />
+    <option name="LAST_COMMIT_MESSAGE" value="优化目录结构" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="javascript">
+          <url>file://$PROJECT_DIR$/src/components/Slider/index.js</url>
+          <properties lambdaOrdinal="-1" />
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
   <component name="editorHistoryManager">
-    <entry file="file://$PROJECT_DIR$/package.json">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="152">
-          <caret line="29" column="28" selection-start-line="29" selection-start-column="28" selection-end-line="29" selection-end-column="28" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/config-overrides.js">
       <provider selected="true" editor-type-id="text-editor" />
     </entry>
@@ -459,13 +439,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/src/page/collect/index.scss">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="19">
-          <caret line="1" selection-start-line="1" selection-end-line="1" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/src/redux/reducers/brand.js">
       <provider selected="true" editor-type-id="text-editor" />
     </entry>
@@ -511,35 +484,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/src/page/login/index.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="140">
-          <caret line="31" column="64" selection-start-line="31" selection-start-column="64" selection-end-line="31" selection-end-column="64" />
-          <folding>
-            <element signature="e#0#38#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/src/page/goods/index.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="133">
-          <caret line="7" selection-start-line="7" selection-end-line="7" selection-end-column="38" />
-          <folding>
-            <element signature="n#!!block;n#fetchData#0;n#Goods#0" />
-            <element signature="n#!!block;n#fetchCartNum#0;n#Goods#0" />
-            <element signature="n#!!block;n#changeLikes#0;n#Goods#0" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/src/redux/actions/collect.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="95">
-          <caret line="5" column="3" lean-forward="true" selection-start-line="5" selection-start-column="3" selection-end-line="5" selection-end-column="3" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/src/http/index.js">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="75">
@@ -567,21 +511,151 @@
         </state>
       </provider>
     </entry>
+    <entry file="file://$PROJECT_DIR$/src/page/mine/index.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="-342">
+          <caret line="63" column="16" lean-forward="true" selection-start-line="63" selection-start-column="16" selection-end-line="63" selection-end-column="16" />
+          <folding>
+            <element signature="e#0#38#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/page/mine/index.scss">
+      <provider selected="true" editor-type-id="text-editor">
+        <state>
+          <folding>
+            <element signature="e#25#655#0" />
+            <element signature="e#668#1086#0" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/page/collect/index.scss">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="19">
+          <caret line="34" column="3" selection-start-line="34" selection-start-column="3" selection-end-line="34" selection-end-column="3" />
+          <folding>
+            <element signature="e#26#697#0" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/page/login/index.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="415">
+          <caret line="31" column="63" selection-start-line="31" selection-start-column="63" selection-end-line="31" selection-end-column="63" />
+          <folding>
+            <element signature="e#0#38#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/components/Slider/Slider.scss">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="19">
+          <caret line="1" column="12" selection-start-line="1" selection-start-column="12" selection-end-line="1" selection-end-column="12" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/components/Slider/index.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="19">
+          <caret line="1" column="18" selection-start-line="1" selection-start-column="18" selection-end-line="1" selection-end-column="18" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/components/touchClear/index.scss">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="114">
+          <caret line="6" column="17" selection-start-line="6" selection-start-column="17" selection-end-line="6" selection-end-column="17" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/components/header/index.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="437">
+          <caret line="23" selection-start-line="23" selection-end-line="28" selection-end-column="1" />
+          <folding>
+            <element signature="e#0#40#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/redux/actions/comment.js">
+      <provider selected="true" editor-type-id="text-editor" />
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/redux/actions/collect.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="152">
+          <caret line="8" column="26" selection-start-line="8" selection-start-column="16" selection-end-line="8" selection-end-column="26" />
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/src/redux/sagas/collect.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="76">
-          <caret line="7" selection-start-line="7" selection-end-line="7" />
+        <state relative-caret-position="171">
+          <caret line="12" column="10" selection-start-line="12" selection-start-column="6" selection-end-line="12" selection-end-column="10" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/redux/sagas/goods.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state>
+          <folding>
+            <element signature="e#0#29#0" expanded="true" />
+          </folding>
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/src/page/collect/index.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="216">
-          <caret line="23" column="35" selection-start-line="23" selection-start-column="35" selection-end-line="23" selection-end-column="35" />
+        <state relative-caret-position="309">
+          <caret line="63" column="110" selection-start-line="63" selection-start-column="72" selection-end-line="63" selection-end-column="110" />
           <folding>
             <element signature="e#0#38#0" expanded="true" />
-            <element signature="e#203#241#0" expanded="true" />
+            <element signature="e#256#294#0" expanded="true" />
           </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/page/goods/index.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="472">
+          <caret line="374" column="69" selection-start-line="374" selection-start-column="69" selection-end-line="374" selection-end-column="69" />
+          <folding>
+            <element signature="e#0#38#0" expanded="true" />
+            <element signature="n#!!block;n#fetchData#0;n#Goods#0" />
+            <element signature="n#!!block;n#fetchCartNum#0;n#Goods#0" />
+            <element signature="n#!!block;n#changeLikes#0;n#Goods#0" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/page/cart/index.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="13">
+          <caret line="237" column="90" selection-start-line="237" selection-start-column="90" selection-end-line="237" selection-end-column="90" />
+          <folding>
+            <element signature="e#0#48#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/components/touchClear/index.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="38">
+          <caret line="18" column="39" selection-start-line="18" selection-start-column="39" selection-end-line="18" selection-end-column="39" />
+          <folding>
+            <element signature="e#0#38#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/package.json">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="551">
+          <caret line="29" column="21" selection-start-line="29" selection-start-column="21" selection-end-line="29" selection-end-column="21" />
         </state>
       </provider>
     </entry>

@@ -22,7 +22,8 @@ class Mine extends Component{
       },
       {
         icon: 'icon-shoucang',
-        name: '我的收藏'
+        name: '我的收藏',
+        link: '/collect'
       },
       {
         icon: 'icon-youhuiquan',
@@ -59,7 +60,11 @@ class Mine extends Component{
     ]
   }
   showPower (item) {
-    Toast.offline(`${item.name}功能还未解锁，请耐心等候~`,1)
+    if('link' in item){
+      this.props.history.push(item.link)
+    } else {
+      Toast.offline(`${item.name}功能还未解锁，请耐心等候~`,1)
+    }
   }
   loginOut () {
     this.props.actions.loginFailure()

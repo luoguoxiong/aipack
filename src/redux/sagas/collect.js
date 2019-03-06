@@ -5,6 +5,9 @@ import { requestBefore } from "./request";
 export function* collect() {
   try {
     const data = yield call(http.getLikes,{typeId:0,size: 1000});
+    data.forEach((item) => {
+      item.isClose = true
+    })
     yield put({
       type: actionTypes.COLLECT_GETDATA_SUCCESS,
       data

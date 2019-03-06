@@ -5,3 +5,10 @@ export function fetchData() {
     type: ActionsTypes.COLLECT_GETDATA_REQUSET
   }
 }
+
+export function apdateData(data) {
+  return {
+    type: ActionsTypes.COLLECT_GETDATA_SUCCESS,
+    data
+  }
+}

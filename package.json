@@ -27,7 +27,7 @@
     "test": "react-app-rewired test --env=jsdom",
     "eject": "react-app-rewired eject"
   },
-  "proxy": "http://localhost:8888",
+  "proxy": "localhost:8888",
   "eslintConfig": {
     "extends": "react-app"
   },

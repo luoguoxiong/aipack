@@ -213,6 +213,9 @@ class Cart extends Component{
     payGoods () {
         Toast.loading('下单功能还未GET,耐心等待~', 1)
     }
+    toGoods (item) {
+        this.props.history.push(`/goods/${item.goods_id}`)
+    }
     render ()   {
         const {cartList, checkedGoodsAmount, goodsCount, checkedGoodsCount ,isEdit} = this.state
         const hasEdit =  cartList.filter((item) => {
@@ -232,7 +235,7 @@ class Cart extends Component{
                           <div className="isCheckItem" onClick={this.checkCartGoods.bind(this, item)}>
                               <img src={item.checked?isCheck:noCheck} alt="check"/>
                           </div>
-                          <div className="goodsImg">
+                          <div className="goodsImg" onClick={this.toGoods.bind(this,item)}>
                               <img src={item.list_pic_url} alt=""/>
                           </div>
                           <div className="cartGoodsMsg">
