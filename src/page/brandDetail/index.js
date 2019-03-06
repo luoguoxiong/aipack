@@ -1,13 +1,13 @@
 import React, {Component, Fragment} from 'react'
-import GoodsList from '../common/goodsList'
+import GoodsList from '../../components/common/goodsList'
 import { connect } from 'react-redux'
 import { bindActionCreators } from 'redux'
 import {withRouter} from 'react-router-dom'
-import Header from '../header'
+import Header from '../../components/header'
 import * as goodsAction from '../../redux/actions/goods'
 import * as brandAction from '../../redux/actions/brand'
 import './index.scss'
-import ImgLazyLoad from '../common/imgLazyLoad'
+import ImgLazyLoad from '../../components/imgLazyLoad'
 class BrandDetail extends Component{
   goBack () {
     const {history:{go}} = this.props

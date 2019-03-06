@@ -1,9 +1,9 @@
 import React, {Component, Fragment} from 'react'
-import GoodsList from '../common/goodsList'
+import GoodsList from '../../components/common/goodsList'
 import {withRouter} from 'react-router-dom'
 import { Tabs } from 'antd-mobile';
 import './index.scss'
-import Header from '../header'
+import Header from '../../components/header'
 import { connect } from 'react-redux';
 import { bindActionCreators } from 'redux';
 import * as categorysAction from '../../redux/actions/categorys';

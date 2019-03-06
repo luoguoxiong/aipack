@@ -147,13 +147,21 @@ class Https {
   getCartNum = (parmas = {}) => (HttpUtils.get('/cart/goodscount',parmas))
 
   /*
-  * 登录
+  * 是否添加到收藏栏
   * /api/collect/addordelete
   * parmas:
-  *   mobile: 电话号码
-  *   password: 密码
+  *   typeId: 0：是 、1:否（商品状态）
+  *   valueId: 商品Id
   * */
   postDoLikes = parmas => (HttpUtils.post('/collect/addordelete',parmas))
+
+  /*
+ * 查询收藏栏商品
+ * /api/collect/list
+ * parmas:
+ *   typeId: 0：否 、1:是
+ * */
+  getLikes = parmas => (HttpUtils.get('/collect/list',parmas))
 
   /*
   * 添加到购物车

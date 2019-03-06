@@ -1,13 +1,13 @@
 import React, {Component, Fragment} from 'react'
-import Header from '../header'
-import CommentList from '../common/commentList'
+import Header from '../../components/header'
+import CommentList from '../../components/common/commentList'
 import {withRouter, Link} from 'react-router-dom'
 import './index.scss'
 import {connect} from "react-redux";
 import {bindActionCreators} from 'redux'
 import *as topicDetailAction from '../../redux/actions/topicDetail'
 import commentPng from '../../static/img/comment.png'
-import ImgLazyLoad from '../common/imgLazyLoad'
+import ImgLazyLoad from '../../components/imgLazyLoad'
 class TopicDetail extends Component{
   /*返回上一页*/
   goBack () {

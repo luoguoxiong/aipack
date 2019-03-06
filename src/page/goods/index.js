@@ -1,15 +1,15 @@
 import React, {Component} from 'react'
 import {Link, withRouter} from 'react-router-dom'
-import Header from '../header'
+import Header from '../../components/header'
 import './index.scss'
 import http from '../../http'
-import ImgLazyLoad from '../common/imgLazyLoad'
+import ImgLazyLoad from '../../components/imgLazyLoad'
 import { Carousel, Toast } from 'antd-mobile'
 import { connect } from 'react-redux';
 import { bindActionCreators } from 'redux';
 import * as commonAction from '../../redux/actions/common';
 import { Modal } from 'antd-mobile';
-import CommentList from '../common/commentList'
+import CommentList from '../../components/common/commentList'
 class Goods extends Component{
   state = {
     info: {

@@ -1,7 +1,7 @@
 import React, {Component} from 'react'
 import './index.css'
 import { withRouter } from 'react-router-dom';
-import routes from '../../routers'
+import routes from '../../router'
 class Tab extends Component{
   changeIndex(item){
     this.props.history.push(item.url)

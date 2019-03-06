@@ -8,6 +8,7 @@ import brand from './brand'
 import topicDetail from './topicDetail'
 import comment from './comment'
 import goodsSearch from './goodsSearch'
+import collect from './collect'
 export default function* root() {
   yield all([
     fork(home),
@@ -18,6 +19,7 @@ export default function* root() {
     fork(brand),
     fork(topicDetail),
     fork(comment),
-    fork(goodsSearch)
+    fork(goodsSearch),
+    fork(collect)
   ]);
 }

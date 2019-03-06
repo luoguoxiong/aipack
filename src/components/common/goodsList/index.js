@@ -1,7 +1,7 @@
 import React, {Component} from 'react'
 import {Link} from 'react-router-dom'
 import './index.scss'
-import ImgLazyLoad from '../imgLazyLoad'
+import ImgLazyLoad from '../../imgLazyLoad'
 class GoodsList extends Component{
   render () {
     const { goodsList} = this.props

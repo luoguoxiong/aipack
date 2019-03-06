@@ -1,13 +1,13 @@
 import React, { Component, Fragment } from 'react';
 import  { Router, Route, Redirect} from 'react-router-dom'
-import Tab from '../tab'
+import Tab from '../../components/tab'
 import history from '../../config/history';
-import routes from '../../routers'
+import routes from '../../router'
 import { ActivityIndicator } from 'antd-mobile';
 import { connect } from 'react-redux';
 import { bindActionCreators } from 'redux';
 import * as CommonAction from '../../redux/actions/common';
-import Login from '../login'
+import Login from '../../page/login'
 const tabList = [
   {icon:'iconfont icon-caidaniconshouyehui',name: '首页',url:'/home'},
   {icon:'iconfont icon-clone',name: '专题',url:'/topic'},
@@ -22,29 +22,22 @@ function RenderRouters({routes}) {
         path={item.link}
         key={item.name}
         render={() => (
-          <div className={item.isTab?'tabPageContent':'isLogin' in item? 'login' :'noTabPageContent'}>
+          <div className={item.isTab?'tabPageContent':'noTabPageContent'}>
             <item.component />
           </div>
         )} />
     )
   })
 }
-
-
 class App extends Component {
-  componentDidMount() {
-    // setTimeout(() => {
-    //   this.props.actions.loginFailure()
-    // },2000)
-  }
   render() {
-    const {isloading, isLogin} = this.props
+    const {isLoading, isLogin} = this.props
     return (
       <div className="App">
         <ActivityIndicator
           toast
           text="loading..."
-          animating={isloading}
+          animating={isLoading}
         />
         {
           isLogin?
@@ -64,7 +57,7 @@ class App extends Component {
   }
 }
 const mapStateToProps = (state, props) => ({
-    isloading: state.common.isloading,
+    isLoading: state.common.isloading,
     isLogin: state.common.isLogin
   })
 

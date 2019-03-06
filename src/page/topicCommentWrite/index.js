@@ -1,5 +1,5 @@
 import React, {Component, Fragment} from 'react'
-import Header from '../header'
+import Header from '../../components/header'
 import {withRouter} from 'react-router-dom'
 import {Button, Toast} from 'antd-mobile'
 import './index.scss'

@@ -4,7 +4,7 @@ import {bindActionCreators} from 'redux'
 import *as topicAction from '../../redux/actions/topic'
 import LazyLoad from 'react-lazyload';
 import {Link} from 'react-router-dom'
-import ImgLazyLoad from '../common/imgLazyLoad'
+import ImgLazyLoad from '../../components/imgLazyLoad'
 import './index.css'
 class Topic extends Component{
   componentWillMount() {

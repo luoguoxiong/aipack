@@ -6,7 +6,7 @@ import *as goodsAction from '../../redux/actions/goods'
 import { Tabs,  } from 'antd-mobile';
 import {withRouter ,Link} from 'react-router-dom'
 import './index.css'
-import ImgLazyLoad from '../common/imgLazyLoad'
+import ImgLazyLoad from '../../components/imgLazyLoad'
 class Catelog extends Component{
   saveRef = ref => {this.refDom = ref}
   componentWillMount(){

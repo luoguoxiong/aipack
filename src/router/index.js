@@ -1,17 +1,18 @@
-import Home from './components/home'
-import Topic from './components/topic'
-import Catelog from './components/catelog'
-import Cart from './components/cart'
-import Mine from './components/mine'
-import Categorys from './components/categorys'
-import Goods from './components/goods'
-import BrandDetail from './components/brandDetail'
-import TopicDetail from './components/topicDetail'
-import Comment from './components/comment'
-import TopicCommentWrite from './components/topicCommentWrite'
-import GoodsSearch from './components/goodsSearch'
+import Home from '../page/home'
+import Topic from '../page/topic'
+import Catelog from '../page/catelog'
+import Cart from '../page/cart'
+import Mine from '../page/mine'
+import Categorys from '../page/categorys'
+import Goods from '../page/goods'
+import BrandDetail from '../page/brandDetail'
+import TopicDetail from '../page/topicDetail'
+import Comment from '../page/comment'
+import TopicCommentWrite from '../page/topicCommentWrite'
+import GoodsSearch from '../page/goodsSearch'
+import Collect from '../page/collect'
 
-const routers = [
+const routes = [
   {
     name: '首页',
     isTab: true,
@@ -83,6 +84,12 @@ const routers = [
     link: '/GoodsSearch',
     isTab: false,
     component: GoodsSearch
+  },
+  {
+    name: '收藏商品',
+    link: '/Collect',
+    isTab: false,
+    component: Collect
   }
 ]
-export default routers
+export default routes

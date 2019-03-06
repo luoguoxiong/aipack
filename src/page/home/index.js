@@ -7,7 +7,7 @@ import { Carousel } from 'antd-mobile';
 import LazyLoad from 'react-lazyload';
 import morePng from '../../static/img/icon_go_more.png'
 import {Link} from 'react-router-dom'
-import ImgLazyLoad from '../common/imgLazyLoad'
+import ImgLazyLoad from '../../components/imgLazyLoad'
 const Brand = ({brandList}) => {
   if(brandList){
     return (

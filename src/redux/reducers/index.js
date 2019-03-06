@@ -9,6 +9,7 @@ import brand from './brand'
 import topicDetail from './topicDetail'
 import comment from './comment'
 import goodsSearch from './goodsSearch'
+import collect from './collect'
 const CombineReducers = combineReducers({
   home,
   common,
@@ -19,7 +20,8 @@ const CombineReducers = combineReducers({
   brand,
   topicDetail,
   comment,
-  goodsSearch
+  goodsSearch,
+  collect
 })
 
 export default CombineReducers;
