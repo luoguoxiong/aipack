@@ -4,6 +4,9 @@
 > ​EasyMarket采用阿里antd-design-mobile的UI组件。
 
 ## EasyMarket  扫码预览
+
+#### 微信浏览器，请点击"访问原网页"
+
 <figure >
 <img src="./imgs/qrCode.png" width="200"/>
 </figure >
