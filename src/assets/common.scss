@@ -9,6 +9,13 @@ body {
   overflow-x: hidden;
   font-size: .3rem !important;
 }
+.topicDetailImg{
+  img{
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+}
 body,html,#root,.App{
   height: 100%;
 }
