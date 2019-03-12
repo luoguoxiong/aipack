@@ -1,6 +1,6 @@
 import React, {Component} from 'react'
 import './index.scss'
-import {Link, withRouter} from 'react-router-dom'
+import {withRouter} from 'react-router-dom'
 import Header from '../../components/header'
 import TouchClear from '../../components/touchClear'
 // import { Button, Toast } from 'antd-mobile'
@@ -39,7 +39,7 @@ class Collect extends Component{
   }
   async clickRemove (index, item) {
     this.props.actions1.startLoading()
-    const data = await http.postDoLikes({valueId: item.value_id, typeId: 0})
+    await http.postDoLikes({valueId: item.value_id, typeId: 0})
     this.props.actions1.endLoading()
     const collect = new Array(...this.props.collect)
     collect.splice(index,1)

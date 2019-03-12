@@ -1,17 +1,17 @@
-import Home from '../page/home'
-import Topic from '../page/topic'
-import Catelog from '../page/catelog'
-import Cart from '../page/cart'
-import Mine from '../page/mine'
-import Categorys from '../page/categorys'
-import Goods from '../page/goods'
-import BrandDetail from '../page/brandDetail'
-import TopicDetail from '../page/topicDetail'
-import Comment from '../page/comment'
-import TopicCommentWrite from '../page/topicCommentWrite'
-import GoodsSearch from '../page/goodsSearch'
-import Collect from '../page/collect'
-
+import AsyncComponent from '../components/AsyncComponent'
+const Home = AsyncComponent(() => import('../page/home'))
+const Topic = AsyncComponent(() => import('../page/topic'))
+const Catelog = AsyncComponent(() => import('../page/catelog'))
+const Cart = AsyncComponent(() => import('../page/cart'))
+const Mine = AsyncComponent(() => import('../page/mine'))
+const Categorys = AsyncComponent(() => import('../page/categorys'))
+const Goods = AsyncComponent(() => import('../page/goods'))
+const BrandDetail = AsyncComponent(() => import('../page/brandDetail'))
+const TopicDetail = AsyncComponent(() => import('../page/topicDetail'))
+const Comment = AsyncComponent(() => import('../page/comment'))
+const TopicCommentWrite = AsyncComponent(() => import('../page/topicCommentWrite'))
+const GoodsSearch = AsyncComponent(() => import('../page/goodsSearch'))
+const Collect = AsyncComponent(() => import('../page/collect'))
 const routes = [
   {
     name: '首页',

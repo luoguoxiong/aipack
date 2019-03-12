@@ -1,6 +1,5 @@
 import React, {Component} from 'react'
 import './index.scss'
-import Header from "../header";
 class TouchClear extends Component{
   state={
     startX: 0
@@ -24,7 +23,6 @@ class TouchClear extends Component{
     }
   }
   render () {
-    const {collect} = this.props
     const classNames = this.props.isClose?'test':'test left'
     return (
       <div className="touchClear">

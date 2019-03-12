@@ -7,7 +7,6 @@ class ImgLazyLoad extends Component{
     this.state = {
       isLoad: false,
       isLoading: false,
-      // initUrl: 'https://ss0.bdstatic.com/-0U0bnSm1A5BphGlnYG/tam-ogel/8bc5c8ca3da4043fc6c9dbfb32d5dc89_121_121.jpg',
     }
     this.handler = this.handler.bind(this);
   }
@@ -50,6 +49,6 @@ class ImgLazyLoad extends Component{
 }
 ImgLazyLoad.defaultProps = {
   offSetTop: 40,
-  initUrl: 'https://timgsa.baidu.com/timg?image&quality=80&size=b9999_10000&sec=1551957971666&di=a6595664d21ca2d40c47ac3ea7c038cd&imgtype=0&src=http%3A%2F%2Fb-ssl.duitang.com%2Fuploads%2Fitem%2F201808%2F01%2F20180801230125_PJTTh.thumb.224_0.gif'
+  initUrl: 'https://ss0.bdstatic.com/-0U0bnSm1A5BphGlnYG/tam-ogel/8bc5c8ca3da4043fc6c9dbfb32d5dc89_121_121.jpg'
 }
 export default ImgLazyLoad
