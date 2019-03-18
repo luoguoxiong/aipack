@@ -46,9 +46,10 @@
 
 > 1. git  clone https://github.com/Peroluo/easyMarketApp.git
 > 2. 安装依赖 cnpm install
-> 3.  修改package.json文件中proxy字段的值 = 你本地服务器的ip地址 （"proxy": "http:127.0.0.1:8888"）
-> 4. npm start
-> 5. 部署到服务端 npm run build ,将build文件夹中的文件放到 [EasyMarketSever](https://github.com/Peroluo/easyMarketSever) 的www/web/easyMarket目录中
+> 3. 修改package.json文件中proxy字段的值 = 你本地服务器的ip地址 （"proxy": "http://127.0.0.1:8888"）
+> 4. 如果老铁不会在本地部署服务端，可以将第三步的ip地址，改成我部署的服务ip地址（"proxy": "http://202.96.155.121:8888"）,我部署的服务比较低级，避免挂掉，各位老铁，还是在你本地部署个吧~
+> 5. npm start
+> 6. 部署到服务端 npm run build ,将build文件夹中的文件放到 [EasyMarketSever](https://github.com/Peroluo/easyMarketSever) 的www/web/easyMarket目录中
 
 ## EasyMarket 未完成功能
 
