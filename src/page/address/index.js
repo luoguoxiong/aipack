@@ -20,12 +20,12 @@ class Address extends Component{
             <div className="isChooseAddress"></div>
             <div className="addressMsg">
               <div className="concatName">
-                罗国雄
+                peroLuo
               </div>
               <div className="addressDetail">
                 <div className="concatPhone">15818264086</div>
-                <div className="concatAddress">广东深，梅州市，五华县</div>
-                <div className="concatAddress">山坑村9008h号</div>
+                <div className="concatAddress">广东深，深圳市，宝安区</div>
+                <div className="concatAddress">新安街道办，常委村，xx公寓9068</div>
               </div>
               <div className="deleteAddress">
                 <img src={delAddress} alt="delAddress"/>
