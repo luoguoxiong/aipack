@@ -16,22 +16,26 @@ class Address extends Component{
       <div id="addressPage">
         <Header clickLeft={this.goBack.bind(this)} title="地址管理"/>
         <div className="addressList">
-          <div className="addressItem">
-            <div className="isChooseAddress"></div>
-            <div className="addressMsg">
-              <div className="concatName">
-                peroLuo
+          {
+            [1, 2 ,3].map((item) => (
+              <div className="addressItem" key={item}>
+                {item===2?<div className="isChooseAddress"></div>:null}
+                <div className="addressMsg">
+                  <div className="concatName">
+                    小明{item}
+                  </div>
+                  <div className="addressDetail">
+                    <div className="concatPhone">15818264086</div>
+                    <div className="concatAddress">广东省深圳市宝安区</div>
+                    <div className="concatAddress">新安街道办常委村xx公寓906{item}</div>
+                  </div>
+                  <div className="deleteAddress">
+                    <img src={delAddress} alt="delAddress"/>
+                  </div>
+                </div>
               </div>
-              <div className="addressDetail">
-                <div className="concatPhone">15818264086</div>
-                <div className="concatAddress">广东深，深圳市，宝安区</div>
-                <div className="concatAddress">新安街道办，常委村，xx公寓9068</div>
-              </div>
-              <div className="deleteAddress">
-                <img src={delAddress} alt="delAddress"/>
-              </div>
-            </div>
-          </div>
+            ))
+          }
         </div>
       </div>
     )
