@@ -9,21 +9,22 @@ class Mine extends Component{
   state = {
     userPower: [
       {
+        icon: 'icon-shoucang',
+        name: '我的收藏',
+        link: '/collect'
+      },
+      {
+        icon: 'icon-iconfontdizhi',
+        name: '地址管理',
+        link: '/address'
+      },
+      {
         icon: 'icon-order',
         name: '我的订单'
       },
       {
         icon: 'icon-rili',
         name: '周末拼单'
-      },
-      {
-        icon: 'icon-iconfontdizhi',
-        name: '地址管理'
-      },
-      {
-        icon: 'icon-shoucang',
-        name: '我的收藏',
-        link: '/collect'
       },
       {
         icon: 'icon-youhuiquan',
@@ -91,8 +92,8 @@ class Mine extends Component{
         <div className="userPower">
           {
             this.state.userPower.map((item) => (
-              <div key={item.name} onClick={this.showPower.bind(this,item)}>
-                <i className={`iconfont ${item.icon}`}></i>
+              <div key={item.name} onClick={this.showPower.bind(this,item)} style={'link' in item?{color:'#2196f3'}:{}}>
+                <i className={`iconfont ${item.icon}`} style={'link' in item?{color:'#2196f3'}:{}}></i>
                 <div>{item.name}</div>
               </div>)
             )

@@ -12,6 +12,7 @@ const Comment = AsyncComponent(() => import('../page/comment'))
 const TopicCommentWrite = AsyncComponent(() => import('../page/topicCommentWrite'))
 const GoodsSearch = AsyncComponent(() => import('../page/goodsSearch'))
 const Collect = AsyncComponent(() => import('../page/collect'))
+const Address = AsyncComponent(() => import('../page/address'))
 const routes = [
   {
     name: '首页',
@@ -90,6 +91,12 @@ const routes = [
     link: '/Collect',
     isTab: false,
     component: Collect
+  },
+  {
+    name: '地址管理',
+    link: '/Address',
+    isTab: false,
+    component: Address
   }
 ]
 export default routes
