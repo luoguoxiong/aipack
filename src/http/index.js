@@ -205,5 +205,19 @@ class Https {
    * */
   postCartUpdate = (parmas = {}) => (HttpUtils.post('/cart/update',parmas))
 
+  /*
+  * 获取用户购物车数据
+  * /api/address/list
+  * */
+  getAddressList = (parmas = {}) => (HttpUtils.get('/address/list',parmas))
+
+  /*
+   * 获取用户购物车数据
+   * /api/address/delete
+   * parmas:
+   * id: 地址ID
+   * */
+  postDelteAddress = (parmas = {}) => (HttpUtils.post('/address/delete',parmas))
+
 }
 export default new Https()

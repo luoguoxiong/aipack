@@ -1,4 +1,5 @@
 #addressPage{
+  padding-bottom: 1rem;
   .addressList{
     padding-top: 5px;
     overflow: hidden;
@@ -14,7 +15,7 @@
         top: 5%;
         left: 0;
         height: 90%;
-        width: 10px;
+        width: 6px;
         background: #108ee9;
       }
       .addressMsg{
@@ -61,5 +62,10 @@
         }
       }
     }
+  }
+  .addAddress{
+    position: fixed;
+    bottom: 0;
+    width: 100%;
   }
 }
