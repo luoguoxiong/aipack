@@ -10,6 +10,7 @@ import { bindActionCreators } from 'redux';
 import * as commonAction from '../../redux/actions/common';
 import { Modal } from 'antd-mobile';
 import CommentList from '../../components/common/commentList'
+import GoodsList from '../../components/common/goodsList'
 class Goods extends Component{
   state = {
     info: {
@@ -339,20 +340,7 @@ class Goods extends Component{
                 </div>
               </div>
               <div className="goodsList">
-                {goodsList.map((item) => {
-                  return(
-                      <Link to={`/goods/${item.id}`} key={item.id} className="goodsItem">
-                        <div className="goodsItemImg">
-                          <ImgLazyLoad
-                              offSetTop={44}
-                              realUrl = {item.list_pic_url}>
-                          </ImgLazyLoad>
-                        </div>
-                        <div className="goodsItemName">{item.name}</div>
-                        <div className="goodsItemPrice">￥{item.retail_price}元</div>
-                      </Link>
-                  )
-                })}
+                <GoodsList goodsList={goodsList}></GoodsList>
               </div>
               <div className="goodsPageDo">
                 <div className={userHasCollect===1?'isLike like': 'isLike'} onClick={this.changeLikes.bind(this)}>
