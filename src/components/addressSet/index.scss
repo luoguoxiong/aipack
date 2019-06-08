@@ -1,0 +1,43 @@
+.addressSetPage {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: white;
+  z-index: 99;
+  font-size: 0.32rem;
+  & > .addressHeader {
+    height: 1rem;
+    box-shadow: 0 0.04rem 0.08rem 0 rgba(0, 0, 0, 0.12),
+      0 0 6px 0 rgba(0, 0, 0, 0.04);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 0.32rem;
+  }
+  & .addressInput {
+    width: 100%;
+    height: 1rem;
+    line-height: 1rem;
+    border: none;
+    outline: none;
+    margin-top: 1px;
+    text-indent: 1em;
+  }
+  & .chooseAddress {
+    height: 1rem;
+    line-height: 1rem;
+    margin-top: 1px;
+    text-indent: 1em;
+  }
+  & .isDefaultAddress {
+    height: 1rem;
+    line-height: 1rem;
+    margin-top: 1px;
+    text-align: center;
+    & > img {
+      display: inline;
+    }
+  }
+}

@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="8c651807-3327-4411-a9cb-a8c73fa6b1cc" name="Default Changelist" comment="优化组件">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/page/goods/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/page/goods/index.js" afterDir="false" />
-    </list>
+    <list default="true" id="8c651807-3327-4411-a9cb-a8c73fa6b1cc" name="Default Changelist" comment="" />
     <ignored path="$PROJECT_DIR$/.tmp/" />
     <ignored path="$PROJECT_DIR$/temp/" />
     <ignored path="$PROJECT_DIR$/tmp/" />
@@ -125,7 +122,7 @@
       </list>
     </option>
   </component>
-  <component name="ProjectFrameBounds">
+  <component name="ProjectFrameBounds" extendedState="6">
     <option name="x" value="-59" />
     <option name="y" value="9" />
     <option name="width" value="1938" />
@@ -147,33 +144,12 @@
             <path>
               <item name="easyMarketApp" type="b2602c69:ProjectViewProjectNode" />
               <item name="easyMarketApp" type="462c0819:PsiDirectoryNode" />
-              <item name="src" type="462c0819:PsiDirectoryNode" />
+              <item name="build" type="462c0819:PsiDirectoryNode" />
             </path>
             <path>
               <item name="easyMarketApp" type="b2602c69:ProjectViewProjectNode" />
               <item name="easyMarketApp" type="462c0819:PsiDirectoryNode" />
               <item name="src" type="462c0819:PsiDirectoryNode" />
-              <item name="components" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="easyMarketApp" type="b2602c69:ProjectViewProjectNode" />
-              <item name="easyMarketApp" type="462c0819:PsiDirectoryNode" />
-              <item name="src" type="462c0819:PsiDirectoryNode" />
-              <item name="page" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="easyMarketApp" type="b2602c69:ProjectViewProjectNode" />
-              <item name="easyMarketApp" type="462c0819:PsiDirectoryNode" />
-              <item name="src" type="462c0819:PsiDirectoryNode" />
-              <item name="page" type="462c0819:PsiDirectoryNode" />
-              <item name="categorys" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="easyMarketApp" type="b2602c69:ProjectViewProjectNode" />
-              <item name="easyMarketApp" type="462c0819:PsiDirectoryNode" />
-              <item name="src" type="462c0819:PsiDirectoryNode" />
-              <item name="page" type="462c0819:PsiDirectoryNode" />
-              <item name="goods" type="462c0819:PsiDirectoryNode" />
             </path>
           </expand>
           <select />
@@ -184,7 +160,7 @@
   </component>
   <component name="PropertiesComponent">
     <property name="WebServerToolWindowFactoryState" value="false" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$" />
+    <property name="last_opened_file_path" value="D:/A_iPIN/fontend-oss" />
     <property name="node.js.detected.package.eslint" value="true" />
     <property name="node.js.detected.package.standard" value="true" />
     <property name="node.js.path.for.package.eslint" value="project" />
@@ -222,7 +198,7 @@
       </list>
     </option>
   </component>
-  <component name="RunManager" selected="npm.start">
+  <component name="RunManager" selected="npm.build">
     <configuration name="build" type="js.build_tools.npm" temporary="true" nameIsGenerated="true">
       <package-json value="$PROJECT_DIR$/package.json" />
       <command value="run" />
@@ -245,8 +221,8 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="npm.start" />
         <item itemvalue="npm.build" />
+        <item itemvalue="npm.start" />
       </list>
     </recent_temporary>
   </component>
@@ -289,7 +265,7 @@
       <workItem from="1556092621758" duration="794000" />
       <workItem from="1556596143018" duration="243000" />
       <workItem from="1556596558122" duration="26000" />
-      <workItem from="1556596604076" duration="265000" />
+      <workItem from="1556596604076" duration="796000" />
     </task>
     <task id="LOCAL-00001" summary="antd-design-mobile按需加载，优化首屏">
       <created>1551260096639</created>
@@ -375,11 +351,18 @@
       <option name="project" value="LOCAL" />
       <updated>1555748320935</updated>
     </task>
-    <option name="localTasksCounter" value="13" />
+    <task id="LOCAL-00013" summary="FIX 商品详情">
+      <created>1556596943766</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1556596943766</updated>
+    </task>
+    <option name="localTasksCounter" value="14" />
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="45520000" />
+    <option name="totallyTimeSpent" value="46051000" />
   </component>
   <component name="TodoView" selected-index="2">
     <todo-panel id="selected-file">
@@ -391,16 +374,15 @@
     </todo-panel>
   </component>
   <component name="ToolWindowManager">
-    <frame x="-39" y="6" width="1292" height="687" extended-state="0" />
-    <editor active="true" />
+    <frame x="-7" y="-7" width="1295" height="695" extended-state="6" />
     <layout>
-      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.36703822" />
+      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.3661636" />
       <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
       <window_info id="npm" order="2" side_tool="true" />
       <window_info id="Favorites" order="3" side_tool="true" />
       <window_info anchor="bottom" id="Message" order="0" />
       <window_info anchor="bottom" id="Find" order="1" weight="0.3285968" />
-      <window_info anchor="bottom" id="Run" order="2" visible="true" weight="0.067474045" />
+      <window_info anchor="bottom" id="Run" order="2" weight="0.41979522" />
       <window_info anchor="bottom" id="Debug" order="3" weight="0.4" />
       <window_info anchor="bottom" id="Cvs" order="4" weight="0.25" />
       <window_info anchor="bottom" id="Inspection" order="5" weight="0.4" />
@@ -428,7 +410,8 @@
     <MESSAGE value="新增地址管理UI" />
     <MESSAGE value="更新地址管理UI" />
     <MESSAGE value="新增地址管理查询跟删除" />
-    <option name="LAST_COMMIT_MESSAGE" value="新增地址管理查询跟删除" />
+    <MESSAGE value="FIX 商品详情" />
+    <option name="LAST_COMMIT_MESSAGE" value="FIX 商品详情" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
