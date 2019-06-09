@@ -15,6 +15,7 @@
     justify-content: center;
     align-items: center;
     font-size: 0.32rem;
+    margin-bottom: 2px;
   }
   & .addressInput {
     width: 100%;
@@ -32,12 +33,35 @@
     text-indent: 1em;
   }
   & .isDefaultAddress {
+    display: flex;
+    justify-content: center;
+    align-items: center;
     height: 1rem;
     line-height: 1rem;
     margin-top: 1px;
-    text-align: center;
     & > img {
+      margin-left: 5px;
+      width: 20px;
       display: inline;
     }
+  }
+  & .closeAddress {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+  }
+}
+
+.modelCloseWrap {
+  height: 0.84rem;
+  display: flex;
+  justify-content: space-between;
+  align-content: center;
+  & > .pickBtn {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0 0.2rem;
+    color: #108ee9;
   }
 }

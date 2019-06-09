@@ -11,7 +11,8 @@ import http from '../../http'
 import AddressSet from '../../components/addressSet'
 class Address extends Component {
   state = {
-    addressList: []
+    addressList: [],
+    addressDo: false
   }
 
   goBack() {
@@ -47,12 +48,21 @@ class Address extends Component {
       }
     ])
   }
-
+  showAddressDo(status) {
+    this.setState({
+      addressDo: status
+    })
+  }
+  closeAddressDo(val) {
+    this.showAddressDo(false)
+  }
   render() {
     return (
       <div id="addressPage">
         <Header clickLeft={this.goBack.bind(this)} title="地址管理" />
-        <AddressSet />
+        {this.state.addressDo ? (
+          <AddressSet closeAddressDo={this.closeAddressDo.bind(this)} />
+        ) : null}
         {this.state.addressList.length !== 0 && (
           <div className="addressList">
             {this.state.addressList.map(item => (
@@ -81,9 +91,7 @@ class Address extends Component {
         <div className="addAddress">
           <Button
             type="primary"
-            onClick={() => {
-              Modal.prompt('开发中', '请耐心等候！')
-            }}
+            onClick={this.showAddressDo.bind(this, true)}
             inline
             style={{
               marginRight: '4px',
