@@ -12,7 +12,9 @@ import AddressSet from '../../components/addressSet'
 class Address extends Component {
   state = {
     addressList: [],
-    addressDo: false
+    addressDo: false,
+    addressDoType: -1,
+    addressInfo: {}
   }
 
   goBack() {
@@ -48,25 +50,54 @@ class Address extends Component {
       }
     ])
   }
-  showAddressDo(status) {
+  showAddressDo(status, type) {
     this.setState({
-      addressDo: status
+      addressDo: status,
+      addressDoType: type
     })
   }
-  closeAddressDo(val) {
-    this.showAddressDo(false)
+  async closeAddressDo(parmas) {
+    const data = await http.postAddAddress(parmas)
+    if (data.errno === 0) {
+      this.fetchData()
+      this.setState({
+        addressDo: false
+      })
+    }
+  }
+  changeAddress(item) {
+    this.setState({
+      addressInfo: { ...item },
+      addressDo: true,
+      addressDoType: -1
+    })
+  }
+
+  closeDo = () => {
+    this.setState({
+      addressDo: false
+    })
   }
   render() {
     return (
       <div id="addressPage">
         <Header clickLeft={this.goBack.bind(this)} title="地址管理" />
         {this.state.addressDo ? (
-          <AddressSet closeAddressDo={this.closeAddressDo.bind(this)} />
+          <AddressSet
+            closeDo={this.closeDo}
+            addressInfo={this.state.addressInfo}
+            addressDoType={this.state.addressDoType}
+            closeAddressDo={this.closeAddressDo.bind(this)}
+          />
         ) : null}
         {this.state.addressList.length !== 0 && (
           <div className="addressList">
             {this.state.addressList.map(item => (
-              <div className="addressItem" key={item.id}>
+              <div
+                className="addressItem"
+                onClick={this.changeAddress.bind(this, item)}
+                key={item.id}
+              >
                 {item.is_default === 1 && <div className="isChooseAddress" />}
                 <div className="addressMsg">
                   <div className="concatName">{item.name}</div>
@@ -77,7 +108,8 @@ class Address extends Component {
                   </div>
                   <div
                     className="deleteAddress"
-                    onClick={() => {
+                    onClick={event => {
+                      event.stopPropagation()
                       this.deleteAddress(item.id)
                     }}
                   >
@@ -91,7 +123,7 @@ class Address extends Component {
         <div className="addAddress">
           <Button
             type="primary"
-            onClick={this.showAddressDo.bind(this, true)}
+            onClick={this.showAddressDo.bind(this, true, 1)}
             inline
             style={{
               marginRight: '4px',
