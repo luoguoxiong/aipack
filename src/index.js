@@ -11,6 +11,7 @@ import { Provider } from 'react-redux'
 import Reducers from './redux/reducers'
 import rootSaga from './redux/sagas'
 
+// 修改了reducer请更新版本号！！！
 const LoadData = newVersion => {
   const easyMarket_version =
     JSON.parse(localStorage.getItem('easyMarket_version')) || ''
@@ -22,11 +23,13 @@ const LoadData = newVersion => {
   }
   return initData
 }
-const data = LoadData(3)
-console.log(data)
 const sagaMiddleware = createSagaMiddleware()
 
-const store = createStore(Reducers, data, applyMiddleware(sagaMiddleware))
+const store = createStore(
+  Reducers,
+  LoadData(3),
+  applyMiddleware(sagaMiddleware)
+)
 
 sagaMiddleware.run(rootSaga)
 
