@@ -27,7 +27,7 @@ const sagaMiddleware = createSagaMiddleware()
 
 const store = createStore(
   Reducers,
-  LoadData(3),
+  LoadData(4),
   applyMiddleware(sagaMiddleware)
 )
 
