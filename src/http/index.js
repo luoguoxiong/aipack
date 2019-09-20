@@ -227,5 +227,13 @@ class Https {
    * id: 地址ID
    * */
   postDelteAddress = (parmas = {}) => HttpUtils.post('/address/delete', parmas)
+
+  /*
+   * 获取删除地址数据
+   * /api/address/delete
+   * parmas:
+   * id: 地址ID
+   * */
+  postCheckOne = (parmas = {}) => HttpUtils.post('/cart/checkOne', parmas)
 }
 export default new Https()

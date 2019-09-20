@@ -9,10 +9,13 @@ const Goods = AsyncComponent(() => import('../page/goods'))
 const BrandDetail = AsyncComponent(() => import('../page/brandDetail'))
 const TopicDetail = AsyncComponent(() => import('../page/topicDetail'))
 const Comment = AsyncComponent(() => import('../page/comment'))
-const TopicCommentWrite = AsyncComponent(() => import('../page/topicCommentWrite'))
+const TopicCommentWrite = AsyncComponent(() =>
+  import('../page/topicCommentWrite')
+)
 const GoodsSearch = AsyncComponent(() => import('../page/goodsSearch'))
 const Collect = AsyncComponent(() => import('../page/collect'))
 const Address = AsyncComponent(() => import('../page/address'))
+const OrderConfirm = AsyncComponent(() => import('../page/orderConfirm'))
 const routes = [
   {
     name: '首页',
@@ -82,21 +85,27 @@ const routes = [
   },
   {
     name: '商品查询',
-    link: '/GoodsSearch',
+    link: '/goodsSearch',
     isTab: false,
     component: GoodsSearch
   },
   {
     name: '收藏商品',
-    link: '/Collect',
+    link: '/collect',
     isTab: false,
     component: Collect
   },
   {
     name: '地址管理',
-    link: '/Address',
+    link: '/address',
     isTab: false,
     component: Address
+  },
+  {
+    name: '订单确认',
+    link: '/orderConfirm',
+    isTab: false,
+    component: OrderConfirm
   }
 ]
 export default routes
