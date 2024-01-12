@@ -1,0 +1,58 @@
+.statusNumWrap{
+  display: flex;
+  .numItem{
+    flex: 1;
+    border-right: 1px solid rgba(0, 0, 0, 0.16);
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+  }
+  .numItem:last-child{
+    border: none;
+  }
+  .numItemTitle{
+    color: #a3a5b0;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .numItemValue{
+    height: 60px;
+    line-height: 60px;
+    color: rgba(0,0,0,.85);
+    font-size: 30px;
+    font-weight: 700;
+  }
+  .numItem:nth-child(1)>.numItemValue{
+    color: red;
+  }
+  .numItem:nth-child(2)>.numItemValue{
+    color: #7398d2;
+  }
+  .numItem:nth-child(3)>.numItemValue{
+    color: #e68e41;
+  }
+  .numItem:nth-child(4)>.numItemValue{
+    color: #20c8a5;
+  }
+  .numItem:nth-child(5)>.numItemValue{
+    color: #1e80ff;
+  }
+  .lastDay{
+    color: #a3a5b0;
+    font-size: 12px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    img{
+      width: 10px;
+    }
+  }
+  .up{
+    color: #2bbd2b;
+    margin: 0 4px;
+  }
+  .down{
+    color:red;
+    margin: 0 4px;
+  }
+}

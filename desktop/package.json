@@ -1,0 +1,36 @@
+{
+  "name": "@blubiu/desktop",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "hull dev",
+    "dev:vite": "hull dev --vite",
+    "build": "hull build",
+    "build:vite": "hull build  --vite",
+    "server": "hull server",
+    "server:vite": "hull server --vite"
+  },
+  "devDependencies": {
+    "@hulljs/cli": "0.8.1",
+    "@hulljs/eslint-config-hull-app": "^0.1.0",
+    "@svgr/webpack": "^8.1.0",
+    "@types/node": "^20.10.5",
+    "@types/react": "^18.0.9",
+    "@types/react-dom": "^18.2.18",
+    "@types/react-redux": "^7.1.33"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.2.6",
+    "@rematch/core": "^2.2.0",
+    "antd": "^5.12.5",
+    "axios": "^1.6.2",
+    "classnames": "^2.5.1",
+    "dayjs": "^1.11.10",
+    "echarts": "^5.4.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-redux": "^9.0.4",
+    "react-router": "^6.21.1",
+    "react-router-dom": "^6.21.1",
+    "redux": "^5.0.1"
+  }
+}

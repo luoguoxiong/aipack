@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "lib": ["ES2015","DOM"],
+    "esModuleInterop": true,
+    "baseUrl": ".",
+    "jsx": "react",
+    "paths": {
+      "@/src/*": ["./src/*"]
+    }
+  },
+  "files": ["./index.d.ts"],
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
+}

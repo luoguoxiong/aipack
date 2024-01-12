@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "es6",
+    "lib": ["dom", "es2016"],
+    "module": "esnext",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "baseUrl": ".",
+    "jsx": "react",
+    "paths": {
+      "@/src/*": ["./src/*"]
+    }
+  },
+  "files": ["./index.d.ts"],
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
+}

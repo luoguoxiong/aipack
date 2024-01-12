@@ -1,0 +1,74 @@
+{
+  "name": "@blubiu/service",
+  "version": "1.0.0",
+  "description": "",
+  "private": true,
+  "egg": {
+    "typescript": true,
+    "declarations": true
+  },
+  "scripts": {
+    "start": "egg-scripts start --daemon --title=egg-server-blubiu",
+    "stop": "egg-scripts stop --title=egg-server-blubiu",
+    "ets": "ets -w",
+    "dev": "egg-bin dev",
+    "debug": "egg-bin debug",
+    "test:local": "egg-bin test -p",
+    "test": "npm run lint -- --fix && npm run test:local",
+    "cov": "egg-bin cov -p",
+    "ci": "npm run lint && npm run cov && npm run tsc && npm run clean",
+    "lint": "eslint . --ext .ts --cache",
+    "tsc": "tsc",
+    "clean": "tsc -b --clean",
+    "sequelize": "sequelize init:config && sequelize init:migrations"
+  },
+  "dependencies": {
+    "@eggjs/tegg": "^3.5.2",
+    "@eggjs/tegg-aop-plugin": "^3.5.2",
+    "@eggjs/tegg-config": "^3.2.3",
+    "@eggjs/tegg-controller-plugin": "^3.5.2",
+    "@eggjs/tegg-eventbus-plugin": "^3.5.2",
+    "@eggjs/tegg-plugin": "^3.5.2",
+    "@eggjs/tegg-schedule-plugin": "^3.5.2",
+    "@elastic/elasticsearch": "7",
+    "bcrypt": "^5.1.1",
+    "cron-parser": "^4.9.0",
+    "dayjs": "^1.11.10",
+    "egg": "^3.15.0",
+    "egg-cors": "^3.0.0",
+    "egg-redis": "^2.5.0",
+    "egg-scripts": "^2.17.0",
+    "egg-sequelize": "^6.0.0",
+    "egg-tracer": "^2.0.0",
+    "egg-validate": "^2.0.2",
+    "ip2region": "^2.3.0",
+    "jsonwebtoken": "^9.0.2",
+    "kafka-node": "^5.0.0",
+    "mysql2": "^3.6.5",
+    "ua-parser-js": "^1.0.37"
+  },
+  "devDependencies": {
+    "@eggjs/tsconfig": "1",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/mocha": "10",
+    "@types/node": "20",
+    "@types/uuid": "^9.0.7",
+    "egg-bin": "6",
+    "egg-mock": "5",
+    "egg-ts-helper": "^2.1.0",
+    "eslint": "8",
+    "eslint-config-egg": "13",
+    "sequelize": "6.6.2",
+    "sequelize-cli": "6.6.2",
+    "typescript": "~5.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "author": "luoguoxiong",
+  "license": "MIT"
+}

@@ -1,0 +1,30 @@
+{
+  "name": "sdk",
+  "version": "0.0.1",
+  "description": "",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "scripts": {
+    "dev": "father dev",
+    "build": "father build",
+    "build:deps": "father prebundle",
+    "prepublishOnly": "father doctor && npm run build"
+  },
+  "keywords": [],
+  "authors": [],
+  "license": "MIT",
+  "files": [
+    "dist",
+    "compiled"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "father": "^4.3.8",
+    "@hulljs/eslint-config-hull-app": "^0.1.0"
+  },
+  "dependencies": {
+    "web-vitals": "^3.5.1"
+  }
+}

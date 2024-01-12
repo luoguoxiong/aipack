@@ -1,0 +1,27 @@
+{
+  "name": "web-test",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "hull dev",
+    "dev:vite": "hull dev --vite",
+    "build": "hull build",
+    "build:vite": "hull build  --vite",
+    "server": "hull server",
+    "server:vite": "hull server --vite"
+  },
+  "devDependencies": {
+    "@hulljs/cli": "0.8.0",
+    "@hulljs/eslint-config-hull-app": "^0.1.0",
+    "@types/react": "^18.0.9",
+    "@types/react-dom": "^18.0.4",
+    "source-map-loader": "^4.0.2"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "react": "^17.0.1",
+    "react-dom": "^17.0.1",
+    "react-router-dom": "^6.21.2",
+    "source-map": "^0.7.4",
+    "web-vitals": "^3.5.0"
+  }
+}
