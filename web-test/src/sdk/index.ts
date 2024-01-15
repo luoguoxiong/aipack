@@ -15,10 +15,7 @@ export class Monitor {
   reportStack: ReportItem[];
 
   constructor(config: MonitorConfig){
-    this.config = {
-      webVitalsTimeouts: 5000,
-      ...config,
-    };
+    this.config = config;
 
     this.performance = {
       type: 'performance',
@@ -92,6 +89,12 @@ export class Monitor {
         ...this.getPageMsg(),
       });
     }, true);
+
+    window.onbeforeunload = () => {
+      const { api } = this.config;
+      const img = document.createElement('img');
+      img.src = `${api}?data=${encodeURIComponent(JSON.stringify(this.reportStack))}`;
+    };
   }
 
   getPageMsg = () => {
@@ -131,13 +134,15 @@ export class Monitor {
     });
   };
 
-
   private toReport(data: ReportItem){
     data.userTimeStamp = new Date().getTime();
     this.reportStack.push(data);
-    const { api } = this.config;
-    const img = document.createElement('img');
-    img.src = `${api}?data=${encodeURIComponent(JSON.stringify(data))}`;
+    const { api, cacheMax } = this.config;
+    if(this.reportStack.length === cacheMax){
+      const img = document.createElement('img');
+      img.src = `${api}?data=${encodeURIComponent(JSON.stringify(this.reportStack))}`;
+      this.reportStack = [];
+    }
   }
 
   private async getWebPerformance() {

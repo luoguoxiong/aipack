@@ -2,7 +2,7 @@ import * as React from 'react';
 import * as ReactDOM from 'react-dom';
 import { BrowserRouter, HashRouter } from 'react-router-dom';
 
-import { Monitor } from '../sdk/src';
+import { Monitor } from './sdk';
 import App from './App';
 
 // 监听 hashchange 事件，当 URL 中的哈希部分发生变化时触发
@@ -109,21 +109,24 @@ const index = 0;
 new Monitor({
   appId: 'wmyz',
   api: 'http://localhost:7001/test',
+  cacheMax: 10,
   webVitalsTimeouts: 10000,
 });
 
 
 // 代码异常
-// const a = [{ a: 1 }, { a: [] }];
+const a = [{ a: 1 }, { a: [] }];
 // const script = document.createElement('script');
 // script.src = 'https://stest.com';
 // document.body.appendChild(script);
 // ===============
-// a.map((item) => {
-//   item.a.map((temp) => {
-//     console.log(temp);
-//   });
-// });
+setTimeout(() => {
+  a.map((item) => {
+    item.a.map((temp) => {
+      console.log(temp);
+    });
+  });
+}, 0);
 // fetch 监听异常
 // fetch('/api/abc', {
 //   method: 'get',
