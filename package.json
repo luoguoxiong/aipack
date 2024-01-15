@@ -1,0 +1,45 @@
+{
+  "name": "frontend-watch-dog",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "install:all": "bash ./script/install.sh",
+    "version": "lerna version --exact --no-commit-hooks --no-push --conventional-commits  --force-git-tag",
+    "start": "dumi dev",
+    "build": "lerna run build",
+    "build-doc": "dumi build",
+    "bootstrap": "lerna bootstrap",
+    "publish": "lerna publish from-package --yes"
+  },
+  "gitHooks": {
+    "pre-commit": "lint-staged",
+    "commit-msg": "commitlint -eGIT_classnamesPARAMS $"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "eslint  --fix"
+    ]
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^8.3.5",
+    "@commitlint/config-conventional": "^8.3.4",
+    "@hulljs/eslint-config-hull-app": "^0.1.0",
+    "conventional-changelog-angular-bitbucket": "^1.2.0",
+    "husky": "^8.0.1",
+    "lerna": "^4.0.0",
+    "lint-staged": "^10.0.7"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/luoguoxiong/frontend-watch-dog.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/luoguoxiong/frontend-watch-dog/issues"
+  },
+  "homepage": "https://github.com/luoguoxiong/frontend-watch-dog#readme",
+  "workspaces": [
+    "packages/*"
+  ]
+}

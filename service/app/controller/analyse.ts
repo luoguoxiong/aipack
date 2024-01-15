@@ -37,20 +37,18 @@ export default class AnalyseController extends Controller {
     try {
       const { beginTime, endTime, appId } = this.ctx.query;
       let index = dayjs(beginTime);
-      const task:any = [];
-      const label:any = [];
+      const task: any = [];
+      const label: any = [];
       while (index.diff(dayjs(endTime)) <= 0) {
         label.push(index.format('MM-DD'));
         task.push(this.service.redis.dayNewUsers.getOneDayNewUsers(appId, index.format('YYYY-MM-DD')));
         index = index.add(1, 'day');
       }
       const data = await Promise.all(task);
-      const result = data.map((item, index) => {
-        return {
-          value: Number(item || 0),
-          label: label[index],
-        };
-      });
+      const result = data.map((item, index) => ({
+        value: Number(item || 0),
+        label: label[index],
+      }));
       this.ctx.success(result);
     } catch (error) {
       this.app.logger.error(error);
