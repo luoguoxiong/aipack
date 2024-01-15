@@ -1,0 +1,87 @@
+0 silly argv {
+0 silly argv   _: [ 'publish' ],
+0 silly argv   yes: true,
+0 silly argv   y: true,
+0 silly argv   composed: 'publish',
+0 silly argv   lernaVersion: '4.0.0',
+0 silly argv   '$0': 'node_modules/lerna/cli.js',
+0 silly argv   bump: 'from-package'
+0 silly argv }
+1 notice cli v4.0.0
+2 verbose rootPath /Users/peroluo/github/frontend-watch-dog
+3 verbose session 6af9313f83acb067
+4 verbose user-agent lerna/4.0.0/node@v16.18.0+arm64 (darwin)
+5 verbose git-describe undefined => "52b4119"
+6 silly git-describe parsed => {"refCount":"49","sha":"52b4119","isDirty":false}
+7 silly getUnpublishedPackages
+8 warn Unable to determine published version, assuming "@frontend-watch-dog/web-sdk" unpublished.
+9 info auto-confirmed
+10 info publish Publishing packages to npm...
+11 info Verifying npm credentials
+12 verbose Retrieving npm user profile
+13 http fetch GET 200 https://registry.npmjs.org/-/npm/v1/user 1405ms
+14 silly npm profile get received {"tfa":{"pending":false,"mode":"auth-and-writes"},"name":"luoguoxiong2021","email":"luoguoxiong2021@163.com","email_verified":true,"created":"2021-07-14T09:26:29.189Z","updated":"2024-01-04T07:22:32.967Z","cidr_whitelist":null}
+15 silly get npm username received {"username":"luoguoxiong2021","tfa":{"pending":false,"mode":"auth-and-writes"},"name":"luoguoxiong2021","email":"luoguoxiong2021@163.com","email_verified":true,"created":"2021-07-14T09:26:29.189Z","updated":"2024-01-04T07:22:32.967Z","cidr_whitelist":null}
+16 silly verifyNpmPackageAccess
+17 http fetch GET 200 https://registry.npmjs.org/-/org/luoguoxiong2021/package?format=cli 279ms (cache miss)
+18 info Checking two-factor auth mode
+19 verbose Retrieving npm user profile
+20 http fetch GET 200 https://registry.npmjs.org/-/npm/v1/user 293ms
+21 silly npm profile get received {"tfa":{"pending":false,"mode":"auth-and-writes"},"name":"luoguoxiong2021","email":"luoguoxiong2021@163.com","email_verified":true,"created":"2021-07-14T09:26:29.189Z","updated":"2024-01-04T07:22:32.967Z","cidr_whitelist":null}
+22 silly 2FA { pending: false, mode: 'auth-and-writes' }
+23 warn ENOLICENSE Package @frontend-watch-dog/web-sdk is missing a license.
+23 warn ENOLICENSE One way to fix this is to add a LICENSE.md file to the root of this repository.
+23 warn ENOLICENSE See https://choosealicense.com for additional guidance.
+24 silly getCurrentSHA
+25 verbose getCurrentSHA 52b411952157c65db22667c0e72d59e0ee1cfa2c
+26 warn lifecycle Skipping root "prepublish" because it has already been called
+27 silly lifecycle No script for "prepare" in "frontend-watch-dog", continuing
+28 silly lifecycle No script for "prepublishOnly" in "frontend-watch-dog", continuing
+29 silly lifecycle No script for "prepack" in "frontend-watch-dog", continuing
+30 verbose pack-directory packages/web-sdk
+31 silly lifecycle No script for "prepublish" in "@frontend-watch-dog/web-sdk", continuing
+32 silly lifecycle No script for "prepare" in "@frontend-watch-dog/web-sdk", continuing
+33 silly lifecycle "prepublishOnly" starting in "@frontend-watch-dog/web-sdk"
+34 info lifecycle @frontend-watch-dog/web-sdk@0.0.1~prepublishOnly: @frontend-watch-dog/web-sdk@0.0.1
+35 verbose lifecycle @frontend-watch-dog/web-sdk@0.0.1~prepublishOnly: unsafe-perm in lifecycle true
+36 verbose lifecycle @frontend-watch-dog/web-sdk@0.0.1~prepublishOnly: PATH: /Users/peroluo/github/frontend-watch-dog/node_modules/.pnpm/npm-lifecycle@3.1.5/node_modules/npm-lifecycle/node-gyp-bin:/Users/peroluo/github/frontend-watch-dog/packages/web-sdk/node_modules/.bin:/Users/peroluo/github/frontend-watch-dog/node_modules/.bin:/Users/peroluo/.nvm/versions/node/v16.18.0/lib/node_modules/pnpm/dist/node-gyp-bin:/Users/peroluo/github/frontend-watch-dog/node_modules/.bin:/Users/peroluo/.nvm/versions/node/v16.18.0/bin:/Users/peroluo/.nvm/versions/node/v16.18.0/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Library/Frameworks/Python.framework/Versions/3.10/bin:/Library/Frameworks/Python.framework/Versions/3.9/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/peroluo/.nvm/versions/node/v16.18.0/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Library/Frameworks/Python.framework/Versions/3.10/bin:/Library/Frameworks/Python.framework/Versions/3.9/bin:/Users/peroluo/.cargo/bin:/usr/local/mysql/bin:/usr/local/go/bin:/Users/peroluo/go/bin:/usr/local/mysql/bin:/usr/local/go/bin:/Users/peroluo/go/bin
+37 verbose lifecycle @frontend-watch-dog/web-sdk@0.0.1~prepublishOnly: CWD: /Users/peroluo/github/frontend-watch-dog/packages/web-sdk
+38 silly lifecycle @frontend-watch-dog/web-sdk@0.0.1~prepublishOnly: Args: [ '-c', 'father doctor && npm run build' ]
+39 silly lifecycle @frontend-watch-dog/web-sdk@0.0.1~prepublishOnly: Returned: code: 0  signal: null
+40 silly lifecycle "prepublishOnly" finished in "@frontend-watch-dog/web-sdk"
+41 silly lifecycle No script for "prepack" in "@frontend-watch-dog/web-sdk", continuing
+42 silly lifecycle No script for "postpack" in "@frontend-watch-dog/web-sdk", continuing
+43 verbose packed packages/web-sdk
+44 silly lifecycle No script for "postpack" in "frontend-watch-dog", continuing
+45 verbose publish @frontend-watch-dog/web-sdk
+46 silly FetchError: request to https://registry.npmjs.org/@frontend-watch-dog%2fweb-sdk failed, reason: connect ETIMEDOUT 104.16.2.35:443
+46 silly     at ClientRequest.<anonymous> (/Users/peroluo/github/frontend-watch-dog/node_modules/.pnpm/minipass-fetch@1.4.1/node_modules/minipass-fetch/lib/index.js:110:14)
+46 silly     at ClientRequest.emit (node:events:513:28)
+46 silly     at TLSSocket.socketErrorListener (node:_http_client:494:9)
+46 silly     at TLSSocket.emit (node:events:525:35)
+46 silly     at emitErrorNT (node:internal/streams/destroy:157:8)
+46 silly     at emitErrorCloseNT (node:internal/streams/destroy:122:3)
+46 silly     at processTicksAndRejections (node:internal/process/task_queues:83:21)
+46 silly  FetchError: request to https://registry.npmjs.org/@frontend-watch-dog%2fweb-sdk failed, reason: connect ETIMEDOUT 104.16.2.35:443
+46 silly     at ClientRequest.<anonymous> (/Users/peroluo/github/frontend-watch-dog/node_modules/.pnpm/minipass-fetch@1.4.1/node_modules/minipass-fetch/lib/index.js:110:14)
+46 silly     at ClientRequest.emit (node:events:513:28)
+46 silly     at TLSSocket.socketErrorListener (node:_http_client:494:9)
+46 silly     at TLSSocket.emit (node:events:525:35)
+46 silly     at emitErrorNT (node:internal/streams/destroy:157:8)
+46 silly     at emitErrorCloseNT (node:internal/streams/destroy:122:3)
+46 silly     at processTicksAndRejections (node:internal/process/task_queues:83:21) {
+46 silly   code: 'ETIMEDOUT',
+46 silly   errno: 'ETIMEDOUT',
+46 silly   syscall: 'connect',
+46 silly   address: '104.16.2.35',
+46 silly   port: 443,
+46 silly   type: 'system'
+46 silly }
+47 error ETIMEDOUT request to https://registry.npmjs.org/@frontend-watch-dog%2fweb-sdk failed, reason: connect ETIMEDOUT 104.16.2.35:443
+48 error FetchError: request to https://registry.npmjs.org/@frontend-watch-dog%2fweb-sdk failed, reason: connect ETIMEDOUT 104.16.2.35:443
+48 error     at ClientRequest.<anonymous> (/Users/peroluo/github/frontend-watch-dog/node_modules/.pnpm/minipass-fetch@1.4.1/node_modules/minipass-fetch/lib/index.js:110:14)
+48 error     at ClientRequest.emit (node:events:513:28)
+48 error     at TLSSocket.socketErrorListener (node:_http_client:494:9)
+48 error     at TLSSocket.emit (node:events:525:35)
+48 error     at emitErrorNT (node:internal/streams/destroy:157:8)
+48 error     at emitErrorCloseNT (node:internal/streams/destroy:122:3)
