@@ -1,5 +1,5 @@
 {
-  "name": "@fwd/web-sdk",
+  "name": "@frontend-watch-dog/web-sdk",
   "version": "0.0.1",
   "description": "",
   "module": "dist/esm/index.js",

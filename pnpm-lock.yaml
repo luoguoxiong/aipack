@@ -9,7 +9,7 @@ importers:
       '@hulljs/eslint-config-hull-app': ^0.1.0
       conventional-changelog-angular-bitbucket: ^1.2.0
       husky: ^8.0.1
-      lerna: ^4.0.0
+      lerna: 4.0.0
       lint-staged: ^10.0.7
     devDependencies:
       '@commitlint/cli': 8.3.6
@@ -3984,6 +3984,7 @@ packages:
   /@lerna/add/4.0.0:
     resolution: {integrity: sha512-cpmAH1iS3k8JBxNvnMqrGTTjbY/ZAiKa1ChJzFevMYY3eeqbvhsBKnBcxjRXtdrJ6bd3dCQM+ZtK+0i682Fhng==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/bootstrap': 4.0.0
       '@lerna/command': 4.0.0
@@ -4003,6 +4004,7 @@ packages:
   /@lerna/bootstrap/4.0.0:
     resolution: {integrity: sha512-RkS7UbeM2vu+kJnHzxNRCLvoOP9yGNgkzRdy4UV2hNalD7EP41bLvRVOwRYQ7fhc2QcbhnKNdOBihYRL0LcKtw==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/command': 4.0.0
       '@lerna/filter-options': 4.0.0
@@ -4031,6 +4033,7 @@ packages:
   /@lerna/changed/4.0.0:
     resolution: {integrity: sha512-cD+KuPRp6qiPOD+BO6S6SN5cARspIaWSOqGBpGnYzLb4uWT8Vk4JzKyYtc8ym1DIwyoFXHosXt8+GDAgR8QrgQ==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/collect-updates': 4.0.0
       '@lerna/command': 4.0.0
@@ -4041,6 +4044,7 @@ packages:
   /@lerna/check-working-tree/4.0.0:
     resolution: {integrity: sha512-/++bxM43jYJCshBiKP5cRlCTwSJdRSxVmcDAXM+1oUewlZJVSVlnks5eO0uLxokVFvLhHlC5kHMc7gbVFPHv6Q==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/collect-uncommitted': 4.0.0
       '@lerna/describe-ref': 4.0.0
@@ -4059,6 +4063,7 @@ packages:
   /@lerna/clean/4.0.0:
     resolution: {integrity: sha512-uugG2iN9k45ITx2jtd8nEOoAtca8hNlDCUM0N3lFgU/b1mEQYAPRkqr1qs4FLRl/Y50ZJ41wUz1eazS+d/0osA==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/command': 4.0.0
       '@lerna/filter-options': 4.0.0
@@ -4073,6 +4078,7 @@ packages:
   /@lerna/cli/4.0.0:
     resolution: {integrity: sha512-Neaw3GzFrwZiRZv2g7g6NwFjs3er1vhraIniEs0jjVLPMNC4eata0na3GfE5yibkM/9d3gZdmihhZdZ3EBdvYA==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/global-options': 4.0.0
       dedent: 0.7.0
@@ -4083,6 +4089,7 @@ packages:
   /@lerna/collect-uncommitted/4.0.0:
     resolution: {integrity: sha512-ufSTfHZzbx69YNj7KXQ3o66V4RC76ffOjwLX0q/ab//61bObJ41n03SiQEhSlmpP+gmFbTJ3/7pTe04AHX9m/g==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/child-process': 4.0.0
       chalk: 4.1.2
@@ -4092,6 +4099,7 @@ packages:
   /@lerna/collect-updates/4.0.0:
     resolution: {integrity: sha512-bnNGpaj4zuxsEkyaCZLka9s7nMs58uZoxrRIPJ+nrmrZYp1V5rrd+7/NYTuunOhY2ug1sTBvTAxj3NZQ+JKnOw==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/child-process': 4.0.0
       '@lerna/describe-ref': 4.0.0
@@ -4103,6 +4111,7 @@ packages:
   /@lerna/command/4.0.0:
     resolution: {integrity: sha512-LM9g3rt5FsPNFqIHUeRwWXLNHJ5NKzOwmVKZ8anSp4e1SPrv2HNc1V02/9QyDDZK/w+5POXH5lxZUI1CHaOK/A==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/child-process': 4.0.0
       '@lerna/package-graph': 4.0.0
@@ -4119,6 +4128,7 @@ packages:
   /@lerna/conventional-commits/4.0.0:
     resolution: {integrity: sha512-CSUQRjJHFrH8eBn7+wegZLV3OrNc0Y1FehYfYGhjLE2SIfpCL4bmfu/ViYuHh9YjwHaA+4SX6d3hR+xkeseKmw==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/validation-error': 4.0.0
       conventional-changelog-angular: 5.0.13
@@ -4136,6 +4146,7 @@ packages:
   /@lerna/create-symlink/4.0.0:
     resolution: {integrity: sha512-I0phtKJJdafUiDwm7BBlEUOtogmu8+taxq6PtIrxZbllV9hWg59qkpuIsiFp+no7nfRVuaasNYHwNUhDAVQBig==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       cmd-shim: 4.1.0
       fs-extra: 9.1.0
@@ -4172,6 +4183,7 @@ packages:
   /@lerna/describe-ref/4.0.0:
     resolution: {integrity: sha512-eTU5+xC4C5Gcgz+Ey4Qiw9nV2B4JJbMulsYJMW8QjGcGh8zudib7Sduj6urgZXUYNyhYpRs+teci9M2J8u+UvQ==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/child-process': 4.0.0
       npmlog: 4.1.2
@@ -4180,6 +4192,7 @@ packages:
   /@lerna/diff/4.0.0:
     resolution: {integrity: sha512-jYPKprQVg41+MUMxx6cwtqsNm0Yxx9GDEwdiPLwcUTFx+/qKCEwifKNJ1oGIPBxyEHX2PFCOjkK39lHoj2qiag==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/child-process': 4.0.0
       '@lerna/command': 4.0.0
@@ -4190,6 +4203,7 @@ packages:
   /@lerna/exec/4.0.0:
     resolution: {integrity: sha512-VGXtL/b/JfY84NB98VWZpIExfhLOzy0ozm/0XaS4a2SmkAJc5CeUfrhvHxxkxiTBLkU+iVQUyYEoAT0ulQ8PCw==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/child-process': 4.0.0
       '@lerna/command': 4.0.0
@@ -4203,6 +4217,7 @@ packages:
   /@lerna/filter-options/4.0.0:
     resolution: {integrity: sha512-vV2ANOeZhOqM0rzXnYcFFCJ/kBWy/3OA58irXih9AMTAlQLymWAK0akWybl++sUJ4HB9Hx12TOqaXbYS2NM5uw==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/collect-updates': 4.0.0
       '@lerna/filter-packages': 4.0.0
@@ -4213,6 +4228,7 @@ packages:
   /@lerna/filter-packages/4.0.0:
     resolution: {integrity: sha512-+4AJIkK7iIiOaqCiVTYJxh/I9qikk4XjNQLhE3kixaqgMuHl1NQ99qXRR0OZqAWB9mh8Z1HA9bM5K1HZLBTOqA==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/validation-error': 4.0.0
       multimatch: 5.0.0
@@ -4222,6 +4238,7 @@ packages:
   /@lerna/get-npm-exec-opts/4.0.0:
     resolution: {integrity: sha512-yvmkerU31CTWS2c7DvmAWmZVeclPBqI7gPVr5VATUKNWJ/zmVcU4PqbYoLu92I9Qc4gY1TuUplMNdNuZTSL7IQ==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       npmlog: 4.1.2
     dev: true
@@ -4229,6 +4246,7 @@ packages:
   /@lerna/get-packed/4.0.0:
     resolution: {integrity: sha512-rfWONRsEIGyPJTxFzC8ECb3ZbsDXJbfqWYyeeQQDrJRPnEJErlltRLPLgC2QWbxFgFPsoDLeQmFHJnf0iDfd8w==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       fs-extra: 9.1.0
       ssri: 8.0.1
@@ -4238,6 +4256,7 @@ packages:
   /@lerna/github-client/4.0.0:
     resolution: {integrity: sha512-2jhsldZtTKXYUBnOm23Lb0Fx8G4qfSXF9y7UpyUgWUj+YZYd+cFxSuorwQIgk5P4XXrtVhsUesIsli+BYSThiw==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/child-process': 4.0.0
       '@octokit/plugin-enterprise-rest': 6.0.1
@@ -4251,6 +4270,7 @@ packages:
   /@lerna/gitlab-client/4.0.0:
     resolution: {integrity: sha512-OMUpGSkeDWFf7BxGHlkbb35T7YHqVFCwBPSIR6wRsszY8PAzCYahtH3IaJzEJyUg6vmZsNl0FSr3pdA2skhxqA==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       node-fetch: 2.7.0
       npmlog: 4.1.2
@@ -4262,11 +4282,13 @@ packages:
   /@lerna/global-options/4.0.0:
     resolution: {integrity: sha512-TRMR8afAHxuYBHK7F++Ogop2a82xQjoGna1dvPOY6ltj/pEx59pdgcJfYcynYqMkFIk8bhLJJN9/ndIfX29FTQ==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dev: true
 
   /@lerna/has-npm-version/4.0.0:
     resolution: {integrity: sha512-LQ3U6XFH8ZmLCsvsgq1zNDqka0Xzjq5ibVN+igAI5ccRWNaUsE/OcmsyMr50xAtNQMYMzmpw5GVLAivT2/YzCg==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/child-process': 4.0.0
       semver: 7.5.4
@@ -4275,6 +4297,7 @@ packages:
   /@lerna/import/4.0.0:
     resolution: {integrity: sha512-FaIhd+4aiBousKNqC7TX1Uhe97eNKf5/SC7c5WZANVWtC7aBWdmswwDt3usrzCNpj6/Wwr9EtEbYROzxKH8ffg==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/child-process': 4.0.0
       '@lerna/command': 4.0.0
@@ -4289,6 +4312,7 @@ packages:
   /@lerna/info/4.0.0:
     resolution: {integrity: sha512-8Uboa12kaCSZEn4XRfPz5KU9XXoexSPS4oeYGj76s2UQb1O1GdnEyfjyNWoUl1KlJ2i/8nxUskpXIftoFYH0/Q==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/command': 4.0.0
       '@lerna/output': 4.0.0
@@ -4298,6 +4322,7 @@ packages:
   /@lerna/init/4.0.0:
     resolution: {integrity: sha512-wY6kygop0BCXupzWj5eLvTUqdR7vIAm0OgyV9WHpMYQGfs1V22jhztt8mtjCloD/O0nEe4tJhdG62XU5aYmPNQ==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/child-process': 4.0.0
       '@lerna/command': 4.0.0
@@ -4309,6 +4334,7 @@ packages:
   /@lerna/link/4.0.0:
     resolution: {integrity: sha512-KlvPi7XTAcVOByfaLlOeYOfkkDcd+bejpHMCd1KcArcFTwijOwXOVi24DYomIeHvy6HsX/IUquJ4PPUJIeB4+w==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/command': 4.0.0
       '@lerna/package-graph': 4.0.0
@@ -4320,6 +4346,7 @@ packages:
   /@lerna/list/4.0.0:
     resolution: {integrity: sha512-L2B5m3P+U4Bif5PultR4TI+KtW+SArwq1i75QZ78mRYxPc0U/piau1DbLOmwrdqr99wzM49t0Dlvl6twd7GHFg==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/command': 4.0.0
       '@lerna/filter-options': 4.0.0
@@ -4330,6 +4357,7 @@ packages:
   /@lerna/listable/4.0.0:
     resolution: {integrity: sha512-/rPOSDKsOHs5/PBLINZOkRIX1joOXUXEtyUs5DHLM8q6/RP668x/1lFhw6Dx7/U+L0+tbkpGtZ1Yt0LewCLgeQ==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/query-graph': 4.0.0
       chalk: 4.1.2
@@ -4339,6 +4367,7 @@ packages:
   /@lerna/log-packed/4.0.0:
     resolution: {integrity: sha512-+dpCiWbdzgMAtpajLToy9PO713IHoE6GV/aizXycAyA07QlqnkpaBNZ8DW84gHdM1j79TWockGJo9PybVhrrZQ==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       byte-size: 7.0.1
       columnify: 1.6.0
@@ -4349,6 +4378,7 @@ packages:
   /@lerna/npm-conf/4.0.0:
     resolution: {integrity: sha512-uS7H02yQNq3oejgjxAxqq/jhwGEE0W0ntr8vM3EfpCW1F/wZruwQw+7bleJQ9vUBjmdXST//tk8mXzr5+JXCfw==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       config-chain: 1.1.13
       pify: 5.0.0
@@ -4357,6 +4387,7 @@ packages:
   /@lerna/npm-dist-tag/4.0.0:
     resolution: {integrity: sha512-F20sg28FMYTgXqEQihgoqSfwmq+Id3zT23CnOwD+XQMPSy9IzyLf1fFVH319vXIw6NF6Pgs4JZN2Qty6/CQXGw==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/otplease': 4.0.0
       npm-package-arg: 8.1.5
@@ -4370,6 +4401,7 @@ packages:
   /@lerna/npm-install/4.0.0:
     resolution: {integrity: sha512-aKNxq2j3bCH3eXl3Fmu4D54s/YLL9WSwV8W7X2O25r98wzrO38AUN6AB9EtmAx+LV/SP15et7Yueg9vSaanRWg==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/child-process': 4.0.0
       '@lerna/get-npm-exec-opts': 4.0.0
@@ -4383,6 +4415,7 @@ packages:
   /@lerna/npm-publish/4.0.0:
     resolution: {integrity: sha512-vQb7yAPRo5G5r77DRjHITc9piR9gvEKWrmfCH7wkfBnGWEqu7n8/4bFQ7lhnkujvc8RXOsYpvbMQkNfkYibD/w==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/otplease': 4.0.0
       '@lerna/run-lifecycle': 4.0.0
@@ -4400,6 +4433,7 @@ packages:
   /@lerna/npm-run-script/4.0.0:
     resolution: {integrity: sha512-Jmyh9/IwXJjOXqKfIgtxi0bxi1pUeKe5bD3S81tkcy+kyng/GNj9WSqD5ZggoNP2NP//s4CLDAtUYLdP7CU9rA==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/child-process': 4.0.0
       '@lerna/get-npm-exec-opts': 4.0.0
@@ -4409,6 +4443,7 @@ packages:
   /@lerna/otplease/4.0.0:
     resolution: {integrity: sha512-Sgzbqdk1GH4psNiT6hk+BhjOfIr/5KhGBk86CEfHNJTk9BK4aZYyJD4lpDbDdMjIV4g03G7pYoqHzH765T4fxw==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/prompt': 4.0.0
     dev: true
@@ -4416,6 +4451,7 @@ packages:
   /@lerna/output/4.0.0:
     resolution: {integrity: sha512-Un1sHtO1AD7buDQrpnaYTi2EG6sLF+KOPEAMxeUYG5qG3khTs2Zgzq5WE3dt2N/bKh7naESt20JjIW6tBELP0w==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       npmlog: 4.1.2
     dev: true
@@ -4423,6 +4459,7 @@ packages:
   /@lerna/pack-directory/4.0.0:
     resolution: {integrity: sha512-NJrmZNmBHS+5aM+T8N6FVbaKFScVqKlQFJNY2k7nsJ/uklNKsLLl6VhTQBPwMTbf6Tf7l6bcKzpy7aePuq9UiQ==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/get-packed': 4.0.0
       '@lerna/package': 4.0.0
@@ -4436,6 +4473,7 @@ packages:
   /@lerna/package-graph/4.0.0:
     resolution: {integrity: sha512-QED2ZCTkfXMKFoTGoccwUzjHtZMSf3UKX14A4/kYyBms9xfFsesCZ6SLI5YeySEgcul8iuIWfQFZqRw+Qrjraw==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/prerelease-id-from-version': 4.0.0
       '@lerna/validation-error': 4.0.0
@@ -4447,6 +4485,7 @@ packages:
   /@lerna/package/4.0.0:
     resolution: {integrity: sha512-l0M/izok6FlyyitxiQKr+gZLVFnvxRQdNhzmQ6nRnN9dvBJWn+IxxpM+cLqGACatTnyo9LDzNTOj2Db3+s0s8Q==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       load-json-file: 6.2.0
       npm-package-arg: 8.1.5
@@ -4456,6 +4495,7 @@ packages:
   /@lerna/prerelease-id-from-version/4.0.0:
     resolution: {integrity: sha512-GQqguzETdsYRxOSmdFZ6zDBXDErIETWOqomLERRY54f4p+tk4aJjoVdd9xKwehC9TBfIFvlRbL1V9uQGHh1opg==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       semver: 7.5.4
     dev: true
@@ -4463,6 +4503,7 @@ packages:
   /@lerna/profiler/4.0.0:
     resolution: {integrity: sha512-/BaEbqnVh1LgW/+qz8wCuI+obzi5/vRE8nlhjPzdEzdmWmZXuCKyWSEzAyHOJWw1ntwMiww5dZHhFQABuoFz9Q==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       fs-extra: 9.1.0
       npmlog: 4.1.2
@@ -4472,6 +4513,7 @@ packages:
   /@lerna/project/4.0.0:
     resolution: {integrity: sha512-o0MlVbDkD5qRPkFKlBZsXZjoNTWPyuL58564nSfZJ6JYNmgAptnWPB2dQlAc7HWRZkmnC2fCkEdoU+jioPavbg==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/package': 4.0.0
       '@lerna/validation-error': 4.0.0
@@ -4490,6 +4532,7 @@ packages:
   /@lerna/prompt/4.0.0:
     resolution: {integrity: sha512-4Ig46oCH1TH5M7YyTt53fT6TuaKMgqUUaqdgxvp6HP6jtdak6+amcsqB8YGz2eQnw/sdxunx84DfI9XpoLj4bQ==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       inquirer: 7.3.3
       npmlog: 4.1.2
@@ -4498,6 +4541,7 @@ packages:
   /@lerna/publish/4.0.0:
     resolution: {integrity: sha512-K8jpqjHrChH22qtkytA5GRKIVFEtqBF6JWj1I8dWZtHs4Jywn8yB1jQ3BAMLhqmDJjWJtRck0KXhQQKzDK2UPg==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/check-working-tree': 4.0.0
       '@lerna/child-process': 4.0.0
@@ -4536,6 +4580,7 @@ packages:
   /@lerna/pulse-till-done/4.0.0:
     resolution: {integrity: sha512-Frb4F7QGckaybRhbF7aosLsJ5e9WuH7h0KUkjlzSByVycxY91UZgaEIVjS2oN9wQLrheLMHl6SiFY0/Pvo0Cxg==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       npmlog: 4.1.2
     dev: true
@@ -4543,6 +4588,7 @@ packages:
   /@lerna/query-graph/4.0.0:
     resolution: {integrity: sha512-YlP6yI3tM4WbBmL9GCmNDoeQyzcyg1e4W96y/PKMZa5GbyUvkS2+Jc2kwPD+5KcXou3wQZxSPzR3Te5OenaDdg==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/package-graph': 4.0.0
     dev: true
@@ -4550,6 +4596,7 @@ packages:
   /@lerna/resolve-symlink/4.0.0:
     resolution: {integrity: sha512-RtX8VEUzqT+uLSCohx8zgmjc6zjyRlh6i/helxtZTMmc4+6O4FS9q5LJas2uGO2wKvBlhcD6siibGt7dIC3xZA==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       fs-extra: 9.1.0
       npmlog: 4.1.2
@@ -4559,6 +4606,7 @@ packages:
   /@lerna/rimraf-dir/4.0.0:
     resolution: {integrity: sha512-QNH9ABWk9mcMJh2/muD9iYWBk1oQd40y6oH+f3wwmVGKYU5YJD//+zMiBI13jxZRtwBx0vmBZzkBkK1dR11cBg==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/child-process': 4.0.0
       npmlog: 4.1.2
@@ -4569,6 +4617,7 @@ packages:
   /@lerna/run-lifecycle/4.0.0:
     resolution: {integrity: sha512-IwxxsajjCQQEJAeAaxF8QdEixfI7eLKNm4GHhXHrgBu185JcwScFZrj9Bs+PFKxwb+gNLR4iI5rpUdY8Y0UdGQ==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/npm-conf': 4.0.0
       npm-lifecycle: 3.1.5
@@ -4578,6 +4627,7 @@ packages:
   /@lerna/run-topologically/4.0.0:
     resolution: {integrity: sha512-EVZw9hGwo+5yp+VL94+NXRYisqgAlj0jWKWtAIynDCpghRxCE5GMO3xrQLmQgqkpUl9ZxQFpICgYv5DW4DksQA==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/query-graph': 4.0.0
       p-queue: 6.6.2
@@ -4586,6 +4636,7 @@ packages:
   /@lerna/run/4.0.0:
     resolution: {integrity: sha512-9giulCOzlMPzcZS/6Eov6pxE9gNTyaXk0Man+iCIdGJNMrCnW7Dme0Z229WWP/UoxDKg71F2tMsVVGDiRd8fFQ==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/command': 4.0.0
       '@lerna/filter-options': 4.0.0
@@ -4601,6 +4652,7 @@ packages:
   /@lerna/symlink-binary/4.0.0:
     resolution: {integrity: sha512-zualodWC4q1QQc1pkz969hcFeWXOsVYZC5AWVtAPTDfLl+TwM7eG/O6oP+Rr3fFowspxo6b1TQ6sYfDV6HXNWA==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/create-symlink': 4.0.0
       '@lerna/package': 4.0.0
@@ -4611,6 +4663,7 @@ packages:
   /@lerna/symlink-dependencies/4.0.0:
     resolution: {integrity: sha512-BABo0MjeUHNAe2FNGty1eantWp8u83BHSeIMPDxNq0MuW2K3CiQRaeWT3EGPAzXpGt0+hVzBrA6+OT0GPn7Yuw==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/create-symlink': 4.0.0
       '@lerna/resolve-symlink': 4.0.0
@@ -4623,11 +4676,13 @@ packages:
   /@lerna/timer/4.0.0:
     resolution: {integrity: sha512-WFsnlaE7SdOvjuyd05oKt8Leg3ENHICnvX3uYKKdByA+S3g+TCz38JsNs7OUZVt+ba63nC2nbXDlUnuT2Xbsfg==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dev: true
 
   /@lerna/validation-error/4.0.0:
     resolution: {integrity: sha512-1rBOM5/koiVWlRi3V6dB863E1YzJS8v41UtsHgMr6gB2ncJ2LsQtMKlJpi3voqcgh41H8UsPXR58RrrpPpufyw==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       npmlog: 4.1.2
     dev: true
@@ -4635,6 +4690,7 @@ packages:
   /@lerna/version/4.0.0:
     resolution: {integrity: sha512-otUgiqs5W9zGWJZSCCMRV/2Zm2A9q9JwSDS7s/tlKq4mWCYriWo7+wsHEA/nPTMDyYyBO5oyZDj+3X50KDUzeA==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       '@lerna/check-working-tree': 4.0.0
       '@lerna/child-process': 4.0.0
@@ -4669,6 +4725,7 @@ packages:
   /@lerna/write-log-file/4.0.0:
     resolution: {integrity: sha512-XRG5BloiArpXRakcnPHmEHJp+4AtnhRtpDIHSghmXD5EichI1uD73J7FgPp30mm2pDRq3FdqB0NbwSEsJ9xFQg==}
     engines: {node: '>= 10.18.0'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     dependencies:
       npmlog: 4.1.2
       write-file-atomic: 3.0.3
