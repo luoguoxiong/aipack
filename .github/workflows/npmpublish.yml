@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: 16
           registry-url: https://registry.npmjs.org/
-      - run: npm run bootstrap
+      - run: npm install
       - run: npm run build
       - run: npm run publish
         env:
