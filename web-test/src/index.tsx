@@ -159,4 +159,4 @@ ReactDOM.render( <React.StrictMode>
   <BrowserRouter basename="/">
     <App />
   </BrowserRouter>
-                 </React.StrictMode>, document.getElementById('root'));
+</React.StrictMode>, document.getElementById('root'));
