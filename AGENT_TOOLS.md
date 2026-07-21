@@ -1,6 +1,6 @@
 # Nanobot Agent 工具说明文档
 
-本文件说明 nanobot-main-ts 项目中 Agent 可用工具的总数、分类、注册方式与执行流程。所有结论均基于源码（`src/agent/tools/`、`src/agent/runner.ts`、`src/agent/skills.ts`）。
+本文件说明 nanobot-ts 项目中 Agent 可用工具的总数、分类、注册方式与执行流程。所有结论均基于源码（`src/agent/tools/`、`src/agent/runner.ts`、`src/agent/skills.ts`）。
 
 ---
 
@@ -22,7 +22,7 @@
 
 ### 2.1 核心抽象：`BaseTool`
 
-[src/agent/tools/base.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/base.ts) 定义了所有工具的基类：
+[src/agent/tools/base.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/base.ts) 定义了所有工具的基类：
 
 ```ts
 export abstract class BaseTool {
@@ -43,16 +43,16 @@ export abstract class BaseTool {
 }
 ```
 
-`ToolContext`（[base.ts:19-27](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/base.ts#L19-L27)）携带 `session_key / channel / chat_id / sender_id / workspace / runtime` 等运行时上下文；`ToolResult` 是 `{ content: string; is_error?: boolean; metadata? }`。
+`ToolContext`（[base.ts:19-27](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/base.ts#L19-L27)）携带 `session_key / channel / chat_id / sender_id / workspace / runtime` 等运行时上下文；`ToolResult` 是 `{ content: string; is_error?: boolean; metadata? }`。
 
 ### 2.2 工具注册表：`ToolRegistry`
 
-[src/agent/tools/registry.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/registry.ts) 是工具的中央仓库：
+[src/agent/tools/registry.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/registry.ts) 是工具的中央仓库：
 
 - `register(tool)` / `registerMany(tools)`：注册工具，按 `tool.name` 去重存入 `Map`。
 - `get(name)` / `has(name)` / `list()`：查询。
 - `getToolDefinitions()`：把所有工具转成 LLM Provider 期望的 function-calling 定义数组，供模型选择调用。
-- **`executeTool(toolName, toolCallId, args, context, options)`**（[registry.ts:61-113](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/registry.ts#L61-L113)）：统一的执行入口，做四件事：
+- **`executeTool(toolName, toolCallId, args, context, options)`**（[registry.ts:61-113](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/registry.ts#L61-L113)）：统一的执行入口，做四件事：
   1. 查表拿到 `BaseTool` 实例；
   2. `tool.validateArguments(args)` 用 Zod 校验入参；
   3. `await tool.execute(validatedArgs, context)` 执行；
@@ -61,12 +61,12 @@ export abstract class BaseTool {
 
 ### 2.3 工具加载器：`ToolLoader`
 
-[src/agent/tools/loader.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/loader.ts) 提供按分组、按 scope 装载工具的能力：
+[src/agent/tools/loader.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/loader.ts) 提供按分组、按 scope 装载工具的能力：
 
 - `discover()`：枚举所有 13 个工厂函数返回的工具，按名字排序缓存。
 - `load(registry, options)`：根据 `options` 的布尔开关选择加载哪些分组，跳过 scope 不匹配的工具，遇到重名会 warn 并覆盖。
 
-`ToolLoaderOptions` 默认值（[loader.ts:86-101](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/loader.ts#L86-L101)）：
+`ToolLoaderOptions` 默认值（[loader.ts:86-101](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/loader.ts#L86-L101)）：
 
 | 分组 | 默认 | 工具数 |
 | --- | --- | --- |
@@ -77,13 +77,13 @@ export abstract class BaseTool {
 
 因此默认加载 **23 个工具**；如果显式打开 `spawn` 和 `exec_session`，则是 26 个。
 
-`createDefaultToolRegistry`（[registry.ts:124-154](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/registry.ts#L124-L154)）是更精简的版本，只装 7 个核心分组（18 个工具），通常被 `AgentLoop` 和 `SubagentManager` 当作 fallback 使用。
+`createDefaultToolRegistry`（[registry.ts:124-154](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/registry.ts#L124-L154)）是更精简的版本，只装 7 个核心分组（18 个工具），通常被 `AgentLoop` 和 `SubagentManager` 当作 fallback 使用。
 
 ---
 
 ## 三、工具执行流程
 
-工具的真正调用发生在 [src/agent/runner.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/runner.ts) 的 `AgentRunner.run()` 主循环中：
+工具的真正调用发生在 [src/agent/runner.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/runner.ts) 的 `AgentRunner.run()` 主循环中：
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -109,17 +109,17 @@ export abstract class BaseTool {
 └──────────────────────────────────────────────────────────────┘
 ```
 
-要点（参见 [runner.ts:134-330](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/runner.ts#L134-L330)）：
+要点（参见 [runner.ts:134-330](file:///Users/peroluo/Document/nanobot-ts/src/agent/runner.ts#L134-L330)）：
 
 1. **每个迭代都重新把工具定义发给模型**，模型自行决定是否调用以及调用哪个。
 2. **工具调用是顺序执行的**（`for ... await`），同一轮里多个 tool_call 不会并发。
-3. **文件编辑类工具**（`write_file` / `edit_file` / `apply_patch` / `delete_file` / `rename_file` / `create_directory` / `remove_directory`，定义见 [runner.ts:28-36](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/runner.ts#L28-L36)）会额外触发 `onFileEdit` 回调，用于 WebUI 实时刷新。
+3. **文件编辑类工具**（`write_file` / `edit_file` / `apply_patch` / `delete_file` / `rename_file` / `create_directory` / `remove_directory`，定义见 [runner.ts:28-36](file:///Users/peroluo/Document/nanobot-ts/src/agent/runner.ts#L28-L36)）会额外触发 `onFileEdit` 回调，用于 WebUI 实时刷新。
 4. 工具结果超过 `maxToolResultChars` 会被 `truncateText` 截断，并附 `[truncated from N chars]` 提示。
 5. 达到 `maxIterations - 1` 仍未结束时，会注入一条 `buildGoalContinueMessage()` 让模型续跑。
 
 ### 3.1 HTTP 侧的对外事件
 
-[src/api/server.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/api/server.ts) 把 runner 的回调转成 SSE 事件流推给前端：
+[src/api/server.ts](file:///Users/peroluo/Document/nanobot-ts/src/api/server.ts) 把 runner 的回调转成 SSE 事件流推给前端：
 
 - `tool_started` — `onToolStart` 触发
 - `tool_completed` — `onToolComplete` 触发
@@ -132,7 +132,7 @@ export abstract class BaseTool {
 ## 四、完整工具清单（33 个内置工具）
 
 ### 4.1 文件系统（filesystem） — 4 个
-源文件：[src/agent/tools/filesystem.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/filesystem.ts)
+源文件：[src/agent/tools/filesystem.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/filesystem.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
@@ -142,14 +142,14 @@ export abstract class BaseTool {
 | `edit_file` | `EditFileTool` | 精确字符串替换（要求 `old_string` 唯一） |
 
 ### 4.2 Shell 执行（shell） — 1 个
-源文件：[src/agent/tools/shell.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/shell.ts)
+源文件：[src/agent/tools/shell.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/shell.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
 | `shell_exec` | `ShellExecTool` | 通过 `child_process.exec` 执行 shell 命令，默认 120 秒超时 |
 
 ### 4.3 Web 访问（web） — 2 个
-源文件：[src/agent/tools/web.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/web.ts)
+源文件：[src/agent/tools/web.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/web.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
@@ -157,7 +157,7 @@ export abstract class BaseTool {
 | `web_fetch` | `WebFetchTool` | 抓取 URL 内容，自动剥离 HTML 标签 |
 
 ### 4.4 长期记忆（memory） — 5 个
-源文件：[src/agent/tools/memory.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/memory.ts)
+源文件：[src/agent/tools/memory.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/memory.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
@@ -168,7 +168,7 @@ export abstract class BaseTool {
 | `memory_delete` | `MemoryDeleteTool` | 删除指定 key |
 
 ### 4.5 定时任务（cron） — 3 个
-源文件：[src/agent/tools/cron.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/cron.ts)，存储后端：[cron_store.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/cron_store.ts)
+源文件：[src/agent/tools/cron.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/cron.ts)，存储后端：[cron_store.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/cron_store.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
@@ -177,14 +177,14 @@ export abstract class BaseTool {
 | `cron_remove` | `CronRemoveTool` | 按 ID 删除任务 |
 
 ### 4.6 系统工具（utilities） — 1 个
-源文件：[src/agent/tools/utilities.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/utilities.ts)
+源文件：[src/agent/tools/utilities.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/utilities.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
 | `system_info` | `SystemInfoTool` | 返回平台、CPU、内存、Node 版本等环境信息 |
 
 ### 4.7 代码搜索（search） — 2 个
-源文件：[src/agent/tools/search.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/search.ts)
+源文件：[src/agent/tools/search.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/search.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
@@ -192,28 +192,28 @@ export abstract class BaseTool {
 | `grep` | `GrepTool` | 正则搜文件内容，支持 `content / files_with_matches / count` 三种输出模式 |
 
 ### 4.8 消息发送（message） — 1 个
-源文件：[src/agent/tools/message.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/message.ts)
+源文件：[src/agent/tools/message.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/message.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
 | `message` | `MessageTool` | 主动发消息到指定 channel/chat，支持附件和按钮，用于跨通道投递 |
 
 ### 4.9 自省（self） — 1 个
-源文件：[src/agent/tools/self.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/self.ts)
+源文件：[src/agent/tools/self.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/self.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
 | `my` | `MyTool` | `check / set` 自身运行时状态（模型、context window、迭代进度、scratchpad 等），带敏感字段黑名单和写权限校验 |
 
 ### 4.10 多块补丁（apply_patch） — 1 个
-源文件：[src/agent/tools/apply_patch.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/apply_patch.ts)
+源文件：[src/agent/tools/apply_patch.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/apply_patch.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
 | `apply_patch` | `ApplyPatchTool` | 一次对多个文件做 `replace / add` 编辑，支持 `dry_run` 预演 |
 
 ### 4.11 长任务目标（long_task） — 2 个
-源文件：[src/agent/tools/long_task.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/long_task.ts)
+源文件：[src/agent/tools/long_task.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/long_task.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
@@ -221,14 +221,14 @@ export abstract class BaseTool {
 | `update_goal` | `UpdateGoalTool` | 标记目标 `complete / cancel / block / replace` |
 
 ### 4.12 子 Agent（spawn） — 1 个  ⚠️ 默认关闭
-源文件：[src/agent/tools/spawn.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/spawn.ts)
+源文件：[src/agent/tools/spawn.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/spawn.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
 | `spawn` | `SpawnTool` | 派生子 Agent 异步执行任务，受 `max_concurrent_subagents` 限制 |
 
 ### 4.13 长会话进程（exec_session） — 2 个  ⚠️ 默认关闭
-源文件：[src/agent/tools/exec_session.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/exec_session.ts)
+源文件：[src/agent/tools/exec_session.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/exec_session.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
@@ -236,14 +236,14 @@ export abstract class BaseTool {
 | `list_exec_sessions` | `ListExecSessionsTool` | 列出当前活跃的 exec session |
 
 ### 4.14 图像生成（image_generation） — 1 个  ⚠️ 不在默认 loader 里
-源文件：[src/agent/tools/image_generation.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/image_generation.ts)
+源文件：[src/agent/tools/image_generation.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/image_generation.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
 | `generate_image` | `ImageGenerationTool` | 调 OpenAI 兼容接口生成图像，支持参考图、比例、批量 |
 
 ### 4.15 任务调度器（scheduler） — 5 个  ⚠️ 不在默认 loader 里
-源文件：[src/agent/tools/scheduler.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/scheduler.ts)
+源文件：[src/agent/tools/scheduler.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/scheduler.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
@@ -254,7 +254,7 @@ export abstract class BaseTool {
 | `task_clear` | `TaskClearTool` | 清空所有任务 |
 
 ### 4.16 CLI 应用桥（cli_apps） — 1 个  ⚠️ 不在默认 loader 里
-源文件：[src/agent/tools/cli_apps.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/cli_apps.ts)
+源文件：[src/agent/tools/cli_apps.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/cli_apps.ts)
 
 | 工具名 | 类 | 作用 |
 | --- | --- | --- |
@@ -269,16 +269,16 @@ export abstract class BaseTool {
 
 ## 五、MCP 动态工具
 
-源文件：[src/agent/tools/mcp.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/mcp.ts)
+源文件：[src/agent/tools/mcp.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/mcp.ts)
 
-MCP（Model Context Protocol）让外部进程作为工具源接入。`connectMcpServers(mcpServers, registry)`（[mcp.ts:630-697](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/mcp.ts#L630-L697)）的流程：
+MCP（Model Context Protocol）让外部进程作为工具源接入。`connectMcpServers(mcpServers, registry)`（[mcp.ts:630-697](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/mcp.ts#L630-L697)）的流程：
 
-1. 对每个 MCP server 配置（`type: 'stdio' | 'sse' | 'streamableHttp'`）创建 session（目前实现仅支持 stdio，见 [mcp.ts:307-331](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/mcp.ts#L307-L331)）。
+1. 对每个 MCP server 配置（`type: 'stdio' | 'sse' | 'streamableHttp'`）创建 session（目前实现仅支持 stdio，见 [mcp.ts:307-331](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/mcp.ts#L307-L331)）。
 2. 调 `session.listTools()` 拿到远程工具定义，按 `enabled_tools` 白名单过滤。
-3. 每个远程工具包成 `MCPToolWrapper`（[mcp.ts:368-477](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/mcp.ts#L368-L477)），重命名为 `mcp_<server>_<tool>`，注册进 registry。
+3. 每个远程工具包成 `MCPToolWrapper`（[mcp.ts:368-477](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/mcp.ts#L368-L477)），重命名为 `mcp_<server>_<tool>`，注册进 registry。
 4. 若白名单是 `['*']`，还会把 resources / prompts 也包成 `MCPResourceWrapper` / `MCPPromptWrapper` 注册进来。
 
-执行时（[mcp.ts:418-461](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/mcp.ts#L418-L461)）：
+执行时（[mcp.ts:418-461](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/mcp.ts#L418-L461)）：
 
 - `MCPToolWrapper.execute` → `session.callTool(originalName, kwargs)`，带 `tool_timeout`（默认 30 秒）。
 - 命中瞬态错误（`ClosedResourceError / ECONNRESET / ...`）会自动重连一次 + 重试一次。
@@ -294,7 +294,7 @@ MCP（Model Context Protocol）让外部进程作为工具源接入。`connectMc
 
 ### 6.1 加载机制
 
-[src/agent/skills.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/skills.ts) 的 `SkillLoader`：
+[src/agent/skills.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/skills.ts) 的 `SkillLoader`：
 
 1. `addSkillDir(dir)` 注册技能目录。
 2. `load()` 遍历每个目录下的子目录，读取 `SKILL.md`。
@@ -305,7 +305,7 @@ MCP（Model Context Protocol）让外部进程作为工具源接入。`connectMc
 
 ### 6.2 内置技能清单（11 个）
 
-位于 [skills/](file:///Users/peroluo/work/ai/nanobot-main-ts/skills)，每个子目录一份 `SKILL.md`：
+位于 [skills/](file:///Users/peroluo/Document/nanobot-ts/skills)，每个子目录一份 `SKILL.md`：
 
 | 技能 | 作用 |
 | --- | --- |
@@ -368,8 +368,8 @@ AgentRunner.run(spec)            src/agent/runner.ts
 ### 8.1 新增内置工具
 
 1. 在 `src/agent/tools/` 下新建 `my_tool.ts`，导出 `class MyTool extends BaseTool` 和 `getMyTools()`。
-2. 在 [src/agent/tools/index.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/index.ts) 追加 `export`。
-3. 在 [src/agent/tools/loader.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/loader.ts) 的 `toolFactories` 和 `toolGroups` 里加入新工厂，并在 `ToolLoaderOptions` 增加开关。
+2. 在 [src/agent/tools/index.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/index.ts) 追加 `export`。
+3. 在 [src/agent/tools/loader.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/loader.ts) 的 `toolFactories` 和 `toolGroups` 里加入新工厂，并在 `ToolLoaderOptions` 增加开关。
 4. 若希望默认开启，把 `opts.xxx` 默认值设为 `true`。
 
 ### 8.2 接入 MCP 工具
@@ -386,14 +386,14 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 ## 九、参考索引
 
-- 工具基类与接口：[src/agent/tools/base.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/base.ts)
-- 注册与执行：[src/agent/tools/registry.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/registry.ts)
-- 分组加载：[src/agent/tools/loader.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/loader.ts)
-- Agent 主循环（工具调度）：[src/agent/runner.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/runner.ts)
-- MCP 集成：[src/agent/tools/mcp.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/mcp.ts)
-- 技能加载：[src/agent/skills.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/skills.ts)
-- 技能目录：[skills/](file:///Users/peroluo/work/ai/nanobot-main-ts/skills)
-- HTTP 事件流：[src/api/server.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/api/server.ts)
+- 工具基类与接口：[src/agent/tools/base.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/base.ts)
+- 注册与执行：[src/agent/tools/registry.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/registry.ts)
+- 分组加载：[src/agent/tools/loader.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/loader.ts)
+- Agent 主循环（工具调度）：[src/agent/runner.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/runner.ts)
+- MCP 集成：[src/agent/tools/mcp.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/mcp.ts)
+- 技能加载：[src/agent/skills.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/skills.ts)
+- 技能目录：[skills/](file:///Users/peroluo/Document/nanobot-ts/skills)
+- HTTP 事件流：[src/api/server.ts](file:///Users/peroluo/Document/nanobot-ts/src/api/server.ts)
 
 ---
 
@@ -405,7 +405,7 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 #### 10.1 缓存 `getToolDefinitions()`，避免每轮迭代重复序列化
 
-**问题**：[runner.ts:142](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/runner.ts#L142) 在 `for` 循环内每次都调用 `tools.getToolDefinitions()`，而 [registry.ts:48-59](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/registry.ts#L48-L59) 每次都重新遍历 `Map`、调用 `tool.getDefinition()` 和 `toProviderTool()`，并 new 一组 `ProviderToolDefinition` 对象。Zod → JSON Schema 的转换（[base.ts:71-136](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/base.ts#L71-L136)）每个工具每次都重做一遍。
+**问题**：[runner.ts:142](file:///Users/peroluo/Document/nanobot-ts/src/agent/runner.ts#L142) 在 `for` 循环内每次都调用 `tools.getToolDefinitions()`，而 [registry.ts:48-59](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/registry.ts#L48-L59) 每次都重新遍历 `Map`、调用 `tool.getDefinition()` 和 `toProviderTool()`，并 new 一组 `ProviderToolDefinition` 对象。Zod → JSON Schema 的转换（[base.ts:71-136](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/base.ts#L71-L136)）每个工具每次都重做一遍。
 
 **方案**：
 - 在 `ToolRegistry` 内部加 `private _defsCache: ProviderToolDefinition[] | null = null`。
@@ -423,10 +423,10 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 | 工具 | description 行数 | 字符数 | 位置 |
 | --- | --- | --- | --- |
-| `my` | ~22 行 | ~1.4 KB | [self.ts:89-109](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/self.ts#L89-L109) |
-| `message` | ~12 行 | ~1.0 KB | [message.ts:49-59](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/message.ts#L49-L59) |
-| `grep` | ~6 行 | ~0.5 KB | [search.ts:376-382](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/search.ts#L376-L382) |
-| `find_files` | ~6 行 | ~0.4 KB | [search.ts:294-300](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/search.ts#L294-L300) |
+| `my` | ~22 行 | ~1.4 KB | [self.ts:89-109](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/self.ts#L89-L109) |
+| `message` | ~12 行 | ~1.0 KB | [message.ts:49-59](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/message.ts#L49-L59) |
+| `grep` | ~6 行 | ~0.5 KB | [search.ts:376-382](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/search.ts#L376-L382) |
+| `find_files` | ~6 行 | ~0.4 KB | [search.ts:294-300](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/search.ts#L294-L300) |
 
 23 个工具的 description 累计约 6–8 KB（≈ 1.5K–2K token），每个 iteration 都重发。
 
@@ -445,15 +445,15 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 | 位置 | 阈值 | 备注 |
 | --- | --- | --- |
-| [registry.ts:91](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/registry.ts#L91) | `maxResultChars = 16000` | 默认值，约 4K token / 单工具 |
-| [search.ts:8](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/search.ts#L8) | `_MAX_RESULT_CHARS = 128_000` | grep 内部硬上限，约 32K token |
-| [search.ts:9](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/search.ts#L9) | `_MAX_FILE_BYTES = 2_000_000` | 单文件 2 MB |
-| [exec_session.ts:13](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/exec_session.ts#L13) | `MAX_OUTPUT_CHARS = 50000` | 单次 poll 50K 字符 |
+| [registry.ts:91](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/registry.ts#L91) | `maxResultChars = 16000` | 默认值，约 4K token / 单工具 |
+| [search.ts:8](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/search.ts#L8) | `_MAX_RESULT_CHARS = 128_000` | grep 内部硬上限，约 32K token |
+| [search.ts:9](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/search.ts#L9) | `_MAX_FILE_BYTES = 2_000_000` | 单文件 2 MB |
+| [exec_session.ts:13](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/exec_session.ts#L13) | `MAX_OUTPUT_CHARS = 50000` | 单次 poll 50K 字符 |
 
 `grep` 的 `_MAX_RESULT_CHARS = 128_000` 远超 registry 的 16K 上限，结果会先在 grep 内部拼到 128K 再被 registry 截到 16K，中间的拼接纯粹浪费 CPU 和内存。
 
 **方案**：
-- 在 [registry.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/registry.ts) 引入按工具类型的分级阈值：
+- 在 [registry.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/registry.ts) 引入按工具类型的分级阈值：
   - 只读搜索类（`find_files / grep / list_dir`）：4K 字符
   - 读取类（`read_file / web_fetch`）：8K 字符
   - 执行类（`shell_exec / run_cli_app`）：6K 字符
@@ -467,7 +467,7 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 #### 10.4 `read_file` 加大小与二进制检查
 
-**问题**：[filesystem.ts:36-54](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/filesystem.ts#L36-L54) 直接 `fs.readFile(filePath, 'utf-8')`，没有大小上限，没有二进制检测。对比 `grep` 工具有 `_MAX_FILE_BYTES` 和 `_isBinary` 保护（[search.ts:156-166](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/search.ts#L156-L166)）。
+**问题**：[filesystem.ts:36-54](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/filesystem.ts#L36-L54) 直接 `fs.readFile(filePath, 'utf-8')`，没有大小上限，没有二进制检测。对比 `grep` 工具有 `_MAX_FILE_BYTES` 和 `_isBinary` 保护（[search.ts:156-166](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/search.ts#L156-L166)）。
 
 读到一个 5 MB 的日志或二进制文件会：1) OOM 风险；2) 把几 MB 垃圾塞进 messages 数组；3) 后续每轮迭代都带着这几 MB 上下文 → token 成本爆炸。
 
@@ -482,7 +482,7 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 #### 10.5 `edit_file` 支持 `replace_all` 与 `occurrence_index`
 
-**问题**：[filesystem.ts:149-152](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/filesystem.ts#L149-L152) 在 `old_string` 出现 ≥2 次时直接报错。模型常见反应是再加更多上下文重试 → 多轮 token 消耗，且不一定成功。
+**问题**：[filesystem.ts:149-152](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/filesystem.ts#L149-L152) 在 `old_string` 出现 ≥2 次时直接报错。模型常见反应是再加更多上下文重试 → 多轮 token 消耗，且不一定成功。
 
 **方案**：
 - 入参增加 `replace_all?: boolean` 和 `occurrence_index?: number`。
@@ -497,7 +497,7 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 #### 10.6 只读工具并发执行
 
-**问题**：[runner.ts:233](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/runner.ts#L233) 对 `response.tool_calls` 是 `for ... await` 串行执行。同一轮里多个独立的 `read_file` 或 `find_files` 本可并发，串行会让 agent 循环延迟叠加。
+**问题**：[runner.ts:233](file:///Users/peroluo/Document/nanobot-ts/src/agent/runner.ts#L233) 对 `response.tool_calls` 是 `for ... await` 串行执行。同一轮里多个独立的 `read_file` 或 `find_files` 本可并发，串行会让 agent 循环延迟叠加。
 
 **方案**：
 - 给 `BaseTool` 加 `readonly sideEffect: boolean` 字段（默认 `true`，只读工具显式标 `false`）。
@@ -515,7 +515,7 @@ AgentRunner.run(spec)            src/agent/runner.ts
 **方案**：
 - 引入 `ToolResultCache`，key = `${toolName}:${stableHash(args)}:${fileMtime}`。
 - 对只读工具（同 10.6 的候选集）启用缓存，LRU 容量 64 条，TTL 60s。
-- 复用已有的 [file_state.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/file_state.ts) `FileStates` 追踪文件变更，写入工具（`write_file / edit_file / apply_patch`）执行后失效对应路径的缓存。
+- 复用已有的 [file_state.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/file_state.ts) `FileStates` 追踪文件变更，写入工具（`write_file / edit_file / apply_patch`）执行后失效对应路径的缓存。
 - 缓存命中时返回 `content` + `metadata: { cached: true }`。
 
 **预期收益**：典型「读 → 改 → 再读确认」流程节省一次重复读取的 token；长 session 内重复 `find_files` 收益更大。
@@ -525,9 +525,9 @@ AgentRunner.run(spec)            src/agent/runner.ts
 #### 10.8 `shell_exec` 默认超时下调 + 输出 tail 截断
 
 **问题**：
-- [shell.ts:20](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/shell.ts#L20) `defaultTimeout = 120` 秒，长命令会阻塞整个 agent 循环 2 分钟，期间无法响应用户。
-- [shell.ts:36-37](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/shell.ts#L36-L37) 把 `stdout + stderr` 全量返回，长输出（如 `npm install` 日志）容易超 token。
-- 失败时 [shell.ts:39-44](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/shell.ts#L39-L44) 把 stdout/stderr/timeout 全拼一起，输出更长。
+- [shell.ts:20](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/shell.ts#L20) `defaultTimeout = 120` 秒，长命令会阻塞整个 agent 循环 2 分钟，期间无法响应用户。
+- [shell.ts:36-37](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/shell.ts#L36-L37) 把 `stdout + stderr` 全量返回，长输出（如 `npm install` 日志）容易超 token。
+- 失败时 [shell.ts:39-44](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/shell.ts#L39-L44) 把 stdout/stderr/timeout 全拼一起，输出更长。
 
 **方案**：
 - 默认超时下调到 30 秒，配置项保留可覆盖。
@@ -541,13 +541,13 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 #### 10.9 `web_search` 接入高质量搜索后端
 
-**问题**：[web.ts:28-36](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/web.ts#L28-L36) 用 DuckDuckGo Instant Answer API，该接口众所周知返回稀少（多数 query 返回空 `AbstractText` 和空 `RelatedTopics`）。无结果时模型倾向于换关键词重试 → 多轮 token 浪费。
+**问题**：[web.ts:28-36](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/web.ts#L28-L36) 用 DuckDuckGo Instant Answer API，该接口众所周知返回稀少（多数 query 返回空 `AbstractText` 和空 `RelatedTopics`）。无结果时模型倾向于换关键词重试 → 多轮 token 浪费。
 
 **方案**：
 - 抽象 `SearchProvider` 接口，支持 `ddg / serper / tavily / brave` 多后端。
 - 默认仍 ddg（零配置），但配置文件里可选切换。
 - 无结果时返回明确信号 `No results. Consider rephrasing or switch provider via my(set web_config.search_provider).`，避免模型盲目重试。
-- 配合 [self.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/self.ts) 暴露 `web_config.search_provider` 切换（目前 `web_config` 是 read-only，见 [self.ts:30-37](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/self.ts#L30-L37)，需要开放写入）。
+- 配合 [self.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/self.ts) 暴露 `web_config.search_provider` 切换（目前 `web_config` 是 read-only，见 [self.ts:30-37](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/self.ts#L30-L37)，需要开放写入）。
 
 **预期收益**：搜索类任务的平均轮次从 3+ 降到 1–2 轮；每轮节省 ~1.5K token。
 
@@ -555,7 +555,7 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 #### 10.10 `web_fetch` 用 Markdown 提取替代朴素正则
 
-**问题**：[web.ts:110-124](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/web.ts#L110-L124) 用一连串正则剥 HTML：`replace(/<script.*?<\/script>/gi, '')` → `replace(/<[^>]*>/g, ' ')` → 实体解码。对真实页面（嵌套表格、`<pre>`、导航栏）效果差，返回大量导航/广告噪声，信噪比低 → token 浪费在无用内容上。
+**问题**：[web.ts:110-124](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/web.ts#L110-L124) 用一连串正则剥 HTML：`replace(/<script.*?<\/script>/gi, '')` → `replace(/<[^>]*>/g, ' ')` → 实体解码。对真实页面（嵌套表格、`<pre>`、导航栏）效果差，返回大量导航/广告噪声，信噪比低 → token 浪费在无用内容上。
 
 **方案**：
 - 引入 `cheerio` 或 `@mozilla/readability` + `turndown`。
@@ -568,7 +568,7 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 #### 10.11 统一 `AgentLoop` 默认 registry 与 `ToolLoader` 默认配置
 
-**问题**：[loop.ts:58](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/loop.ts#L58) 用 `createDefaultToolRegistry()` 作 fallback，只装 7 个分组（18 个工具）；而 [loader.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/loader.ts) 的 `ToolLoader` 默认装 23 个。这意味着默认 `AgentLoop` 实例里 **没有** `message / my / apply_patch / create_goal / update_goal` 等工具，但 [subagent.ts:117](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/subagent.ts#L117) 子 Agent 也用同一个 fallback。
+**问题**：[loop.ts:58](file:///Users/peroluo/Document/nanobot-ts/src/agent/loop.ts#L58) 用 `createDefaultToolRegistry()` 作 fallback，只装 7 个分组（18 个工具）；而 [loader.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/loader.ts) 的 `ToolLoader` 默认装 23 个。这意味着默认 `AgentLoop` 实例里 **没有** `message / my / apply_patch / create_goal / update_goal` 等工具，但 [subagent.ts:117](file:///Users/peroluo/Document/nanobot-ts/src/agent/subagent.ts#L117) 子 Agent 也用同一个 fallback。
 
 用户/技能文档里期望 `my` 工具可用（如 `skills/my/SKILL.md`），实际默认场景下不可用 → 模型尝试调用报 `Unknown tool` → retry → token 浪费 + 体验损坏。
 
@@ -599,12 +599,12 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 #### 10.13 Zod → JSON Schema 改用成熟库
 
-**问题**：[base.ts:71-136](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/base.ts#L71-L136) 手写的 `zodToJsonSchema` 不支持 `ZodDefault / ZodUnion / ZodIntersection / ZodRecord / ZodTuple` 等，遇到这些类型回退成 `type: 'string'`，模型拿到的 schema 不准 → 参数错误 → retry。
+**问题**：[base.ts:71-136](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/base.ts#L71-L136) 手写的 `zodToJsonSchema` 不支持 `ZodDefault / ZodUnion / ZodIntersection / ZodRecord / ZodTuple` 等，遇到这些类型回退成 `type: 'string'`，模型拿到的 schema 不准 → 参数错误 → retry。
 
 **方案**：
 - 替换为 `zod-to-json-schema` 库（成熟、维护活跃）。
 - 或在 `BaseTool` 构造时一次性转好并缓存（配合 10.1）。
-- MCP 工具的 [_normalizeSchemaForOpenAI](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/mcp.ts#L86-L134) 也可统一复用。
+- MCP 工具的 [_normalizeSchemaForOpenAI](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/mcp.ts#L86-L134) 也可统一复用。
 
 **预期收益**：减少因 schema 误导导致的参数错误 retry；schema 更紧凑（可选字段不再被误标 required），节省少量 token。
 
@@ -612,7 +612,7 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 #### 10.14 `find_files / grep` 接入 ripgrep 与 `.gitignore`
 
-**问题**：[search.ts:230-289](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/search.ts#L230-L289) 手写递归遍历，硬编码 `_IGNORE_DIRS`（[search.ts:34-38](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/search.ts#L34-L38)）。不读 `.gitignore`，会把 `dist/ build/` 之外的忽略目录（如 `.next/ coverage/ *.min.js`）也扫进来，结果集膨胀 → token 浪费。
+**问题**：[search.ts:230-289](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/search.ts#L230-L289) 手写递归遍历，硬编码 `_IGNORE_DIRS`（[search.ts:34-38](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/search.ts#L34-L38)）。不读 `.gitignore`，会把 `dist/ build/` 之外的忽略目录（如 `.next/ coverage/ *.min.js`）也扫进来，结果集膨胀 → token 浪费。
 
 **方案**：
 - 优先调用 `rg --files` 和 `rg <pattern>` 子进程（项目已要求环境装 ripgrep）。
@@ -625,7 +625,7 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 #### 10.15 MCP 工具加 Zod 校验
 
-**问题**：[mcp.ts:414-416](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/mcp.ts#L414-L416) `validateArguments` 直接 `return args`，模型传错参数会到 MCP 子进程才报错，浪费一次完整往返（含子进程 RPC + 重试逻辑）。
+**问题**：[mcp.ts:414-416](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/mcp.ts#L414-L416) `validateArguments` 直接 `return args`，模型传错参数会到 MCP 子进程才报错，浪费一次完整往返（含子进程 RPC + 重试逻辑）。
 
 **方案**：
 - 启动时把 MCP `inputSchema`（已是 JSON Schema）转成 Zod（用 `json-schema-to-zod` 或手写转换器）。
@@ -637,7 +637,7 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 #### 10.16 工具结果结构化压缩
 
-**问题**：所有工具结果都压成 `string`（[base.ts:29-33](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/base.ts#L29-L33)），即使是结构化数据（如 `find_files` 的路径列表、`system_info` 的环境信息）也用 `\n` 拼字符串。模型要重新解析，且重复的 prefix（每行 `file `、`dir `）占用 token。
+**问题**：所有工具结果都压成 `string`（[base.ts:29-33](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/base.ts#L29-L33)），即使是结构化数据（如 `find_files` 的路径列表、`system_info` 的环境信息）也用 `\n` 拼字符串。模型要重新解析，且重复的 prefix（每行 `file `、`dir `）占用 token。
 
 **方案**：
 - `ToolResult` 增加 `structured?: unknown` 字段，存原始结构化数据。
@@ -680,7 +680,7 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 #### 为什么按需加载是最高 ROI
 
-每轮迭代 [runner.ts:142](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/runner.ts#L142) 把 registry 里**全部**工具定义发给模型。23 个工具 ≈ 6–8 KB ≈ 1.5K–2K token，20 轮 session 就是 30–40K token 纯工具定义开销。
+每轮迭代 [runner.ts:142](file:///Users/peroluo/Document/nanobot-ts/src/agent/runner.ts#L142) 把 registry 里**全部**工具定义发给模型。23 个工具 ≈ 6–8 KB ≈ 1.5K–2K token，20 轮 session 就是 30–40K token 纯工具定义开销。
 
 更糟的是工具越多，模型误调用概率越高（在「读个文件」场景看到 `cron_add` 也会考虑要不要用）→ retry → 进一步放大 token。
 
@@ -690,10 +690,10 @@ AgentRunner.run(spec)            src/agent/runner.ts
 
 源码已经为按需加载预留了字段，无需大改：
 
-1. **`BaseTool.tags`** — [base.ts:47](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/base.ts#L47)，每个工具都已打标（如 `['filesystem', 'read']`、`['cron']`、`['memory']`）。
-2. **`BaseTool.scope`** — [base.ts:48](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/base.ts#L48)，已有按 scope 过滤的逻辑（[loader.ts:122-125](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/loader.ts#L122-L125)），但只在启动时静态生效。
-3. **`ToolLoaderOptions`** — [loader.ts:23-38](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/loader.ts#L23-L38)，已有分组布尔开关，但同样是启动时一次性决定。
-4. **`ToolRegistry.getToolDefinitions()`** — [registry.ts:48-59](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/registry.ts#L48-L59)，目前返回**全部**工具定义，是改造成「按 query 返回子集」的天然切入点。
+1. **`BaseTool.tags`** — [base.ts:47](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/base.ts#L47)，每个工具都已打标（如 `['filesystem', 'read']`、`['cron']`、`['memory']`）。
+2. **`BaseTool.scope`** — [base.ts:48](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/base.ts#L48)，已有按 scope 过滤的逻辑（[loader.ts:122-125](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/loader.ts#L122-L125)），但只在启动时静态生效。
+3. **`ToolLoaderOptions`** — [loader.ts:23-38](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/loader.ts#L23-L38)，已有分组布尔开关，但同样是启动时一次性决定。
+4. **`ToolRegistry.getToolDefinitions()`** — [registry.ts:48-59](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/registry.ts#L48-L59)，目前返回**全部**工具定义，是改造成「按 query 返回子集」的天然切入点。
 
 #### 四级实现策略（按工作量递增，可叠加）
 

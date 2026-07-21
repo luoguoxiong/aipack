@@ -1,6 +1,6 @@
 {
-  "name": "nanobot-ai",
-  "version": "0.2.2",
+  "name": "nanobot-ai-ts",
+  "version": "0.0.1",
   "description": "A lightweight personal AI assistant framework (TypeScript port)",
   "type": "module",
   "main": "dist/index.js",

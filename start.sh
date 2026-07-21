@@ -52,7 +52,10 @@ start_chat() {
 }
 
 start_run() {
-  shift 2
+  shift 1
+  if [ -n "$1" ] && [[ "$1" =~ ^[0-9]+$ ]]; then
+    shift 1
+  fi
   if [ -z "$*" ]; then
     error "Please provide a message for the run command"
   fi

@@ -3,7 +3,7 @@
 > 生成时间：2026-07-19
 > 分析范围：`src/` 全量代码、`.nanobot/config.json`、运行时行为
 > 评估维度：**稳定性（Stability）· 响应效率（Performance）· 成本（Token 消耗）**
-> 配套文档：[ARCHITECTURE.md](file:///Users/peroluo/work/ai/nanobot-main-ts/ARCHITECTURE.md)（架构说明）、[TOKEN_OPTIMIZATION.md](file:///Users/peroluo/work/ai/nanobot-main-ts/TOKEN_OPTIMIZATION.md)（成本专项）
+> 配套文档：[ARCHITECTURE.md](file:///Users/peroluo/Document/nanobot-ts/ARCHITECTURE.md)（架构说明）、[TOKEN_OPTIMIZATION.md](file:///Users/peroluo/Document/nanobot-ts/TOKEN_OPTIMIZATION.md)（成本专项）
 
 ---
 
@@ -23,7 +23,7 @@ Nanobot 采用「单主 Agent + 按需子 Agent」的经典 ReAct 架构，结�
 
 ## 二、架构现状速览
 
-> 完整说明见 [ARCHITECTURE.md](file:///Users/peroluo/work/ai/nanobot-main-ts/ARCHITECTURE.md)，此处仅列与优化相关的关键链路。
+> 完整说明见 [ARCHITECTURE.md](file:///Users/peroluo/Document/nanobot-ts/ARCHITECTURE.md)，此处仅列与优化相关的关键链路。
 
 ```
 入口（WS/HTTP/CLI/渠道）─► Nanobot.stream ─► AgentLoop.processDirect
@@ -42,18 +42,18 @@ Nanobot 采用「单主 Agent + 按需子 Agent」的经典 ReAct 架构，结�
 
 | 组件 | 文件 |
 |------|------|
-| 顶层封装 | [src/nanobot.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/nanobot.ts) |
-| 主循环 | [src/agent/loop.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/loop.ts) |
-| ReAct 内核 | [src/agent/runner.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/runner.ts) |
-| 上下文构建 | [src/agent/context.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/context.ts) |
-| 会话管理 | [src/session/manager.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/session/manager.ts) |
-| 消息总线 | [src/bus/queue.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/bus/queue.ts) |
-| 子 Agent | [src/agent/subagent.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/subagent.ts) |
-| 默认 Provider | [src/providers/openai_compat_provider.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/providers/openai_compat_provider.ts) |
-| 兜底 Provider | [src/providers/fallback_provider.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/providers/fallback_provider.ts) |
-| WebSocket 入口 | [src/api/server.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/api/server.ts) |
-| 上下文治理（死代码） | [src/agent/context_governance.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/context_governance.ts) |
-| 自动压缩（死代码） | [src/agent/autocompact.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/autocompact.ts) |
+| 顶层封装 | [src/nanobot.ts](file:///Users/peroluo/Document/nanobot-ts/src/nanobot.ts) |
+| 主循环 | [src/agent/loop.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/loop.ts) |
+| ReAct 内核 | [src/agent/runner.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/runner.ts) |
+| 上下文构建 | [src/agent/context.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/context.ts) |
+| 会话管理 | [src/session/manager.ts](file:///Users/peroluo/Document/nanobot-ts/src/session/manager.ts) |
+| 消息总线 | [src/bus/queue.ts](file:///Users/peroluo/Document/nanobot-ts/src/bus/queue.ts) |
+| 子 Agent | [src/agent/subagent.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/subagent.ts) |
+| 默认 Provider | [src/providers/openai_compat_provider.ts](file:///Users/peroluo/Document/nanobot-ts/src/providers/openai_compat_provider.ts) |
+| 兜底 Provider | [src/providers/fallback_provider.ts](file:///Users/peroluo/Document/nanobot-ts/src/providers/fallback_provider.ts) |
+| WebSocket 入口 | [src/api/server.ts](file:///Users/peroluo/Document/nanobot-ts/src/api/server.ts) |
+| 上下文治理（死代码） | [src/agent/context_governance.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/context_governance.ts) |
+| 自动压缩（死代码） | [src/agent/autocompact.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/autocompact.ts) |
 
 ---
 
@@ -62,24 +62,24 @@ Nanobot 采用「单主 Agent + 按需子 Agent」的经典 ReAct 架构，结�
 ### 3.1 稳定性（Stability）
 
 #### 🔴 S1 · 同会话并发消息无串行化，存在竞态条件
-- **位置**：[server.ts:841](file:///Users/peroluo/work/ai/nanobot-main-ts/src/api/server.ts#L841)、[queue.ts:71-81](file:///Users/peroluo/work/ai/nanobot-main-ts/src/bus/queue.ts#L71)、[loop.ts:133-194](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/loop.ts#L133)
+- **位置**：[server.ts:841](file:///Users/peroluo/Document/nanobot-ts/src/api/server.ts#L841)、[queue.ts:71-81](file:///Users/peroluo/Document/nanobot-ts/src/bus/queue.ts#L71)、[loop.ts:133-194](file:///Users/peroluo/Document/nanobot-ts/src/agent/loop.ts#L133)
 - **现象**：WebSocket `ws.on('message', async ...)` 每条消息独立 spawn 一个 async 处理器；`MessageBus.publish` 并发触发 handler，**无 per-session 队列/锁**。
 - **后果**：用户连发两条消息 → 两个 `processDirect` 并发跑在同一 `sessionKey` 上：
   1. 二者读到相同历史；
   2. 各自跑完 ReAct 后都调 `addMessages` 追加；
   3. 第二条的 LLM 上下文缺失第一条的回复，对话逻辑断裂；
-  4. 两次 `fs.writeFile` 竞争同一会话文件（[manager.ts:103](file:///Users/peroluo/work/ai/nanobot-main-ts/src/session/manager.ts#L103)），后写覆盖先写，丢失消息。
+  4. 两次 `fs.writeFile` 竞争同一会话文件（[manager.ts:103](file:///Users/peroluo/Document/nanobot-ts/src/session/manager.ts#L103)），后写覆盖先写，丢失消息。
 - **严重度**：🔴 致命——用户体感为「AI 答非所问 / 历史消失」。
 
 #### 🔴 S2 · 会话持久化非原子，崩溃即损坏
-- **位置**：[manager.ts:103](file:///Users/peroluo/work/ai/nanobot-main-ts/src/session/manager.ts#L103)
+- **位置**：[manager.ts:103](file:///Users/peroluo/Document/nanobot-ts/src/session/manager.ts#L103)
 - **现象**：`fs.writeFile(filePath, JSON.stringify(session))` 直接覆盖目标文件，无 `tmp + rename` 模式。
-- **后果**：进程在写入中途崩溃/断电 → 文件被截断为半段 JSON → 下次 `loadFromDisk` 解析失败（[manager.ts:166](file:///Users/peroluo/work/ai/nanobot-main-ts/src/session/manager.ts#L166)）→ **整个会话历史永久丢失**。
+- **后果**：进程在写入中途崩溃/断电 → 文件被截断为半段 JSON → 下次 `loadFromDisk` 解析失败（[manager.ts:166](file:///Users/peroluo/Document/nanobot-ts/src/session/manager.ts#L166)）→ **整个会话历史永久丢失**。
 - **严重度**：🔴 高——长会话丢失对用户是灾难性的。
 
 #### 🔴 S3 · 无优雅关闭，SIGINT 不等待在途任务
-- **位置**：[cli/commands.ts:95-100](file:///Users/peroluo/work/ai/nanobot-main-ts/src/cli/commands.ts#L95)、[nanobot.ts:311-313](file:///Users/peroluo/work/ai/nanobot-main-ts/src/nanobot.ts#L311)
-- **现象**：SIGINT handler 仅调 `cliChannel.stop()` + `loop.stop()` 后立即 `process.exit(0)`。`loop.stop()` 只是置 `running=false`（[loop.ts:225](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/loop.ts#L225)），**不 await 在途的 `processDirect`**。
+- **位置**：[cli/commands.ts:95-100](file:///Users/peroluo/Document/nanobot-ts/src/cli/commands.ts#L95)、[nanobot.ts:311-313](file:///Users/peroluo/Document/nanobot-ts/src/nanobot.ts#L311)
+- **现象**：SIGINT handler 仅调 `cliChannel.stop()` + `loop.stop()` 后立即 `process.exit(0)`。`loop.stop()` 只是置 `running=false`（[loop.ts:225](file:///Users/peroluo/Document/nanobot-ts/src/agent/loop.ts#L225)），**不 await 在途的 `processDirect`**。
 - **后果**：
   - 正在执行的 ReAct 循环被强行中断，未写回的 assistant 回复丢失；
   - 子 Agent 后台 Promise 被遗弃，可能留下僵尸进程（exec_session）；
@@ -88,12 +88,12 @@ Nanobot 采用「单主 Agent + 按需子 Agent」的经典 ReAct 架构，结�
 
 #### 🟠 S4 · 无全局未捕获异常 / unhandledRejection 处理
 - **位置**：全项目 `process.on('uncaughtException'|'unhandledRejection')` **0 处注册**（grep 确认）
-- **现象**：`MessageBus.publish` 用 `Promise.resolve().then(handler).catch(logger.error)`（[queue.ts:75-78](file:///Users/peroluo/work/ai/nanobot-main-ts/src/bus/queue.ts#L75)）兜住了总线层；但 `AgentRunner.run`、`SubagentManager._runSubagent`、`server.ts` WS handler 中的异常若未被 try/catch 完全覆盖，会成为 unhandledRejection。
+- **现象**：`MessageBus.publish` 用 `Promise.resolve().then(handler).catch(logger.error)`（[queue.ts:75-78](file:///Users/peroluo/Document/nanobot-ts/src/bus/queue.ts#L75)）兜住了总线层；但 `AgentRunner.run`、`SubagentManager._runSubagent`、`server.ts` WS handler 中的异常若未被 try/catch 完全覆盖，会成为 unhandledRejection。
 - **后果**：Node 默认行为是输出警告；未来 Node 版本会直接 crash。一个工具异常可能拖垮整个进程。
 - **严重度**：🟠 高。
 
 #### 🔴 S5 · 429 / rate limit 被误判为长度错误，加剧限流
-- **位置**：[runner.ts:369-376](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/runner.ts#L369)
+- **位置**：[runner.ts:369-376](file:///Users/peroluo/Document/nanobot-ts/src/agent/runner.ts#L369)
 - **现象**：
   ```ts
   return msg.includes('context length') ||
@@ -101,46 +101,46 @@ Nanobot 采用「单主 Agent + 按需子 Agent」的经典 ReAct 架构，结�
          msg.includes('429') ||        // ❌ 限流不是长度问题
          msg.includes('rate limit');
   ```
-  触发后会 push `'The conversation is too long. Please summarize...'`（[runner.ts:172](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/runner.ts#L172)）并 `continue`。
+  触发后会 push `'The conversation is too long. Please summarize...'`（[runner.ts:172](file:///Users/peroluo/Document/nanobot-ts/src/agent/runner.ts#L172)）并 `continue`。
 - **后果**：限流时非但不退避，反而**立即重发一个更长的请求**（多了 user 消息），形成正反馈，可能触发更严的限流甚至封禁。
 - **严重度**：🔴 高——故障放大器。
 
 #### 🟠 S6 · 默认 Provider 无重试/退避，仅 FallbackProvider 有
-- **位置**：[openai_compat_provider.ts:46-65](file:///Users/peroluo/work/ai/nanobot-main-ts/src/providers/openai_compat_provider.ts#L46)（直接 throw）、[fallback_provider.ts:56-107](file:///Users/peroluo/work/ai/nanobot-main-ts/src/providers/fallback_provider.ts#L56)（有指数退避）
+- **位置**：[openai_compat_provider.ts:46-65](file:///Users/peroluo/Document/nanobot-ts/src/providers/openai_compat_provider.ts#L46)（直接 throw）、[fallback_provider.ts:56-107](file:///Users/peroluo/Document/nanobot-ts/src/providers/fallback_provider.ts#L56)（有指数退避）
 - **现象**：`OpenAICompatProvider.complete` 捕获错误后立刻 rethrow，无任何重试。重试逻辑只存在于 `FallbackProvider`，但需用户主动配置多 provider。
 - **后果**：单 provider 配置下，任何瞬时网络抖动/5xx 都直接失败，整个 turn 报错退出。
 - **严重度**：🟠 高。
 
 #### 🟠 S7 · Subagent 取消是空操作
-- **位置**：[subagent.ts:321-333](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/subagent.ts#L321)
+- **位置**：[subagent.ts:321-333](file:///Users/peroluo/Document/nanobot-ts/src/agent/subagent.ts#L321)
 - **现象**：`cancelBySession` 只遍历计数，**不实际取消** Promise。子 Agent 的 `AgentRunner.run` 无 `AbortController` 传入。
 - **后果**：会话结束/用户中断后，后台子 Agent 仍在烧 token、跑工具，直到自然结束。
 - **严重度**：🟠 中——资源浪费 + 不可控。
 
 #### 🟡 S8 · 流式中途断连无续传，前端看到半截回复
-- **位置**：[openai_compat_provider.ts:100-184](file:///Users/peroluo/work/ai/nanobot-main-ts/src/providers/openai_compat_provider.ts#L100)
+- **位置**：[openai_compat_provider.ts:100-184](file:///Users/peroluo/Document/nanobot-ts/src/providers/openai_compat_provider.ts#L100)
 - **现象**：`stream.on('error')` reject 整个 Promise，但 `onDelta` 已推送部分 delta 给前端。
 - **后果**：前端先收到一段文本，然后报错；用户无法区分是「正常结束」还是「中断」。无断点续传。
 - **严重度**：🟡 中。
 
 #### 🟡 S9 · exec_session 无超时上限可设为 Infinity
-- **位置**：[exec_session.ts:68](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/exec_session.ts#L68)
+- **位置**：[exec_session.ts:68](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/exec_session.ts#L68)
 - **现象**：`this.deadline = options.timeout ? ... : Infinity`。若 LLM 不传 timeout，子进程可无限挂起，持续占用资源。
 - **严重度**：🟡 中。
 
 #### 🟡 S10 · Chat WebSocket 无心跳/陈旧连接清理
-- **位置**：[server.ts:834-962](file:///Users/peroluo/work/ai/nanobot-main-ts/src/api/server.ts#L834)
-- **现象**：`chatWss.on('connection')` 仅注册 message/close handler，**无 ping/pong、无 idle 超时**。对比 `wss`（[server.ts:829](file:///Users/peroluo/work/ai/nanobot-main-ts/src/api/server.ts#L829)）还有 `wsLogger.addConnection`，chat WS 更简陋。
+- **位置**：[server.ts:834-962](file:///Users/peroluo/Document/nanobot-ts/src/api/server.ts#L834)
+- **现象**：`chatWss.on('connection')` 仅注册 message/close handler，**无 ping/pong、无 idle 超时**。对比 `wss`（[server.ts:829](file:///Users/peroluo/Document/nanobot-ts/src/api/server.ts#L829)）还有 `wsLogger.addConnection`，chat WS 更简陋。
 - **后果**：客户端断网（不发 close 帧）→ 服务端永远认为连接活着 → 连接泄漏。
 - **严重度**：🟡 中。
 
 #### 🟡 S11 · 单 turn 无整体超时预算
-- **位置**：[runner.ts:134-330](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/runner.ts#L134)
+- **位置**：[runner.ts:134-330](file:///Users/peroluo/Document/nanobot-ts/src/agent/runner.ts#L134)
 - **现象**：循环仅以 `maxIterations` 为上限，无墙钟超时。若每轮 LLM 调用都很慢（如 30s）+ 工具执行慢，单 turn 可挂起数十分钟。
 - **严重度**：🟡 中。
 
 #### 🟡 S12 · `maybeCompact` 粗暴 slice 破坏 tool_calls 配对
-- **位置**：[manager.ts:223-238](file:///Users/peroluo/work/ai/nanobot-main-ts/src/session/manager.ts#L223)
+- **位置**：[manager.ts:223-238](file:///Users/peroluo/Document/nanobot-ts/src/session/manager.ts#L223)
 - **现象**：超 200 条消息时 `messages.slice(toRemove)` 砍前 80 条。若切口落在 `assistant.tool_calls` 与 `tool` 之间，留下孤儿 tool result，下次请求部分 provider 会直接报 400。
 - **严重度**：🟡 中——偶发但难排查。
 
@@ -149,7 +149,7 @@ Nanobot 采用「单主 Agent + 按需子 Agent」的经典 ReAct 架构，结�
 ### 3.2 响应效率（Performance）
 
 #### 🔴 P1 · 同一轮多个 tool_calls 顺序执行，无并行
-- **位置**：[runner.ts:233-319](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/runner.ts#L233)
+- **位置**：[runner.ts:233-319](file:///Users/peroluo/Document/nanobot-ts/src/agent/runner.ts#L233)
 - **现象**：
   ```ts
   for (const toolCall of response.tool_calls) {
@@ -162,47 +162,47 @@ Nanobot 采用「单主 Agent + 按需子 Agent」的经典 ReAct 架构，结�
 - **优化预期**：并行后多工具轮次耗时 ↓ 40%~60%。
 
 #### 🔴 P2 · System prompt 每轮重建且含动态时间，prompt cache 全程失效
-- **位置**：[loop.ts:143-151](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/loop.ts#L143)、[context.ts:79,89](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/context.ts#L79)
+- **位置**：[loop.ts:143-151](file:///Users/peroluo/Document/nanobot-ts/src/agent/loop.ts#L143)、[context.ts:79,89](file:///Users/peroluo/Document/nanobot-ts/src/agent/context.ts#L79)
 - **现象**：
   - 每次 `processDirect` 都 `new ContextBuilder()` + `buildSystemPrompt()`；
-  - `getDefaultIdentity` 写 `Current time: ${new Date().toISOString()}`（[context.ts:79](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/context.ts#L79)）；
-  - `getRuntimeContext` 又写一遍 `Current date and time: ${now.toISOString()}`（[context.ts:89](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/context.ts#L89)）；
+  - `getDefaultIdentity` 写 `Current time: ${new Date().toISOString()}`（[context.ts:79](file:///Users/peroluo/Document/nanobot-ts/src/agent/context.ts#L79)）；
+  - `getRuntimeContext` 又写一遍 `Current date and time: ${now.toISOString()}`（[context.ts:89](file:///Users/peroluo/Document/nanobot-ts/src/agent/context.ts#L89)）；
   - 时间戳每秒变化 → system prompt 前缀不稳定 → **DeepSeek/OpenAI prompt cache 永远 miss**。
 - **后果**：每轮 LLM 调用都全量重传 + 重新计算 prefill，TTFT（首字延迟）显著上升，token 成本同步上升（见成本文档整改 #2/#11）。
 - **严重度**：🔴 高——同时拖慢响应和抬高成本。
 
 #### 🟠 P3 · 工具定义每轮迭代重新构建
-- **位置**：[runner.ts:142](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/runner.ts#L142)、[registry.ts:48-59](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/registry.ts#L48)
+- **位置**：[runner.ts:142](file:///Users/peroluo/Document/nanobot-ts/src/agent/runner.ts#L142)、[registry.ts:48-59](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/registry.ts#L48)
 - **现象**：`getToolDefinitions()` 在 for 循环内每轮调用，内部遍历所有 tool 重建数组。
 - **后果**：30+ 工具的 schema 每轮重新序列化，CPU 浪费 + 网络重传（见成本文档 #2）。
 - **严重度**：🟠 中。
 
 #### 🟠 P4 · 子 Agent 全局并发=1，多任务串行
-- **位置**：[subagent.ts:85](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/subagent.ts#L85)
+- **位置**：[subagent.ts:85](file:///Users/peroluo/Document/nanobot-ts/src/agent/subagent.ts#L85)
 - **现象**：`maxConcurrentSubagents ?? 1`，且为**全局**计数（非 per-session）。
 - **后果**：主 Agent 派出多个子任务时只能排队；其他会话的子任务也会被阻塞。
 - **严重度**：🟠 中。
 
 #### 🟡 P5 · 流式 delta 回调 await 反压
-- **位置**：[openai_compat_provider.ts:139,144,166](file:///Users/peroluo/work/ai/nanobot-main-ts/src/providers/openai_compat_provider.ts#L139)
+- **位置**：[openai_compat_provider.ts:139,144,166](file:///Users/peroluo/Document/nanobot-ts/src/providers/openai_compat_provider.ts#L139)
 - **现象**：`stream.on('data', async (chunk) => { ... await onDelta(...) ... })`。每个 delta 都 await 回调完成才继续解析下一个 chunk。
 - **后果**：若 `onStream` 链路慢（如 server.ts 的 `send` 遇到背压），会拖慢整个流式解析，累积延迟。
 - **严重度**：🟡 低-中。
 
 #### 🟡 P6 · 历史每轮全量拷贝
-- **位置**：[loop.ts:133](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/loop.ts#L133)、[manager.ts:198](file:///Users/peroluo/work/ai/nanobot-main-ts/src/session/manager.ts#L198)
+- **位置**：[loop.ts:133](file:///Users/peroluo/Document/nanobot-ts/src/agent/loop.ts#L133)、[manager.ts:198](file:///Users/peroluo/Document/nanobot-ts/src/session/manager.ts#L198)
 - **现象**：`getMessages` 返回 `[...session.messages]` 浅拷贝整个数组，每个 turn 都做一次。
 - **后果**：长会话（数百条 + 大工具结果）每轮内存抖动 + GC 压力。
 - **严重度**：🟡 低-中。
 
 #### 🟡 P7 · 子 Agent 结果回流走总线 → 重新触发完整 processDirect
-- **位置**：[subagent.ts:304](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/subagent.ts#L304) → [loop.ts:234](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/loop.ts#L234)
+- **位置**：[subagent.ts:304](file:///Users/peroluo/Document/nanobot-ts/src/agent/subagent.ts#L304) → [loop.ts:234](file:///Users/peroluo/Document/nanobot-ts/src/agent/loop.ts#L234)
 - **现象**：子 Agent 完成后 publish `inbound_message`，主 Agent 当作新用户输入再走一遍 `processDirect`（含完整 ReAct 循环）。
 - **后果**：用户等待 = 子 Agent 执行时间 + 主 Agent 至少一轮 LLM 调用。无轻量「结果注入」通道。
 - **严重度**：🟡 中。
 
 #### 🟡 P8 · 会话文件每条消息同步落盘
-- **位置**：[manager.ts:74,84,91](file:///Users/peroluo/work/ai/nanobot-main-ts/src/session/manager.ts#L74)
+- **位置**：[manager.ts:74,84,91](file:///Users/peroluo/Document/nanobot-ts/src/session/manager.ts#L74)
 - **现象**：`appendMessage` / `appendMessages` 每次都 `fs.writeFile` 全量重写会话 JSON。
 - **后果**：高频对话时 I/O 阻塞；会话越大，单次写入越慢（O(N) 写）。
 - **严重度**：🟡 中。
@@ -214,7 +214,7 @@ Nanobot 采用「单主 Agent + 按需子 Agent」的经典 ReAct 架构，结�
 - **严重度**：🟢 低。
 
 #### 🟢 P10 · 单线程 Node，无 cluster
-- **位置**：[server.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/api/server.ts) 全文
+- **位置**：[server.ts](file:///Users/peroluo/Document/nanobot-ts/src/api/server.ts) 全文
 - **现象**：单进程单事件循环。CPU 密集（如大 JSON 解析、apply_patch diff）会阻塞所有连接。
 - **严重度**：🟢 低——个人助手场景可接受。
 
@@ -222,15 +222,15 @@ Nanobot 采用「单主 Agent + 按需子 Agent」的经典 ReAct 架构，结�
 
 ### 3.3 成本（Token 消耗）
 
-> 完整 21 项分析与整改方案见 [TOKEN_OPTIMIZATION.md](file:///Users/peroluo/work/ai/nanobot-main-ts/TOKEN_OPTIMIZATION.md)。此处仅列 Top 5 影响项，便于跨维度对照。
+> 完整 21 项分析与整改方案见 [TOKEN_OPTIMIZATION.md](file:///Users/peroluo/Document/nanobot-ts/TOKEN_OPTIMIZATION.md)。此处仅列 Top 5 影响项，便于跨维度对照。
 
 | 排名 | 问题 | 位置 | 单任务浪费 |
 |------|------|------|-----------|
-| C1 | `max_tool_iterations=200` | [config.json:13](file:///Users/peroluo/work/ai/nanobot-main-ts/.nanobot/config.json#L13) | 极高 |
-| C2 | 每轮重发 30+ 工具 schema | [runner.ts:142](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/runner.ts#L142) | 60~120 万 tokens/任务 |
-| C3 | 历史全量重发无截断 | [loop.ts:141](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/loop.ts#L141) | O(N²) 增长 |
-| C4 | Token 估算中文失真（/4） | [helpers.ts:39](file:///Users/peroluo/work/ai/nanobot-main-ts/src/utils/helpers.ts#L39) | 截断永远不触发 |
-| C5 | ContextGovernor/AutoCompact 死代码 | [context_governance.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/context_governance.ts)、[autocompact.ts](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/autocompact.ts) | 600 行压缩流水线未生效 |
+| C1 | `max_tool_iterations=200` | [config.json:13](file:///Users/peroluo/Document/nanobot-ts/.nanobot/config.json#L13) | 极高 |
+| C2 | 每轮重发 30+ 工具 schema | [runner.ts:142](file:///Users/peroluo/Document/nanobot-ts/src/agent/runner.ts#L142) | 60~120 万 tokens/任务 |
+| C3 | 历史全量重发无截断 | [loop.ts:141](file:///Users/peroluo/Document/nanobot-ts/src/agent/loop.ts#L141) | O(N²) 增长 |
+| C4 | Token 估算中文失真（/4） | [helpers.ts:39](file:///Users/peroluo/Document/nanobot-ts/src/utils/helpers.ts#L39) | 截断永远不触发 |
+| C5 | ContextGovernor/AutoCompact 死代码 | [context_governance.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/context_governance.ts)、[autocompact.ts](file:///Users/peroluo/Document/nanobot-ts/src/agent/autocompact.ts) | 600 行压缩流水线未生效 |
 
 **估算**：当前一次中等复杂度任务消耗 **20~60 万 tokens**，其中 60%+ 属可优化空间。
 
@@ -241,7 +241,7 @@ Nanobot 采用「单主 Agent + 按需子 Agent」的经典 ReAct 架构，结�
 三个维度的具体问题虽多，但根因高度集中于以下 **6 个架构级缺陷**。修复它们可同时改善多个维度。
 
 ### A1 · 缺少 per-session 调度层
-- **现状**：事件总线 → 直接执行（[queue.ts:71](file:///Users/peroluo/work/ai/nanobot-main-ts/src/bus/queue.ts#L71)）。
+- **现状**：事件总线 → 直接执行（[queue.ts:71](file:///Users/peroluo/Document/nanobot-ts/src/bus/queue.ts#L71)）。
 - **影响**：S1（竞态）、S2（并发写文件）、S12（压缩时序错乱）。
 - **本质**：`MessageBus` 是 fan-out 广播，没有「同 sessionKey 串行、跨 sessionKey 并行」的概念。
 
@@ -309,8 +309,8 @@ export class SessionDispatcher {
 ```
 
 **接入点**：
-- `Nanobot.stream` / `Nanobot.run`（[nanobot.ts:134,156](file:///Users/peroluo/work/ai/nanobot-main-ts/src/nanobot.ts#L134)）调用 `processDirect` 前包一层 `dispatcher.enqueue(sessionKey, ...)`；
-- `AgentLoop.handleInboundMessage`（[loop.ts:234](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/loop.ts#L234)）同样包裹。
+- `Nanobot.stream` / `Nanobot.run`（[nanobot.ts:134,156](file:///Users/peroluo/Document/nanobot-ts/src/nanobot.ts#L134)）调用 `processDirect` 前包一层 `dispatcher.enqueue(sessionKey, ...)`；
+- `AgentLoop.handleInboundMessage`（[loop.ts:234](file:///Users/peroluo/Document/nanobot-ts/src/agent/loop.ts#L234)）同样包裹。
 
 **配套**：前端可在用户连发时显示「排队中」状态，提升体验。
 
@@ -559,7 +559,7 @@ export class ContextBuilder {
 ]
 ```
 
-**配套**：工具定义在 `ToolRegistry` 内缓存（首次 `getToolDefinitions()` 后冻结），避免每轮重建（[registry.ts:48](file:///Users/peroluo/work/ai/nanobot-main-ts/src/agent/tools/registry.ts#L48)）。
+**配套**：工具定义在 `ToolRegistry` 内缓存（首次 `getToolDefinitions()` 后冻结），避免每轮重建（[registry.ts:48](file:///Users/peroluo/Document/nanobot-ts/src/agent/tools/registry.ts#L48)）。
 
 #### 优化 P4 / A1：子 Agent 并发可配 + per-session 隔离
 
@@ -630,7 +630,7 @@ private async flushAll() {
 
 ### 5.3 成本优化（摘要）
 
-> 完整方案见 [TOKEN_OPTIMIZATION.md](file:///Users/peroluo/work/ai/nanobot-main-ts/TOKEN_OPTIMIZATION.md)。此处仅列与架构强相关的项。
+> 完整方案见 [TOKEN_OPTIMIZATION.md](file:///Users/peroluo/Document/nanobot-ts/TOKEN_OPTIMIZATION.md)。此处仅列与架构强相关的项。
 
 | 项 | 与架构的关系 |
 |----|-------------|
@@ -808,8 +808,8 @@ logger.info({
 
 ## 九、附录：与现有文档的关系
 
-- **[ARCHITECTURE.md](file:///Users/peroluo/work/ai/nanobot-main-ts/ARCHITECTURE.md)**：描述「现在是什么」，本文档描述「应该改成什么」。
-- **[TOKEN_OPTIMIZATION.md](file:///Users/peroluo/work/ai/nanobot-main-ts/TOKEN_OPTIMIZATION.md)**：成本维度的 21 项细项清单，本文档 5.3 节为其摘要，并补充了与稳定性/效率的交叉点。
+- **[ARCHITECTURE.md](file:///Users/peroluo/Document/nanobot-ts/ARCHITECTURE.md)**：描述「现在是什么」，本文档描述「应该改成什么」。
+- **[TOKEN_OPTIMIZATION.md](file:///Users/peroluo/Document/nanobot-ts/TOKEN_OPTIMIZATION.md)**：成本维度的 21 项细项清单，本文档 5.3 节为其摘要，并补充了与稳定性/效率的交叉点。
 - **本文档的独特价值**：
   1. 首次系统梳理**稳定性**问题（S1~S12），其中 S1/S3/S5/S7 在前述文档中未涉及；
   2. 首次系统梳理**响应效率**问题（P1~P10），其中 P1/P2/P4/P7 是前述文档未覆盖的；
