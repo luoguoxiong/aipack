@@ -1,0 +1,54 @@
+{
+  "name": "nanobot-ai",
+  "version": "0.2.2",
+  "description": "A lightweight personal AI assistant framework (TypeScript port)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "nanobot": "dist/cli/commands.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli/commands.ts",
+    "start": "node dist/cli/commands.js",
+    "start:webui": "npm run build && npm run start -- webui",
+    "start:chat": "npm run build && npm run start -- chat",
+    "start:dev-webui": "npx tsx src/cli/commands.ts webui",
+    "start:dev-chat": "npx tsx src/cli/commands.ts chat",
+    "test": "node --import tsx --test tests/**/*.test.ts",
+    "lint": "tsc --noEmit",
+    "webui:install": "cd webui && npm install",
+    "webui:build": "cd webui && npm run build",
+    "webui:dev": "cd webui && npm run dev"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "chatbot"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@types/express": "^5.0.6",
+    "axios": "^1.7.0",
+    "commander": "^12.1.0",
+    "cron-parser": "^4.9.0",
+    "express": "^5.2.1",
+    "js-yaml": "^4.1.0",
+    "open": "^10.0.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.12.0",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}
