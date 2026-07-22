@@ -1,8 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "types": ["node", "vite/client"],
-    "skipLibCheck": true
-  },
-  "exclude": ["src/tests/**"]
-}
