@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.webui/
+.nanobot/
+.env
+.env.local
+*.log
