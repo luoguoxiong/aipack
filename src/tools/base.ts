@@ -1,5 +1,5 @@
 import { Type, Static, TSchema } from "@earendil-works/pi-ai";
-import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@earendil-works/pi-agent";
+import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
 import { createToolResult, createToolError, isToolErrorResult } from "./types.js";
 import { logger } from "../utils/logger.js";
 

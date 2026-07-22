@@ -3,7 +3,7 @@ import { homedir } from 'os';
 import type { StorageAdapter, SessionData, SessionTreeEntry, SessionMetadata, SessionStorage, SessionContext, MessageEntry } from './types.js';
 import { createMemoryStorage, createMemorySessionStorage } from './memory.js';
 import { createFileStorage } from './file.js';
-import type { AgentMessage } from "@earendil-works/pi-agent";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 
 function resolveStoragePath(storagePath: string): string {

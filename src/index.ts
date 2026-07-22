@@ -47,6 +47,6 @@ export { CLIChannel, createCLIChannel } from './channels/cli.js';
 export { WebhookChannel, createWebhookChannel } from './channels/webhook.js';
 export type { Channel, ChannelConfig, ChannelMessage, ChannelResponse, CLIConfig, WebhookConfig } from './channels/types.js';
 
-export { Agent, AgentHarness } from '@earendil-works/pi-agent';
-export type { AgentEvent, AgentContext, AgentMessage, AgentTool, AgentState } from '@earendil-works/pi-agent';
+export { Agent, AgentHarness } from '@earendil-works/pi-agent-core';
+export type { AgentEvent, AgentContext, AgentMessage, AgentTool, AgentState } from '@earendil-works/pi-agent-core';
 export type { Models } from '@earendil-works/pi-ai';

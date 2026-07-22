@@ -1,4 +1,4 @@
-import { AgentTool } from "@earendil-works/pi-agent";
+import { AgentTool } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "@earendil-works/pi-ai";
 import { BaseTool, ToolContext, ToolResult, isToolErrorResult } from "./base.js";
 import { getFilesystemTools } from "./filesystem.js";

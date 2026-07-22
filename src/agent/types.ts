@@ -6,7 +6,7 @@ import type {
   AgentState,
   ThinkingLevel,
   QueueMode,
-} from "@earendil-works/pi-agent";
+} from "@earendil-works/pi-agent-core";
 import type { Model, ImageContent } from "@earendil-works/pi-ai";
 import type { Config } from "../config/schema.js";
 

@@ -25,8 +25,8 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@earendil-works/pi-agent": "file:../pi/packages/agent",
-    "@earendil-works/pi-ai": "file:../pi/packages/ai",
+    "@earendil-works/pi-agent-core": "^0.81.1",
+    "@earendil-works/pi-ai": "^0.81.1",
     "@types/express": "^5.0.6",
     "axios": "^1.7.0",
     "commander": "^12.1.0",

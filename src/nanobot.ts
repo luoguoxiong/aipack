@@ -1,8 +1,8 @@
 import path from 'path';
-import { Agent, AgentHarness } from "@earendil-works/pi-agent";
-import type { AgentMessage } from "@earendil-works/pi-agent";
+import { Agent, AgentHarness } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { Model, AssistantMessage, ImageContent, TextContent } from "@earendil-works/pi-ai";
+import type { Model, AssistantMessage, ImageContent, TextContent, Context, SimpleStreamOptions, Api } from "@earendil-works/pi-ai";
 import { loadConfig, getConfigPath } from "./config/loader.js";
 import { Config, defaultConfig } from "./config/schema.js";
 import { createDefaultToolRegistry, ToolRegistry } from "./tools/registry.js";
@@ -347,7 +347,7 @@ export class Nanobot {
         tools,
         messages,
       },
-      streamFunction: (model, context, options) => {
+      streamFn: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => {
         return this.models.streamSimple(model, context, options);
       },
     });
