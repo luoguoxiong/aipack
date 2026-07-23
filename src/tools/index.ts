@@ -18,3 +18,8 @@ export { getMemoryTools, setMemoryBaseDir } from './memory';
 export { getCronTools, getCronTasks } from './cron';
 export { getUtilityTools } from './utilities';
 export { getSearchTools, FindFilesTool, GrepTool } from './search';
+export { getApplyPatchTools, ApplyPatchTool } from './apply_patch';
+export { getSchedulerTools, TaskScheduler, TaskListTool, TaskAddTool, TaskRemoveTool, TaskCancelTool, TaskClearTool } from './scheduler';
+export type { ScheduledTask, TaskStatus, TaskType, TaskHandler } from './scheduler';
+export { getSelfTools, MyTool } from './self';
+export { getMessageTools, MessageTool } from './message';
