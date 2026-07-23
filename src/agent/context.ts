@@ -18,7 +18,7 @@ export class ContextBuilder {
 
   constructor(options: ContextBuilderOptions = {}) {
     this.timezone = options.timezone || 'UTC';
-    this.botName = options.botName || 'nanobot';
+    this.botName = options.botName || 'kobot';
     this.botIcon = options.botIcon || '🐈';
     this.workspace = options.workspace ? getWorkspacePath(options.workspace) : process.cwd();
     this.channel = options.channel || 'cli';

@@ -6,7 +6,7 @@ const IGNORE_DIRS = [
   '.git', '.hg', '.svn', '__pycache__', '.pytest_cache', '.mypy_cache',
   'node_modules', '.next', '.nuxt', 'dist', 'build', '.venv', 'venv',
   '.idea', '.vscode', '.tox', 'target', '.cargo', '.gradle', 'vendor',
-  '.nanobot',
+  '.kobot',
 ];
 
 const IGNORE_FILES = [

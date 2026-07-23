@@ -1,7 +1,7 @@
 import readline from 'readline';
 import type { Channel, CLIConfig, ChannelResponse } from './types';
-import type { Nanobot } from '../nanobot';
-import { STREAM_EVENT_TEXT_DELTA, STREAM_EVENT_TEXT_COMPLETED, STREAM_EVENT_TOOL_STARTED, STREAM_EVENT_TOOL_COMPLETED, STREAM_EVENT_TOOL_FAILED, STREAM_EVENT_RUN_FAILED } from '../nanobot';
+import type { Kobot } from '../kobot';
+import { STREAM_EVENT_TEXT_DELTA, STREAM_EVENT_TEXT_COMPLETED, STREAM_EVENT_TOOL_STARTED, STREAM_EVENT_TOOL_COMPLETED, STREAM_EVENT_TOOL_FAILED, STREAM_EVENT_RUN_FAILED } from '../kobot';
 import { logger } from '../utils/logger';
 
 export class CLIChannel implements Channel {
@@ -10,7 +10,7 @@ export class CLIChannel implements Channel {
   private config: CLIConfig;
   private rl: readline.Interface | null = null;
   private history: string[] = [];
-  private bot: Nanobot | null = null;
+  private bot: Kobot | null = null;
   private currentSessionKey: string = 'sdk:default';
 
   constructor(config: CLIConfig) {
@@ -19,7 +19,7 @@ export class CLIChannel implements Channel {
     this.config = config;
   }
 
-  async start(bot: Nanobot): Promise<void> {
+  async start(bot: Kobot): Promise<void> {
     this.bot = bot;
     logger.info({ channel: this.id }, 'CLI channel started');
     
@@ -27,10 +27,10 @@ export class CLIChannel implements Channel {
       input: process.stdin,
       output: process.stdout,
       historySize: this.config.historySize || 100,
-      prompt: this.config.prompt || 'nanobot> ',
+      prompt: this.config.prompt || 'kobot> ',
     });
 
-    console.log(`🐈 ${this.name} channel started`);
+    console.log(`[${this.name}] channel started (logo: image/logo.png)`);
     console.log('Type "exit" or "quit" to exit');
     console.log('Type "help" for available commands');
     console.log('---');
@@ -100,7 +100,7 @@ export class CLIChannel implements Channel {
       await this.bot.close();
     }
     logger.info({ channel: this.id }, 'CLI channel stopped');
-    console.log('\n🐈 Goodbye!');
+    console.log('\nGoodbye! (logo: image/logo.png)');
     process.exit(0);
   }
 
@@ -144,7 +144,7 @@ export class CLIChannel implements Channel {
             console.log('💡 Troubleshooting tips:');
             console.log('   1. Check your API key configuration (OPENAI_API_KEY, GROQ_API_KEY, DEEPSEEK_API_KEY)');
             console.log('   2. Verify network connectivity');
-            console.log('   3. Check log file for detailed error: .nanobot/logs/nanobot.log');
+            console.log('   3. Check log file for detailed error (see logging.file_path in config)');
             break;
         }
       }
@@ -157,14 +157,14 @@ export class CLIChannel implements Channel {
         console.log('      export OPENAI_API_KEY="your-key"');
         console.log('      export GROQ_API_KEY="your-key"');
         console.log('      export DEEPSEEK_API_KEY="your-key"');
-        console.log('   2. Check log file: .nanobot/logs/nanobot.log');
+        console.log('   2. Check log file (see logging.file_path in config)');
       }
     } catch (err) {
       logger.error({ err, input }, 'CLI message handling error');
       console.error('\n❌ Unexpected error:');
       console.error(`   ${(err as Error).message}`);
       console.error('');
-      console.error('💡 Please check the log file for details: .nanobot/logs/nanobot.log');
+      console.error('💡 Please check the log file for details (see logging.file_path in config)');
     }
   }
 

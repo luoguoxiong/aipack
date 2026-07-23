@@ -6,8 +6,8 @@ import type { LoggingConfig } from '../config/schema';
 let loggerInstance: pino.Logger;
 
 function createPinoLogger(config?: Partial<LoggingConfig>): pino.Logger {
-  const level = config?.level || process.env.NANOBOT_LOG_LEVEL || 'info';
-  const consoleEnabled = (config?.console_enabled ?? true) && process.env.NANOBOT_LOG_CONSOLE !== 'false';
+  const level = config?.level || process.env.KOBOT_LOG_LEVEL || 'info';
+  const consoleEnabled = (config?.console_enabled ?? true) && process.env.KOBOT_LOG_CONSOLE !== 'false';
   const filePath = config?.file_path;
 
   const streams: Array<{ stream: pino.DestinationStream; level: string }> = [];
@@ -55,7 +55,7 @@ export function createLogger(config?: Partial<LoggingConfig>): pino.Logger {
 
 // 创建默认日志记录器（仅控制台）
 loggerInstance = pino({
-  level: process.env.NANOBOT_LOG_LEVEL || 'info',
+  level: process.env.KOBOT_LOG_LEVEL || 'info',
   transport: process.env.NODE_ENV !== 'production' ? {
     target: 'pino-pretty',
     options: {

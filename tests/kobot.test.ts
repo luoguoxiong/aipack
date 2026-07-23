@@ -1,18 +1,18 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { Nanobot } from '../src/nanobot';
+import { Kobot } from '../src/kobot';
 import { createDefaultToolRegistry } from '../src/tools/registry';
 
-describe('Nanobot', () => {
+describe('Kobot', () => {
   it('should create instance from config', async () => {
-    const bot = await Nanobot.fromConfig();
+    const bot = await Kobot.fromConfig();
     assert.ok(bot);
     assert.ok(bot.tools.length > 0);
     await bot.close();
   });
 
   it('should list available tools', async () => {
-    const bot = await Nanobot.fromConfig();
+    const bot = await Kobot.fromConfig();
     const tools = bot.tools;
     assert.ok(Array.isArray(tools));
     assert.ok(tools.includes('shell'));
@@ -22,7 +22,7 @@ describe('Nanobot', () => {
   });
 
   it('should manage sessions', async () => {
-    const bot = await Nanobot.fromConfig();
+    const bot = await Kobot.fromConfig();
     
     const sessionsBefore = await bot.listSessions();
     assert.deepStrictEqual(sessionsBefore, []);
@@ -46,7 +46,7 @@ describe('Nanobot', () => {
   });
 
   it('should have config accessor', async () => {
-    const bot = await Nanobot.fromConfig();
+    const bot = await Kobot.fromConfig();
     const config = bot.config_;
     assert.ok(config);
     assert.ok(config.agents);

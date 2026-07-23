@@ -3,7 +3,7 @@ import path from 'path';
 import { Type } from "@earendil-works/pi-ai";
 import { BaseTool, createToolResult, createToolError } from './base';
 
-let memoryBaseDir = '.nanobot/memory';
+let memoryBaseDir = '.kobot/memory';
 
 export function setMemoryBaseDir(dir: string): void {
   memoryBaseDir = dir;

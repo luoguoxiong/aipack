@@ -1,4 +1,4 @@
-import type { Nanobot } from '../nanobot';
+import type { Kobot } from '../kobot';
 
 export interface ChannelConfig {
   id: string;
@@ -27,7 +27,7 @@ export interface ChannelResponse {
 export interface Channel {
   id: string;
   name: string;
-  start(bot: Nanobot): Promise<void>;
+  start(bot: Kobot): Promise<void>;
   stop(): Promise<void>;
   sendMessage(chatId: string, content: string): Promise<ChannelResponse>;
 }

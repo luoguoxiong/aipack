@@ -1,12 +1,12 @@
 {
-  "name": "nanobot-pi",
+  "name": "kobot-pi",
   "version": "0.0.2",
   "description": "A lightweight personal AI assistant framework (based on pi-agent)",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "nanobot": "dist/cli.js"
+    "kobot": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",

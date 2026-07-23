@@ -1,14 +1,14 @@
 import http from 'http';
 import type { Channel, WebhookConfig, ChannelMessage, ChannelResponse } from './types';
-import type { Nanobot } from '../nanobot';
-import { STREAM_EVENT_TEXT_DELTA, STREAM_EVENT_TEXT_COMPLETED, STREAM_EVENT_TOOL_STARTED, STREAM_EVENT_TOOL_COMPLETED, STREAM_EVENT_TOOL_FAILED, STREAM_EVENT_RUN_COMPLETED, STREAM_EVENT_RUN_FAILED } from '../nanobot';
+import type { Kobot } from '../kobot';
+import { STREAM_EVENT_TEXT_DELTA, STREAM_EVENT_TEXT_COMPLETED, STREAM_EVENT_TOOL_STARTED, STREAM_EVENT_TOOL_COMPLETED, STREAM_EVENT_TOOL_FAILED, STREAM_EVENT_RUN_COMPLETED, STREAM_EVENT_RUN_FAILED } from '../kobot';
 
 export class WebhookChannel implements Channel {
   id: string;
   name: string;
   private config: WebhookConfig;
   private server: http.Server | null = null;
-  private bot: Nanobot | null = null;
+  private bot: Kobot | null = null;
 
   constructor(config: WebhookConfig) {
     this.id = config.id;
@@ -16,7 +16,7 @@ export class WebhookChannel implements Channel {
     this.config = config;
   }
 
-  async start(bot: Nanobot): Promise<void> {
+  async start(bot: Kobot): Promise<void> {
     this.bot = bot;
 
     this.server = http.createServer(async (req, res) => {

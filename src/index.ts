@@ -1,5 +1,5 @@
 export {
-  Nanobot,
+  Kobot,
   STREAM_EVENT_RUN_STARTED,
   STREAM_EVENT_RUN_COMPLETED,
   STREAM_EVENT_RUN_FAILED,
@@ -12,7 +12,7 @@ export {
   STREAM_EVENT_TOOL_FAILED,
   STREAM_EVENT_FILE_EDIT,
   STREAM_EVENT_TYPES,
-} from './nanobot';
+} from './kobot';
 export type {
   StreamEventType,
   StreamEvent,
@@ -21,8 +21,8 @@ export type {
   SessionInfo,
   SessionSnapshot,
   RunOptions,
-  NanobotOptions,
-} from './nanobot';
+  KobotOptions,
+} from './kobot';
 
 export { loadConfig, getConfigPath } from './config/loader';
 export type { Config } from './config/schema';

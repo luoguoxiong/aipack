@@ -66,7 +66,7 @@ export const ModelPresetConfigSchema = z.object({
 export type ModelPresetConfig = z.infer<typeof ModelPresetConfigSchema>;
 
 export const AgentDefaultsSchema = z.object({
-  workspace: z.string().default('.nanobot/workspace'),
+  workspace: z.string().default('workspace'),
   model_preset: z.string().optional().nullable(),
   model: z.string().default('deepseek-v4-flash'),
   provider: z.string().default('auto'),
@@ -83,8 +83,8 @@ export const AgentDefaultsSchema = z.object({
   tool_hint_max_length: z.number().int().min(20).max(500).default(40),
   reasoning_effort: z.string().optional().nullable(),
   timezone: z.string().default('UTC'),
-  bot_name: z.string().default('nanobot'),
-  bot_icon: z.string().default('🐈'),
+  bot_name: z.string().default('kobot'),
+  bot_icon: z.string().default('image/logo.png'),
   unified_session: z.boolean().default(false),
   disabled_skills: z.array(z.string()).default([]),
 });
@@ -195,7 +195,7 @@ export type ToolsConfig = z.infer<typeof ToolsConfigSchema>;
 
 export const MemoryConfigSchema = z.object({
   enabled: z.boolean().default(true),
-  base_dir: z.string().default('.nanobot/memory'),
+  base_dir: z.string().default('memory'),
   dream: DreamConfigSchema.default({}),
 });
 
@@ -239,14 +239,14 @@ export type SecurityConfig = z.infer<typeof SecurityConfigSchema>;
 
 export const SessionsConfigSchema = z.object({
   storage: z.enum(['memory', 'file']).default('memory'),
-  storage_path: z.string().default('.nanobot/sessions'),
+  storage_path: z.string().default('sessions'),
 });
 
 export type SessionsConfig = z.infer<typeof SessionsConfigSchema>;
 
 export const LoggingConfigSchema = z.object({
   level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-  file_path: z.string().default('.nanobot/logs/nanobot.log'),
+  file_path: z.string().default('logs/kobot.log'),
   console_enabled: z.boolean().default(true),
 });
 
@@ -254,6 +254,8 @@ export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
 
 export const ConfigSchema = z.object({
   schema_version: z.number().int().default(1),
+  workspace: z.string().default('~/.kobot'),
+  workspace_resolved: z.string().optional(),
   agents: AgentsConfigSchema,
   providers: ProvidersConfigSchema.default({ items: [], defaults: {} }),
   channels: ChannelsConfigSchema.default({}),

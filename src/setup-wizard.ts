@@ -3,7 +3,7 @@ import path from 'path';
 import os from 'os';
 import readline from 'readline';
 
-const DOTENV_PATH = path.join(os.homedir(), '.nanobot', '.env');
+const DOTENV_PATH = path.join(os.homedir(), '.kobot', '.env');
 
 // 已知的 API Key 环境变量（来自 pi-ai 的 env-api-keys.js）
 const ALL_API_KEY_ENV_VARS = [
@@ -102,7 +102,7 @@ function question(rl: readline.Interface, query: string): Promise<string> {
 }
 
 /**
- * 将环境变量持久化到 ~/.nanobot/.env 文件中，以便重启后仍然有效。
+ * 将环境变量持久化到 ~/.kobot/.env 文件中，以便重启后仍然有效。
  */
 function saveEnvFile(envVars: Record<string, string>): void {
   const dir = path.dirname(DOTENV_PATH);
@@ -137,7 +137,7 @@ function saveEnvFile(envVars: Record<string, string>): void {
 }
 
 /**
- * 从 ~/.nanobot/.env 加载环境变量到 process.env。
+ * 从 ~/.kobot/.env 加载环境变量到 process.env。
  */
 export function loadEnvFile(): void {
   if (!fs.existsSync(DOTENV_PATH)) return;
@@ -180,7 +180,7 @@ export async function runSetupWizard(): Promise<SetupResult> {
   try {
     console.log('');
     console.log('╔══════════════════════════════════════════════╗');
-    console.log('║   🔑 Nanobot 首次设置 - 模型配置向导        ║');
+    console.log('║   🔑 Kobot 首次设置 - 模型配置向导        ║');
     console.log('╚══════════════════════════════════════════════╝');
     console.log('');
     console.log('未检测到 API Key 环境变量。');
@@ -193,15 +193,15 @@ export async function runSetupWizard(): Promise<SetupResult> {
 
     // 为当前会话设置环境变量
     process.env[provider.envVar] = apiKey;
-    process.env.NANOBOT_MODEL = model;
+    process.env.KOBOT_MODEL = model;
 
-    // 持久化到 ~/.nanobot/.env 供以后使用
+    // 持久化到 ~/.kobot/.env 供以后使用
     const envVars: Record<string, string> = {
       [provider.envVar]: apiKey,
-      NANOBOT_MODEL: model,
+      KOBOT_MODEL: model,
     };
     if (provider.apiUrl) {
-      envVars.NANOBOT_API_BASE = provider.apiUrl;
+      envVars.KOBOT_API_BASE = provider.apiUrl;
     }
 
     console.log(`\n✅ 已设置 ${provider.envVar}`);

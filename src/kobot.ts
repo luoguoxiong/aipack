@@ -7,7 +7,6 @@ import { loadConfig, getConfigPath } from "./config/loader";
 import { Config, defaultConfig } from "./config/schema";
 import { createDefaultToolRegistry, ToolRegistry } from "./tools/registry";
 import { setMemoryBaseDir } from "./tools/memory";
-import { getWorkspacePath } from "./config/paths";
 import { ContextBuilder } from "./agent/context";
 import { SessionManager, createSessionManager } from "./storage/session-manager";
 import type { MessageEntry, SessionTreeEntry } from "./storage/types";
@@ -119,7 +118,7 @@ export interface RunOptions {
   modelPreset?: string;
 }
 
-export interface NanobotOptions {
+export interface KobotOptions {
   config?: Config;
   configPath?: string;
   workspace?: string;
@@ -144,7 +143,7 @@ function extractTextContent(content: AssistantMessage['content']): string {
     .join('');
 }
 
-export class Nanobot {
+export class Kobot {
   private config: Config;
   private toolRegistry: ToolRegistry;
   private agent: Agent | null = null;
@@ -162,8 +161,8 @@ export class Nanobot {
     });
   }
 
-  static async fromConfig(options: NanobotOptions = {}): Promise<Nanobot> {
-    logger.info({ options }, 'Initializing Nanobot from config');
+  static async fromConfig(options: KobotOptions = {}): Promise<Kobot> {
+    logger.info({ options }, 'Initializing Kobot from config');
     
     let config: Config;
     if (options.config) {
@@ -198,13 +197,13 @@ export class Nanobot {
     
     const toolRegistry = createDefaultToolRegistry();
     if (config.memory.base_dir) {
-      setMemoryBaseDir(getWorkspacePath(config.memory.base_dir));
+      setMemoryBaseDir(config.memory.base_dir);
     }
 
     const models = builtinModels();
     logger.info({ modelCount: models.getModels().length }, 'Loaded models');
 
-    return new Nanobot(config, toolRegistry, models);
+    return new Kobot(config, toolRegistry, models);
   }
 
   private resolveModel(modelName?: string, modelPreset?: string): Model<any> {

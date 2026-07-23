@@ -1,16 +1,16 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { Nanobot } from '../src/nanobot.js';
+import { Kobot } from '../src/kobot.js';
 import { createDefaultToolRegistry } from '../src/tools/registry.js';
-describe('Nanobot', () => {
+describe('Kobot', () => {
     it('should create instance from config', async () => {
-        const bot = await Nanobot.fromConfig();
+        const bot = await Kobot.fromConfig();
         assert.ok(bot);
         assert.ok(bot.tools.length > 0);
         await bot.close();
     });
     it('should list available tools', async () => {
-        const bot = await Nanobot.fromConfig();
+        const bot = await Kobot.fromConfig();
         const tools = bot.tools;
         assert.ok(Array.isArray(tools));
         assert.ok(tools.includes('shell'));
@@ -19,7 +19,7 @@ describe('Nanobot', () => {
         await bot.close();
     });
     it('should manage sessions', async () => {
-        const bot = await Nanobot.fromConfig();
+        const bot = await Kobot.fromConfig();
         const sessionsBefore = await bot.listSessions();
         assert.deepStrictEqual(sessionsBefore, []);
         await bot.run('test message', { sessionKey: 'test-session' });
@@ -35,7 +35,7 @@ describe('Nanobot', () => {
         await bot.close();
     });
     it('should have config accessor', async () => {
-        const bot = await Nanobot.fromConfig();
+        const bot = await Kobot.fromConfig();
         const config = bot.config_;
         assert.ok(config);
         assert.ok(config.agents);
@@ -69,4 +69,4 @@ describe('ToolRegistry', () => {
         });
     });
 });
-//# sourceMappingURL=nanobot.test.js.map
+//# sourceMappingURL=kobot.test.js.map
