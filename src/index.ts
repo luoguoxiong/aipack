@@ -45,7 +45,8 @@ export type { StorageAdapter, SessionData } from './storage/types';
 
 export { CLIChannel, createCLIChannel } from './channels/cli';
 export { WebhookChannel, createWebhookChannel } from './channels/webhook';
-export type { Channel, ChannelConfig, ChannelMessage, ChannelResponse, CLIConfig, WebhookConfig } from './channels/types';
+export { FeishuChannel, createFeishuChannel } from './channels/feishu';
+export type { Channel, ChannelConfig, ChannelMessage, ChannelResponse, CLIConfig, WebhookConfig, FeishuConfig } from './channels/types';
 
 export { Agent, AgentHarness } from '@earendil-works/pi-agent-core';
 export type { AgentEvent, AgentContext, AgentMessage, AgentTool, AgentState } from '@earendil-works/pi-agent-core';

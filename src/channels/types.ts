@@ -43,7 +43,15 @@ export interface WebhookConfig extends ChannelConfig {
   secret?: string;
 }
 
+export interface FeishuConfig extends ChannelConfig {
+  appId: string;
+  appSecret: string;
+  port: number;
+  path?: string;
+}
+
 export type ChannelConfigMap = {
   cli?: CLIConfig;
   webhook?: WebhookConfig;
+  feishu?: FeishuConfig;
 };

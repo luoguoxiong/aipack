@@ -2,6 +2,7 @@
 
 import { Kobot } from './kobot';
 import { CLIChannel } from './channels/cli';
+import { FeishuChannel } from './channels/feishu';
 import { createLogger } from './utils/logger';
 import { hasAnyApiKey, loadEnvFile, runSetupWizard } from './setup-wizard';
 
@@ -33,6 +34,22 @@ async function main(): Promise<void> {
     console.log('✅ Kobot initialized successfully');
     console.log(`   Model: ${bot.config_.agents.defaults.model}`);
     console.log(`   Tools: ${bot.tools.length} available`);
+
+    // Start Feishu channel if configured via environment variables
+    const feishuAppId = process.env.FEISHU_APP_ID;
+    const feishuAppSecret = process.env.FEISHU_APP_SECRET;
+    if (feishuAppId && feishuAppSecret) {
+      const feishuChannel = new FeishuChannel({
+        id: 'feishu',
+        name: 'Feishu',
+        enabled: true,
+        appId: feishuAppId,
+        appSecret: feishuAppSecret,
+        port: parseInt(process.env.FEISHU_PORT || '3000', 10),
+        path: process.env.FEISHU_PATH || '/webhook/event',
+      });
+      await feishuChannel.start(bot);
+    }
     
     const cliChannel = new CLIChannel({
       id: 'cli',
