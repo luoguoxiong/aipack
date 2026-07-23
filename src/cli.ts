@@ -7,7 +7,7 @@ import { createLogger } from './utils/logger';
 import { hasAnyApiKey, loadEnvFile, runSetupWizard } from './setup-wizard';
 
 async function main(): Promise<void> {
-  console.log('🐈 Starting Kobot...');
+  console.log('Starting Kobot...');
   
   // 在机器人初始化前禁用 CLI 模式下的控制台日志
   process.env.KOBOT_LOG_CONSOLE = 'false';

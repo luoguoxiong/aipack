@@ -79,7 +79,7 @@ agents:
 启动后进入交互式命令行界面：
 
 ```
-🐈 CLI channel started
+CLI channel started
 Type "exit" or "quit" to exit
 Type "help" for available commands
 ---
@@ -88,14 +88,14 @@ kobot>
 
 ### 内置命令
 
-| 命令 | 说明 |
-|------|------|
-| `help` | 显示帮助信息 |
-| `tools` | 列出所有可用工具 |
-| `sessions` | 列出所有会话 |
-| `session <key>` | 查看会话详细信息 |
-| `use <key>` | 切换到指定会话（恢复历史记录） |
-| `exit` / `quit` | 退出 |
+| 命令            | 说明                           |
+| --------------- | ------------------------------ |
+| `help`          | 显示帮助信息                   |
+| `tools`         | 列出所有可用工具               |
+| `sessions`      | 列出所有会话                   |
+| `session <key>` | 查看会话详细信息               |
+| `use <key>`     | 切换到指定会话（恢复历史记录） |
+| `exit` / `quit` | 退出                           |
 
 ### 示例会话
 
@@ -128,13 +128,13 @@ workspace: ~/.kobot
 
 agents:
   defaults:
-    workspace: workspace          # 默认工作空间
-    model: deepseek-v4-flash      # 默认模型
-    provider: auto                # 模型提供商（auto 为自动选择）
+    workspace: workspace # 默认工作空间
+    model: deepseek-v4-flash # 默认模型
+    provider: auto # 模型提供商（auto 为自动选择）
     max_tokens: 8192
     context_window_tokens: 200000
     temperature: 0.1
-    max_tool_iterations: 200      # 单次任务最大工具调用次数
+    max_tool_iterations: 200 # 单次任务最大工具调用次数
     bot_name: kobot
     bot_icon: 🐈
     unified_session: false
@@ -160,12 +160,12 @@ providers:
   items:
     - name: openai
       base_url: https://api.openai.com/v1
-      api_key: "${OPENAI_API_KEY}"
+      api_key: '${OPENAI_API_KEY}'
 
 tools:
   filesystem:
     enabled: true
-    workspace_only: true           # 限制文件操作在工作空间内
+    workspace_only: true # 限制文件操作在工作空间内
     max_file_size_mb: 10
   shell:
     enabled: true
@@ -173,7 +173,7 @@ tools:
     timeout_sec: 120
   web:
     enabled: true
-    search_provider: ddg           # 搜索引擎（ddg= DuckDuckGo）
+    search_provider: ddg # 搜索引擎（ddg= DuckDuckGo）
     fetch_timeout_sec: 30
     max_search_results: 5
 
@@ -182,7 +182,7 @@ memory:
   base_dir: memory
 
 sessions:
-  storage: file                    # 会话持久化方式（memory 或 file）
+  storage: file # 会话持久化方式（memory 或 file）
   storage_path: sessions
 
 logging:
@@ -191,7 +191,7 @@ logging:
   console_enabled: true
 
 security:
-  workspace_access: allow          # 工作空间访问策略
+  workspace_access: allow # 工作空间访问策略
   network_access: true
 ```
 
@@ -264,43 +264,43 @@ kobot/
 
 `stream()` 方法通过 AsyncGenerator 产生以下事件：
 
-| 事件类型 | 说明 |
-|---------|------|
-| `run_started` / `run_completed` / `run_failed` | 运行生命周期 |
-| `text_delta` / `text_completed` | 文本流式输出 |
-| `reasoning_delta` / `reasoning_completed` | 推理过程输出 |
+| 事件类型                                          | 说明         |
+| ------------------------------------------------- | ------------ |
+| `run_started` / `run_completed` / `run_failed`    | 运行生命周期 |
+| `text_delta` / `text_completed`                   | 文本流式输出 |
+| `reasoning_delta` / `reasoning_completed`         | 推理过程输出 |
 | `tool_started` / `tool_completed` / `tool_failed` | 工具执行事件 |
-| `file_edit` | 文件编辑事件 |
+| `file_edit`                                       | 文件编辑事件 |
 
 ## 可用工具
 
-| 工具名称 | 分类 | 说明 |
-|---------|------|------|
-| `read_file` | 文件系统 | 读取文件内容 |
-| `write_file` | 文件系统 | 写入文件 |
-| `edit_file` | 文件系统 | 编辑文件 |
-| `delete_file` | 文件系统 | 删除文件 |
-| `rename_file` | 文件系统 | 重命名文件 |
-| `create_directory` | 文件系统 | 创建目录 |
-| `remove_directory` | 文件系统 | 删除目录 |
-| `list_directory` | 文件系统 | 列出目录内容 |
-| `shell` | Shell | 执行 Shell 命令 |
-| `web_search` | 网络 | 搜索引擎查询 |
-| `web_fetch` | 网络 | 抓取网页内容 |
-| `memory_save` | 记忆 | 保存记忆 |
-| `memory_load` | 记忆 | 加载记忆 |
-| `memory_list` | 记忆 | 列出记忆 |
-| `memory_delete` | 记忆 | 删除记忆 |
-| `echo` | 通用 | 回显文本 |
-| `get_time` | 通用 | 获取当前时间 |
-| `calculate` | 通用 | 数学计算 |
-| `encode_base64` | 通用 | Base64 编码 |
-| `decode_base64` | 通用 | Base64 解码 |
-| `cron_add` | 定时任务 | 添加定时任务 |
-| `cron_remove` | 定时任务 | 移除定时任务 |
-| `cron_list` | 定时任务 | 列出定时任务 |
-| `grep` | 搜索 | 搜索文件内容 |
-| `glob` | 搜索 | 按模式匹配文件 |
+| 工具名称           | 分类     | 说明            |
+| ------------------ | -------- | --------------- |
+| `read_file`        | 文件系统 | 读取文件内容    |
+| `write_file`       | 文件系统 | 写入文件        |
+| `edit_file`        | 文件系统 | 编辑文件        |
+| `delete_file`      | 文件系统 | 删除文件        |
+| `rename_file`      | 文件系统 | 重命名文件      |
+| `create_directory` | 文件系统 | 创建目录        |
+| `remove_directory` | 文件系统 | 删除目录        |
+| `list_directory`   | 文件系统 | 列出目录内容    |
+| `shell`            | Shell    | 执行 Shell 命令 |
+| `web_search`       | 网络     | 搜索引擎查询    |
+| `web_fetch`        | 网络     | 抓取网页内容    |
+| `memory_save`      | 记忆     | 保存记忆        |
+| `memory_load`      | 记忆     | 加载记忆        |
+| `memory_list`      | 记忆     | 列出记忆        |
+| `memory_delete`    | 记忆     | 删除记忆        |
+| `echo`             | 通用     | 回显文本        |
+| `get_time`         | 通用     | 获取当前时间    |
+| `calculate`        | 通用     | 数学计算        |
+| `encode_base64`    | 通用     | Base64 编码     |
+| `decode_base64`    | 通用     | Base64 解码     |
+| `cron_add`         | 定时任务 | 添加定时任务    |
+| `cron_remove`      | 定时任务 | 移除定时任务    |
+| `cron_list`        | 定时任务 | 列出定时任务    |
+| `grep`             | 搜索     | 搜索文件内容    |
+| `glob`             | 搜索     | 按模式匹配文件  |
 
 ## 会话管理
 
@@ -310,7 +310,7 @@ Kobot 支持会话持久化，保存对话历史和工具调用记录。
 
 ```yaml
 sessions:
-  storage: file          # 文件存储（持久化）
+  storage: file # 文件存储（持久化）
   storage_path: sessions # 存储路径（相对于 workspace）
 ```
 
@@ -330,6 +330,7 @@ kobot> use sdk:default
 ```
 
 会话记录包含：
+
 - 模型变更（provider、modelId）
 - 用户消息和 AI 回复
 - 工具调用输入和结果
@@ -358,13 +359,13 @@ npm run lint
 
 ### 项目脚本
 
-| 命令 | 说明 |
-|------|------|
-| `npm run dev` | 开发模式（使用 tsx 直接运行） |
-| `npm run build` | 编译到 dist/ 目录 |
-| `npm start` | 生产模式运行 |
-| `npm test` | 运行测试 |
-| `npm run lint` | TypeScript 类型检查 |
+| 命令            | 说明                          |
+| --------------- | ----------------------------- |
+| `npm run dev`   | 开发模式（使用 tsx 直接运行） |
+| `npm run build` | 编译到 dist/ 目录             |
+| `npm start`     | 生产模式运行                  |
+| `npm test`      | 运行测试                      |
+| `npm run lint`  | TypeScript 类型检查           |
 
 ## 使用 SDK
 
@@ -406,11 +407,12 @@ tail -f ~/.kobot/logs/kobot.log | npx pino-pretty
 ```
 
 日志配置：
+
 ```yaml
 logging:
-  level: info             # trace / debug / info / warn / error / fatal
+  level: info # trace / debug / info / warn / error / fatal
   file_path: logs/kobot.log
-  console_enabled: true   # 是否输出到控制台
+  console_enabled: true # 是否输出到控制台
 ```
 
 ## 许可证

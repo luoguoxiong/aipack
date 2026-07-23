@@ -64,19 +64,19 @@ Kobot 内置了飞书机器人渠道（`FeishuChannel`），可对接飞书开�
 
 Kobot 通过以下环境变量启用飞书机器人渠道：
 
-| 环境变量 | 说明 | 默认值 | 是否必需 |
-|----------|------|--------|----------|
-| `FEISHU_APP_ID` | 飞书自建应用的 App ID | - | 是 |
-| `FEISHU_APP_SECRET` | 飞书自建应用的 App Secret | - | 是 |
-| `FEISHU_PORT` | HTTP 服务监听端口 | `3000` | 否 |
-| `FEISHU_PATH` | 事件回调路径 | `/webhook/event` | 否 |
+| 环境变量            | 说明                      | 默认值           | 是否必需 |
+| ------------------- | ------------------------- | ---------------- | -------- |
+| `FEISHU_APP_ID`     | 飞书自建应用的 App ID     | -                | 是       |
+| `FEISHU_APP_SECRET` | 飞书自建应用的 App Secret | -                | 是       |
+| `FEISHU_PORT`       | HTTP 服务监听端口         | `3000`           | 否       |
+| `FEISHU_PATH`       | 事件回调路径              | `/webhook/event` | 否       |
 
 同时需要配置至少一个 AI 模型的 API Key，例如：
 
-| 环境变量 | 说明 |
-|----------|------|
-| `DEEPSEEK_API_KEY` | DeepSeek API 密钥 |
-| `OPENAI_API_KEY` | OpenAI API 密钥 |
+| 环境变量            | 说明               |
+| ------------------- | ------------------ |
+| `DEEPSEEK_API_KEY`  | DeepSeek API 密钥  |
+| `OPENAI_API_KEY`    | OpenAI API 密钥    |
 | `ANTHROPIC_API_KEY` | Anthropic API 密钥 |
 
 ### 配置方式
@@ -110,7 +110,7 @@ npm run build && npm start
 启动后看到以下日志即表示飞书机器人运行成功：
 
 ```
-🐈 Starting Kobot...
+Starting Kobot...
 💬 [Feishu] Feishu channel started on http://localhost:3000/webhook/event
 ```
 
@@ -152,6 +152,7 @@ https://xxxx.ngrok.io/webhook/event
 ```
 
 关键点：
+
 - 仅处理文本消息（`message_type === 'text'`），其他类型（图片、文件等）自动忽略
 - 回复使用飞书消息 API 的 `reply` 模式，以纯文本（`msg_type: text`）格式发送
 - 每个群聊/私聊使用独立的会话（session key 格式：`feishu:{chatId}`）
@@ -169,6 +170,7 @@ https://xxxx.ngrok.io/webhook/event
 ### 回调配置验证失败
 
 检查以下事项：
+
 - Kobot 服务是否已启动并可访问（`curl http://localhost:3000/health` 应返回 `{"status":"ok"}`）
 - 内网穿透（ngrok）是否运行正常
 - 回调 URL 是否与 `FEISHU_PATH` 和 `FEISHU_PORT` 一致
@@ -177,6 +179,7 @@ https://xxxx.ngrok.io/webhook/event
 ### 机器人不回复消息
 
 检查以下事项：
+
 - 飞书应用是否已发布并添加到群聊/个人对话
 - 环境变量 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET` 是否正确
 - Kobot 启动日志中是否有错误信息
