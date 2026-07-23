@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { Nanobot } from '../src/nanobot.js';
-import { createDefaultToolRegistry } from '../src/tools/registry.js';
+import { Nanobot } from '../src/nanobot';
+import { createDefaultToolRegistry } from '../src/tools/registry';
 
 describe('Nanobot', () => {
   it('should create instance from config', async () => {

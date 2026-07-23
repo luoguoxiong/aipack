@@ -1,7 +1,7 @@
-export { BaseTool, isToolErrorResult, createToolError, createToolResult } from './base.js';
-export type { ToolContext, ToolResult, ToolDefinition } from './base.js';
-export { ToolRegistry, createDefaultToolRegistry } from './registry.js';
-export type { ToolExecutionRecord } from './registry.js';
+export { BaseTool, isToolErrorResult, createToolError, createToolResult } from './base';
+export type { ToolContext, ToolResult, ToolDefinition } from './base';
+export { ToolRegistry, createDefaultToolRegistry } from './registry';
+export type { ToolExecutionRecord } from './registry';
 export {
   StringSchema,
   IntegerSchema,
@@ -10,11 +10,11 @@ export {
   ArraySchema,
   ObjectSchema,
   toolParametersSchema,
-} from './types.js';
-export { getFilesystemTools } from './filesystem.js';
-export { getShellTools } from './shell.js';
-export { getWebTools } from './web.js';
-export { getMemoryTools, setMemoryBaseDir } from './memory.js';
-export { getCronTools, getCronTasks } from './cron.js';
-export { getUtilityTools } from './utilities.js';
-export { getSearchTools, FindFilesTool, GrepTool } from './search.js';
+} from './types';
+export { getFilesystemTools } from './filesystem';
+export { getShellTools } from './shell';
+export { getWebTools } from './web';
+export { getMemoryTools, setMemoryBaseDir } from './memory';
+export { getCronTools, getCronTasks } from './cron';
+export { getUtilityTools } from './utilities';
+export { getSearchTools, FindFilesTool, GrepTool } from './search';

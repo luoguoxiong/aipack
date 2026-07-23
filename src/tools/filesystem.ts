@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Type } from "@earendil-works/pi-ai";
-import { BaseTool, createToolResult, createToolError } from "./base.js";
+import { BaseTool, createToolResult, createToolError } from './base';
 
 export class ReadFileTool extends BaseTool<typeof ReadFileTool.parameters> {
   name = 'read_file';

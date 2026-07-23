@@ -1,6 +1,6 @@
 import cronParser from 'cron-parser';
 import { Type } from "@earendil-works/pi-ai";
-import { BaseTool, createToolResult, createToolError } from "./base.js";
+import { BaseTool, createToolResult, createToolError } from './base';
 
 interface ScheduledTask {
   id: string;

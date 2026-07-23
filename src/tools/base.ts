@@ -1,9 +1,9 @@
 import { Type, Static, TSchema } from "@earendil-works/pi-ai";
 import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
-import { createToolResult, createToolError, isToolErrorResult } from "./types.js";
-import { logger } from "../utils/logger.js";
+import { createToolResult, createToolError, isToolErrorResult } from "./types";
+import { logger } from "../utils/logger";
 
-export type { ToolContext, ToolDefinition } from "./types.js";
+export type { ToolContext, ToolDefinition } from "./types";
 export type ToolResult<T = unknown> = AgentToolResult<T>;
 export { createToolResult, createToolError, isToolErrorResult };
 

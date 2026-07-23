@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/cli.ts",
-    "start": "node dist/cli.js",
+    "start": "node --import tsx dist/cli.js",
     "test": "node --import tsx --test tests/**/*.test.ts",
     "lint": "tsc --noEmit"
   },

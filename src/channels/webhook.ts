@@ -1,7 +1,7 @@
 import http from 'http';
-import type { Channel, WebhookConfig, ChannelMessage, ChannelResponse } from './types.js';
-import type { Nanobot } from '../nanobot.js';
-import { STREAM_EVENT_TEXT_DELTA, STREAM_EVENT_TEXT_COMPLETED, STREAM_EVENT_TOOL_STARTED, STREAM_EVENT_TOOL_COMPLETED, STREAM_EVENT_TOOL_FAILED, STREAM_EVENT_RUN_COMPLETED, STREAM_EVENT_RUN_FAILED } from '../nanobot.js';
+import type { Channel, WebhookConfig, ChannelMessage, ChannelResponse } from './types';
+import type { Nanobot } from '../nanobot';
+import { STREAM_EVENT_TEXT_DELTA, STREAM_EVENT_TEXT_COMPLETED, STREAM_EVENT_TOOL_STARTED, STREAM_EVENT_TOOL_COMPLETED, STREAM_EVENT_TOOL_FAILED, STREAM_EVENT_RUN_COMPLETED, STREAM_EVENT_RUN_FAILED } from '../nanobot';
 
 export class WebhookChannel implements Channel {
   id: string;

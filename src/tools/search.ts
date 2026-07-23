@@ -1,5 +1,5 @@
 import { Type } from "@earendil-works/pi-ai";
-import { BaseTool, createToolResult, createToolError } from "./base.js";
+import { BaseTool, createToolResult, createToolError } from './base';
 import { spawn } from 'child_process';
 
 const IGNORE_DIRS = [

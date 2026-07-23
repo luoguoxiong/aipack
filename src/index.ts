@@ -12,7 +12,7 @@ export {
   STREAM_EVENT_TOOL_FAILED,
   STREAM_EVENT_FILE_EDIT,
   STREAM_EVENT_TYPES,
-} from './nanobot.js';
+} from './nanobot';
 export type {
   StreamEventType,
   StreamEvent,
@@ -22,30 +22,30 @@ export type {
   SessionSnapshot,
   RunOptions,
   NanobotOptions,
-} from './nanobot.js';
+} from './nanobot';
 
-export { loadConfig, getConfigPath } from './config/loader.js';
-export type { Config } from './config/schema.js';
-export { defaultConfig } from './config/schema.js';
-export { getWorkspacePath } from './config/paths.js';
+export { loadConfig, getConfigPath } from './config/loader';
+export type { Config } from './config/schema';
+export { defaultConfig } from './config/schema';
+export { getWorkspacePath } from './config/paths';
 
-export { BaseTool, isToolErrorResult, createToolError, createToolResult } from './tools/base.js';
-export type { ToolContext, ToolResult, ToolDefinition } from './tools/base.js';
-export { ToolRegistry, createDefaultToolRegistry } from './tools/registry.js';
-export type { ToolExecutionRecord } from './tools/registry.js';
+export { BaseTool, isToolErrorResult, createToolError, createToolResult } from './tools/base';
+export type { ToolContext, ToolResult, ToolDefinition } from './tools/base';
+export { ToolRegistry, createDefaultToolRegistry } from './tools/registry';
+export type { ToolExecutionRecord } from './tools/registry';
 
-export { AgentHook, SDKCaptureHook, StreamingHook } from './agent/hook.js';
-export type { AgentHookContext, AgentRunHookContext, AgentToolHookContext, StreamingEmitter } from './agent/hook.js';
-export { ContextBuilder, createContextBuilder } from './agent/context.js';
+export { AgentHook, SDKCaptureHook, StreamingHook } from './agent/hook';
+export type { AgentHookContext, AgentRunHookContext, AgentToolHookContext, StreamingEmitter } from './agent/hook';
+export { ContextBuilder, createContextBuilder } from './agent/context';
 
-export { FileStorage, createFileStorage } from './storage/file.js';
-export { MemoryStorageAdapter, createMemoryStorage } from './storage/memory.js';
-export { SessionManager, createSessionManager } from './storage/session-manager.js';
-export type { StorageAdapter, SessionData } from './storage/types.js';
+export { FileStorage, createFileStorage } from './storage/file';
+export { MemoryStorageAdapter, createMemoryStorage } from './storage/memory';
+export { SessionManager, createSessionManager } from './storage/session-manager';
+export type { StorageAdapter, SessionData } from './storage/types';
 
-export { CLIChannel, createCLIChannel } from './channels/cli.js';
-export { WebhookChannel, createWebhookChannel } from './channels/webhook.js';
-export type { Channel, ChannelConfig, ChannelMessage, ChannelResponse, CLIConfig, WebhookConfig } from './channels/types.js';
+export { CLIChannel, createCLIChannel } from './channels/cli';
+export { WebhookChannel, createWebhookChannel } from './channels/webhook';
+export type { Channel, ChannelConfig, ChannelMessage, ChannelResponse, CLIConfig, WebhookConfig } from './channels/types';
 
 export { Agent, AgentHarness } from '@earendil-works/pi-agent-core';
 export type { AgentEvent, AgentContext, AgentMessage, AgentTool, AgentState } from '@earendil-works/pi-agent-core';

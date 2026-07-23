@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { Type } from "@earendil-works/pi-ai";
-import { BaseTool, createToolResult, createToolError } from "./base.js";
+import { BaseTool, createToolResult, createToolError } from './base';
 
 export class WebFetchTool extends BaseTool<typeof WebFetchTool.parameters> {
   name = 'web_fetch';

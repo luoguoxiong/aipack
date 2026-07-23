@@ -8,7 +8,7 @@ import type {
   QueueMode,
 } from "@earendil-works/pi-agent-core";
 import type { Model, ImageContent } from "@earendil-works/pi-ai";
-import type { Config } from "../config/schema.js";
+import type { Config } from "../config/schema";
 
 export type {
   AgentEvent,

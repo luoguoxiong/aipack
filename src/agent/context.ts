@@ -1,5 +1,5 @@
-import type { Config } from "../config/schema.js";
-import { getWorkspacePath } from "../config/paths.js";
+import type { Config } from "../config/schema";
+import { getWorkspacePath } from "../config/paths";
 
 export interface ContextBuilderOptions {
   timezone?: string;

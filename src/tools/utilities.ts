@@ -1,5 +1,5 @@
 import { Type } from "@earendil-works/pi-ai";
-import { BaseTool, createToolResult, createToolError } from "./base.js";
+import { BaseTool, createToolResult, createToolError } from './base';
 
 export class EchoTool extends BaseTool<typeof EchoTool.parameters> {
   name = 'echo';

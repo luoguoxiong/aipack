@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { Nanobot } from './nanobot.js';
-import { CLIChannel } from './channels/cli.js';
+import { Nanobot } from './nanobot';
+import { CLIChannel } from './channels/cli';
 
 async function main(): Promise<void> {
   console.log('🐈 Starting Nanobot...');

@@ -1,8 +1,8 @@
 import readline from 'readline';
-import type { Channel, CLIConfig, ChannelResponse } from './types.js';
-import type { Nanobot } from '../nanobot.js';
-import { STREAM_EVENT_TEXT_DELTA, STREAM_EVENT_TEXT_COMPLETED, STREAM_EVENT_TOOL_STARTED, STREAM_EVENT_TOOL_COMPLETED, STREAM_EVENT_TOOL_FAILED, STREAM_EVENT_RUN_FAILED } from '../nanobot.js';
-import { logger } from '../utils/logger.js';
+import type { Channel, CLIConfig, ChannelResponse } from './types';
+import type { Nanobot } from '../nanobot';
+import { STREAM_EVENT_TEXT_DELTA, STREAM_EVENT_TEXT_COMPLETED, STREAM_EVENT_TOOL_STARTED, STREAM_EVENT_TOOL_COMPLETED, STREAM_EVENT_TOOL_FAILED, STREAM_EVENT_RUN_FAILED } from '../nanobot';
+import { logger } from '../utils/logger';
 
 export class CLIChannel implements Channel {
   id: string;

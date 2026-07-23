@@ -1,4 +1,4 @@
-import type { Nanobot } from '../nanobot.js';
+import type { Nanobot } from '../nanobot';
 
 export interface ChannelConfig {
   id: string;

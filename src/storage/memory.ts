@@ -1,4 +1,4 @@
-import type { StorageAdapter, SessionData, SessionTreeEntry, SessionMetadata, SessionStorage } from './types.js';
+import type { StorageAdapter, SessionData, SessionTreeEntry, SessionMetadata, SessionStorage } from './types';
 
 export class MemoryStorageAdapter implements StorageAdapter {
   private sessions = new Map<string, SessionData>();

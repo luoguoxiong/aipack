@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import { ConfigSchema, Config, defaultConfig } from './schema.js';
-import { getConfigPath } from './paths.js';
+import { ConfigSchema, Config, defaultConfig } from './schema';
+import { getConfigPath } from './paths';
 
 export async function loadConfig(configPath?: string): Promise<Config> {
   const resolvedPath = configPath || getConfigPath();

@@ -1,7 +1,7 @@
 import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
-import type { LoggingConfig } from '../config/schema.js';
+import type { LoggingConfig } from '../config/schema';
 
 let loggerInstance: pino.Logger;
 

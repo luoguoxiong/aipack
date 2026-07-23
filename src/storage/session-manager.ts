@@ -1,8 +1,8 @@
 import path from 'path';
 import { homedir } from 'os';
-import type { StorageAdapter, SessionData, SessionTreeEntry, SessionMetadata, SessionStorage, SessionContext, MessageEntry } from './types.js';
-import { createMemoryStorage, createMemorySessionStorage } from './memory.js';
-import { createFileStorage } from './file.js';
+import type { StorageAdapter, SessionData, SessionTreeEntry, SessionMetadata, SessionStorage, SessionContext, MessageEntry } from './types';
+import { createMemoryStorage, createMemorySessionStorage } from './memory';
+import { createFileStorage } from './file';
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 

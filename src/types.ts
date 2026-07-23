@@ -1,3 +1,3 @@
-export * from './config/schema.js';
-export * from './agent/types.js';
-export * from './tools/types.js';
+export * from './config/schema';
+export * from './agent/types';
+export * from './tools/types';

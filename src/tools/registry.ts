@@ -1,13 +1,13 @@
 import { AgentTool } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "@earendil-works/pi-ai";
-import { BaseTool, ToolContext, ToolResult, isToolErrorResult } from "./base.js";
-import { getFilesystemTools } from "./filesystem.js";
-import { getShellTools } from "./shell.js";
-import { getWebTools } from "./web.js";
-import { getMemoryTools } from "./memory.js";
-import { getCronTools } from "./cron.js";
-import { getUtilityTools } from "./utilities.js";
-import { getSearchTools } from "./search.js";
+import { BaseTool, ToolContext, ToolResult, isToolErrorResult } from "./base";
+import { getFilesystemTools } from "./filesystem";
+import { getShellTools } from "./shell";
+import { getWebTools } from "./web";
+import { getMemoryTools } from "./memory";
+import { getCronTools } from "./cron";
+import { getUtilityTools } from "./utilities";
+import { getSearchTools } from "./search";
 
 export interface ToolExecutionRecord {
   tool_name: string;

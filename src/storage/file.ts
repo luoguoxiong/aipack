@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import type { StorageAdapter, SessionData, FileStorageOptions } from './types.js';
-import { logger } from '../utils/logger.js';
+import type { StorageAdapter, SessionData, FileStorageOptions } from './types';
+import { logger } from '../utils/logger';
 
 export class FileStorage implements StorageAdapter {
   private baseDir: string;
