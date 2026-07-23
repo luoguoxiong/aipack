@@ -1,6 +1,12 @@
 import path from 'path';
 import { Agent, AgentHarness } from "@earendil-works/pi-agent-core";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import {
+  estimateContextTokens,
+  shouldCompact,
+  estimateTokens,
+  generateSummary,
+} from "@earendil-works/pi-agent-core";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { Model, AssistantMessage, ImageContent, TextContent, Context, SimpleStreamOptions, Api } from "@earendil-works/pi-ai";
 import { loadConfig, getConfigPath } from "./config/loader";
@@ -338,7 +344,9 @@ export class Kobot {
       }
     }
 
-    const agent = new Agent({
+    let agent: Agent;
+
+    agent = new Agent({
       initialState: {
         systemPrompt,
         model,
@@ -348,6 +356,61 @@ export class Kobot {
       },
       streamFn: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => {
         return this.models.streamSimple(model, context, options);
+      },
+      transformContext: async (messages, signal) => {
+        // 1. 估算当前上下文 token
+        const estimate = estimateContextTokens(messages);
+        const contextWindow = this.config.agents.defaults.context_window_tokens || 200000;
+        const reserveTokens = 4000;
+        const keepRecentTokens = 8000;
+
+        // 2. 判断是否超过阈值需要压缩
+        if (!shouldCompact(estimate.tokens, contextWindow, {
+          enabled: true,
+          reserveTokens,
+          keepRecentTokens,
+        })) {
+          return messages;
+        }
+
+        // 3. 从尾部往前找切割点，保留约 keepRecentTokens 的最近对话
+        let cutIndex = messages.length;
+        let recentTokens = 0;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          recentTokens += estimateTokens(messages[i]);
+          if (recentTokens >= keepRecentTokens) {
+            cutIndex = i;
+            break;
+          }
+        }
+        cutIndex = Math.min(cutIndex, messages.length - 2);
+        if (cutIndex <= 0) return messages;
+
+        // 4. 对旧消息生成摘要
+        const oldMessages = messages.slice(0, cutIndex);
+        const recentMessages = messages.slice(cutIndex);
+
+        const result = await generateSummary(
+          oldMessages,
+          this.models,
+          model,
+          reserveTokens,
+          signal,
+          '用中文生成简洁的对话历史摘要，保留关键决策和上下文信息。',
+        );
+
+        if (!result.ok) return messages;
+
+        // 5. 用摘要替换旧消息
+        const compacted: AgentMessage[] = [
+          { role: 'user', content: `[对话历史摘要]\n${result.value}`, timestamp: Date.now() },
+          ...recentMessages,
+        ];
+
+        // 6. 回写到 agent state，后续轮次不再重复压缩
+        agent.state.messages = compacted;
+
+        return compacted;
       },
     });
 
