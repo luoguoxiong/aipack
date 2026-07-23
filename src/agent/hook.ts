@@ -1,120 +1,117 @@
-export interface AgentHookContext {
-  session_key: string;
-  channel: string;
-  chat_id: string;
-  sender_id: string;
-  runtime?: unknown;
-  turn_id?: string;
-  extras?: Record<string, unknown>;
-}
+import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentHook as AgentHookInterface, AgentHookContext, AgentRunHookContext, AgentToolHookContext, StreamingEmitter } from "./types";
 
-export interface AgentRunHookContext extends AgentHookContext {
-  messages?: unknown[];
-  tools?: unknown;
-}
+export type { AgentHookContext, AgentRunHookContext, AgentToolHookContext, StreamingEmitter };
 
-export interface AgentToolHookContext extends AgentHookContext {
-  tool_name: string;
-  tool_call_id: string;
-  arguments?: unknown;
-  result?: unknown;
-  error?: string;
-}
+export class StreamingHook implements StreamingEmitter {
+  private listeners = new Set<(event: AgentEvent) => void>();
 
-export abstract class AgentHook {
-  name = 'base';
-
-  wantsStreaming(): boolean {
-    return false;
+  subscribe(listener: (event: AgentEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
-  async onTurnStart(_context: AgentHookContext): Promise<void> {}
-  async onTurnEnd(_context: AgentHookContext, _result: unknown): Promise<void> {}
-  async onTurnError(_context: AgentHookContext, _error: Error): Promise<void> {}
-
-  async onToolStart(_context: AgentToolHookContext): Promise<void> {}
-  async onToolEnd(_context: AgentToolHookContext): Promise<void> {}
-  async onToolError(_context: AgentToolHookContext): Promise<void> {}
-
-  async onStreamDelta(_context: AgentHookContext, _delta: string): Promise<void> {}
-  async onStreamEnd(_context: AgentHookContext): Promise<void> {}
-
-  finalizeContent(_context: AgentHookContext, content: string | null): string | null {
-    return content;
+  emit(event: AgentEvent): void {
+    for (const listener of this.listeners) {
+      listener(event);
+    }
   }
 }
 
-export class SDKCaptureHook extends AgentHook {
-  name = 'sdk_capture';
-  private captured: {
-    tools: Array<{ name: string; id: string; status: string; result?: string; error?: string }>;
-  } = { tools: [] };
+export class SDKCaptureHook implements AgentHookInterface {
+  private capturedEvents: AgentEvent[] = [];
 
-  async onToolStart(context: AgentToolHookContext): Promise<void> {
-    this.captured.tools.push({
-      name: context.tool_name,
-      id: context.tool_call_id,
-      status: 'started',
+  get events(): AgentEvent[] {
+    return [...this.capturedEvents];
+  }
+
+  onMessage(context: AgentHookContext): void {
+    this.capturedEvents.push(context.event);
+  }
+
+  onToolCall(context: AgentToolHookContext): void {
+    this.capturedEvents.push({
+      type: "tool_execution_start",
+      toolCallId: context.toolCallId,
+      toolName: context.toolName,
+      args: context.args,
     });
   }
 
-  async onToolEnd(context: AgentToolHookContext): Promise<void> {
-    const tool = this.captured.tools.find(t => t.id === context.tool_call_id);
-    if (tool) {
-      tool.status = 'completed';
-      tool.result = String(context.result || '');
+  onToolResult(context: AgentToolHookContext): void {
+    this.capturedEvents.push({
+      type: "tool_execution_end",
+      toolCallId: context.toolCallId,
+      toolName: context.toolName,
+      result: context.result,
+      isError: false,
+    });
+  }
+
+  clear(): void {
+    this.capturedEvents = [];
+  }
+}
+
+export class AgentHookManager {
+  private hooks: AgentHookInterface[] = [];
+
+  register(hook: AgentHookInterface): void {
+    this.hooks.push(hook);
+  }
+
+  async emitStart(messages: AgentMessage[], signal: AbortSignal): Promise<void> {
+    for (const hook of this.hooks) {
+      if (hook.onStart) {
+        await hook.onStart({ event: { type: "agent_start" }, messages, signal });
+      }
     }
   }
 
-  async onToolError(context: AgentToolHookContext): Promise<void> {
-    const tool = this.captured.tools.find(t => t.id === context.tool_call_id);
-    if (tool) {
-      tool.status = 'failed';
-      tool.error = context.error;
+  async emitMessage(event: AgentEvent, signal: AbortSignal): Promise<void> {
+    for (const hook of this.hooks) {
+      if (hook.onMessage) {
+        await hook.onMessage({ event, signal });
+      }
     }
   }
 
-  getCaptured() {
-    return { ...this.captured };
+  async emitToolCall(toolName: string, toolCallId: string, args: unknown, signal: AbortSignal): Promise<void> {
+    for (const hook of this.hooks) {
+      if (hook.onToolCall) {
+        await hook.onToolCall({
+          event: { type: "tool_execution_start", toolCallId, toolName, args },
+          toolName,
+          toolCallId,
+          args,
+          signal,
+        });
+      }
+    }
+  }
+
+  async emitToolResult(toolName: string, toolCallId: string, result: unknown, signal: AbortSignal): Promise<void> {
+    for (const hook of this.hooks) {
+      if (hook.onToolResult) {
+        await hook.onToolResult({
+          event: { type: "tool_execution_end", toolCallId, toolName, result, isError: false },
+          toolName,
+          toolCallId,
+          args: {},
+          result,
+          signal,
+        });
+      }
+    }
+  }
+
+  async emitEnd(messages: AgentMessage[], signal: AbortSignal): Promise<void> {
+    for (const hook of this.hooks) {
+      if (hook.onEnd) {
+        await hook.onEnd({ event: { type: "agent_end", messages }, messages, signal });
+      }
+    }
   }
 }
 
-export interface StreamingEmitter {
-  textDelta: (delta: string) => Promise<void>;
-  textCompleted: (options?: { resuming?: boolean; force?: boolean }) => Promise<void>;
-  toolStarted: (name: string, id: string) => Promise<void>;
-  toolCompleted: (name: string, id: string) => Promise<void>;
-  toolFailed: (name: string, id: string, error: string) => Promise<void>;
-  reasoningDelta: (delta: string) => Promise<void>;
-  reasoningCompleted: () => Promise<void>;
-}
-
-export class StreamingHook extends AgentHook {
-  name = 'streaming';
-  private emitter: StreamingEmitter;
-
-  constructor(emitter: StreamingEmitter) {
-    super();
-    this.emitter = emitter;
-  }
-
-  async onStreamDelta(_context: AgentHookContext, delta: string): Promise<void> {
-    await this.emitter.textDelta(delta);
-  }
-
-  async onStreamEnd(_context: AgentHookContext): Promise<void> {
-    await this.emitter.textCompleted();
-  }
-
-  async onToolStart(context: AgentToolHookContext): Promise<void> {
-    await this.emitter.toolStarted(context.tool_name, context.tool_call_id);
-  }
-
-  async onToolEnd(context: AgentToolHookContext): Promise<void> {
-    await this.emitter.toolCompleted(context.tool_name, context.tool_call_id);
-  }
-
-  async onToolError(context: AgentToolHookContext): Promise<void> {
-    await this.emitter.toolFailed(context.tool_name, context.tool_call_id, context.error || '');
-  }
-}
+export { AgentHookManager as AgentHook };

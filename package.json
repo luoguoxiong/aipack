@@ -1,26 +1,19 @@
 {
-  "name": "nanobot-ai-ts",
-  "version": "0.0.1",
-  "description": "A lightweight personal AI assistant framework (TypeScript port)",
+  "name": "kobot-pi",
+  "version": "0.0.2",
+  "description": "A lightweight personal AI assistant framework (based on pi-agent)",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "nanobot": "dist/cli/commands.js"
+    "kobot": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsx src/cli/commands.ts",
-    "start": "node dist/cli/commands.js",
-    "start:webui": "npm run build && npm run start -- webui",
-    "start:chat": "npm run build && npm run start -- chat",
-    "start:dev-webui": "npx tsx src/cli/commands.ts webui",
-    "start:dev-chat": "npx tsx src/cli/commands.ts chat",
+    "dev": "tsx src/cli.ts",
+    "start": "node --import tsx dist/cli.js",
     "test": "node --import tsx --test tests/**/*.test.ts",
-    "lint": "tsc --noEmit",
-    "webui:install": "cd webui && npm install",
-    "webui:build": "cd webui && npm run build",
-    "webui:dev": "cd webui && npm run dev"
+    "lint": "tsc --noEmit"
   },
   "keywords": [
     "ai",
@@ -32,6 +25,8 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.81.1",
+    "@earendil-works/pi-ai": "^0.81.1",
     "@types/express": "^5.0.6",
     "axios": "^1.7.0",
     "commander": "^12.1.0",

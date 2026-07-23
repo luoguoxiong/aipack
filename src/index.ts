@@ -1,14 +1,5 @@
-export { Nanobot } from './nanobot.js';
-export type {
-  RunResult,
-  RunOptions,
-  NanobotOptions,
-  StreamEvent,
-  StreamEventType,
-  SessionInfo,
-  SessionSnapshot,
-} from './nanobot.js';
 export {
+  Kobot,
   STREAM_EVENT_RUN_STARTED,
   STREAM_EVENT_RUN_COMPLETED,
   STREAM_EVENT_RUN_FAILED,
@@ -19,22 +10,43 @@ export {
   STREAM_EVENT_TOOL_STARTED,
   STREAM_EVENT_TOOL_COMPLETED,
   STREAM_EVENT_TOOL_FAILED,
+  STREAM_EVENT_FILE_EDIT,
   STREAM_EVENT_TYPES,
-} from './nanobot.js';
+} from './kobot';
+export type {
+  StreamEventType,
+  StreamEvent,
+  FileEditEventData,
+  RunResult,
+  SessionInfo,
+  SessionSnapshot,
+  RunOptions,
+  KobotOptions,
+} from './kobot';
 
-export { AgentLoop, AgentRunner, ContextBuilder } from './agent/index.js';
-export { ToolRegistry, createDefaultToolRegistry } from './agent/tools/index.js';
-export { MessageBus, createMessageBus } from './bus/index.js';
-export { ChannelManager, registerChannel, CliChannel, WebSocketChannel } from './channels/index.js';
-export { SessionManager, SessionStore } from './session/index.js';
-export {
-  LLMProvider,
-  OpenAICompatProvider,
-  ProviderFactoryService,
-  registerProvider,
-} from './providers/index.js';
-export { loadConfig, saveConfig, defaultConfig } from './config/index.js';
-export type { Config, AgentDefaults, ProviderConfig } from './config/index.js';
+export { loadConfig, getConfigPath } from './config/loader';
+export type { Config } from './config/schema';
+export { defaultConfig } from './config/schema';
+export { getWorkspacePath } from './config/paths';
 
-export const __version__ = '0.2.2';
-export const __logo__ = '🐈';
+export { BaseTool, isToolErrorResult, createToolError, createToolResult } from './tools/base';
+export type { ToolContext, ToolResult, ToolDefinition } from './tools/base';
+export { ToolRegistry, createDefaultToolRegistry } from './tools/registry';
+export type { ToolExecutionRecord } from './tools/registry';
+
+export { AgentHook, SDKCaptureHook, StreamingHook } from './agent/hook';
+export type { AgentHookContext, AgentRunHookContext, AgentToolHookContext, StreamingEmitter } from './agent/hook';
+export { ContextBuilder, createContextBuilder } from './agent/context';
+
+export { FileStorage, createFileStorage } from './storage/file';
+export { MemoryStorageAdapter, createMemoryStorage } from './storage/memory';
+export { SessionManager, createSessionManager } from './storage/session-manager';
+export type { StorageAdapter, SessionData } from './storage/types';
+
+export { CLIChannel, createCLIChannel } from './channels/cli';
+export { WebhookChannel, createWebhookChannel } from './channels/webhook';
+export type { Channel, ChannelConfig, ChannelMessage, ChannelResponse, CLIConfig, WebhookConfig } from './channels/types';
+
+export { Agent, AgentHarness } from '@earendil-works/pi-agent-core';
+export type { AgentEvent, AgentContext, AgentMessage, AgentTool, AgentState } from '@earendil-works/pi-agent-core';
+export type { Models } from '@earendil-works/pi-ai';

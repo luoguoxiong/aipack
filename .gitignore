@@ -1,3 +1,7 @@
-node_modules
-dist
-.nanobot
+node_modules/
+dist/
+.webui/
+.kobot/
+.env
+.env.local
+*.log

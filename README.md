@@ -1,249 +1,418 @@
-# Nanobot-Ts
+# Kobot
 
-一个轻量级个人 AI 助手框架，使用 TypeScript 构建，支持多渠道接入、丰富的工具集和可扩展的技能系统。
+<p align="center">
+  <img src="image/logo.png" alt="Kobot logo" width="200">
+</p>
 
-> **项目来源**：本项目是基于开源项目 Nanobot 的 TypeScript 移植版本，保留了原项目的核心架构和功能设计，并进行了代码重构和优化。
+一个轻量级的个人 AI 助手框架，基于 [`pi-agent`](https://github.com/earendil-works/pi) 构建。
 
-## ✨ 功能特性
+## 特性
 
-### 🤖 智能 Agent 能力
+- **多模型支持** — 内置 OpenAI、Anthropic、DeepSeek、Groq、Google Gemini 等多家模型提供商支持
+- **交互式 CLI** — 开箱即用的命令行交互界面，支持会话管理和历史记录
+- **Webhook 集成** — 可通过 HTTP API 接入第三方服务
+- **丰富的工具集** — 文件系统操作、Shell 执行、网络搜索和爬取、记忆管理、定时任务等
+- **会话持久化** — 支持内存和文件两种会话存储方式，可恢复对话历史
+- **容错机制** — 工具执行自动重试、健康监控、友好的错误提示
+- **结构化日志** — 基于 pino 的分级日志系统，支持文件和控制台输出
 
-- **单主 Agent + 按需子 Agent** 架构，支持 ReAct 工具调用循环
-- 支持流式响应，实时展示思考过程和工具执行状态
-- 内置 18+ 工具：文件系统、Shell 执行、Web 搜索、代码搜索、长期记忆、定时任务等
-- 支持 MCP（Model Context Protocol）动态工具接入
+## 快速开始
 
-### 📡 多渠道支持
-
-- WebUI（基于 React）
-- CLI 命令行界面
-- HTTP API（OpenAI 兼容）
-- WebSocket 实时通信
-- 16+ 即时通讯渠道：Telegram、Discord、Slack、飞书、企业微信、微信、WhatsApp、Signal、QQ、钉钉、Email、Matrix、Mattermost、MS Teams 等
-
-### 🧠 LLM Provider 支持
-
-- OpenAI / DeepSeek / OpenAI 兼容 API
-- Anthropic Claude
-- Azure OpenAI
-- AWS Bedrock
-- GitHub Copilot
-- 支持自动降级和多 Provider 回退
-
-### 🛠️ 技能系统
-
-- 11 个内置技能：GitHub 操作、图像生成、记忆管理、天气查询、摘要生成、tmux 控制、定时任务、技能创建器、我的助手、clawhub、配置更新等
-- 支持创建和扩展自定义技能
-- 技能自动注入系统提示词，引导 Agent 完成复杂任务
-
-### 🔧 工具集
-
-| 类别     | 工具                                                                             |
-| -------- | -------------------------------------------------------------------------------- |
-| 文件系统 | `read_file`, `write_file`, `edit_file`, `list_dir`（`apply_patch` 按需加载）     |
-| Shell    | `shell_exec`（`exec_session` 按需加载）                                          |
-| Web      | `web_search`, `web_fetch`                                                        |
-| 代码搜索 | `find_files`, `grep`                                                             |
-| 记忆     | `memory_store`, `memory_recall`, `memory_search`, `memory_list`, `memory_delete` |
-| 定时任务 | `cron_add`, `cron_list`, `cron_remove`                                           |
-| 图像生成 | `generate_image`                                                                 |
-| 子 Agent | `spawn`                                                                          |
-| 长任务   | `create_goal`, `update_goal`                                                     |
-| 消息     | `message`                                                                        |
-| 系统     | `system_info`, `my`                                                              |
-| MCP      | 动态加载外部工具                                                                 |
-
-## 🚀 快速开始
-
-### 环境要求
-
-- Node.js >= 18.0.0
-- npm 或 yarn
-
-### 安装依赖
+### 安装
 
 ```bash
-# 安装后端依赖
+# 全局安装
+npm install -g kobot-pi
+
+# 或者从源码运行
+git clone git@github.com:your/kobot.git
+cd kobot
 npm install
-
-# 安装 WebUI 依赖
-npm run webui:install
-```
-
-### 构建项目
-
-```bash
 npm run build
 ```
 
-### 启动服务
-
-#### 使用启动脚本（推荐）
+### 首次运行
 
 ```bash
-# 启动 WebUI
-./start.sh webui
-
-# 启动 CLI 聊天
-./start.sh chat
-
-# 运行单条消息
-./start.sh run "帮我分析一下这个项目的代码"
+# 直接启动（如果未配置 API Key，会自动启动设置向导）
+npm start
 ```
 
-#### 开发模式
+首次启动时，如果未检测到 API Key 环境变量，Kobot 会自动进入交互式设置向导，引导你选择模型提供商并配置 API Key。
+
+### 环境变量配置
+
+你也可以手动设置环境变量：
 
 ```bash
-# 开发模式启动 WebUI
-npm run start:dev-webui
+# DeepSeek（默认模型）
+export DEEPSEEK_API_KEY="your-deepseek-api-key"
 
-# 开发模式启动 CLI
-npm run start:dev-chat
+# 或其他提供商
+export OPENAI_API_KEY="your-openai-api-key"
+export ANTHROPIC_API_KEY="your-anthropic-api-key"
+export GROQ_API_KEY="your-groq-api-key"
+export GEMINI_API_KEY="your-gemini-api-key"
 ```
 
-### 配置 API Key
+环境变量会被自动持久化到 `~/.kobot/.env` 文件，下次启动时自动加载。
 
-首次启动后，配置文件位于 `~/.nanobot/config.json`。需要配置 LLM Provider 的 API Key：
+### 选择模型
 
-```json
-{
-  "providers": {
-    "items": [
-      {
-        "name": "deepseek",
-        "base_url": "https://api.deepseek.com/v1",
-        "api_key": "your-api-key",
-        "default_model": "deepseek-chat"
-      }
-    ]
+通过 `KOBOT_MODEL` 环境变量选择默认模型：
+
+```bash
+export KOBOT_MODEL="gpt-4o-mini"
+```
+
+或在配置文件 `~/.kobot/config.yaml` 中设置：
+
+```yaml
+agents:
+  defaults:
+    model: claude-sonnet-4-20250514
+    provider: anthropic
+```
+
+## CLI 使用
+
+启动后进入交互式命令行界面：
+
+```
+🐈 CLI channel started
+Type "exit" or "quit" to exit
+Type "help" for available commands
+---
+kobot>
+```
+
+### 内置命令
+
+| 命令 | 说明 |
+|------|------|
+| `help` | 显示帮助信息 |
+| `tools` | 列出所有可用工具 |
+| `sessions` | 列出所有会话 |
+| `session <key>` | 查看会话详细信息 |
+| `use <key>` | 切换到指定会话（恢复历史记录） |
+| `exit` / `quit` | 退出 |
+
+### 示例会话
+
+```
+kobot> 帮我列出当前目录的文件
+🔧 Running: shell
+✅ shell completed
+当前目录下的文件：
+- src/
+- tests/
+- package.json
+- tsconfig.json
+- README.md
+
+kobot> sessions
+Active sessions:
+  - sdk:default
+```
+
+## 配置
+
+Kobot 的配置文件位于 `~/.kobot/config.yaml`。首次启动时如文件不存在会自动创建默认配置。
+
+### 完整配置参考
+
+```yaml
+# ~/.kobot/config.yaml
+schema_version: 1
+workspace: ~/.kobot
+
+agents:
+  defaults:
+    workspace: workspace          # 默认工作空间
+    model: deepseek-v4-flash      # 默认模型
+    provider: auto                # 模型提供商（auto 为自动选择）
+    max_tokens: 8192
+    context_window_tokens: 200000
+    temperature: 0.1
+    max_tool_iterations: 200      # 单次任务最大工具调用次数
+    bot_name: kobot
+    bot_icon: 🐈
+    unified_session: false
+    disabled_skills: []
+    timezone: Asia/Shanghai
+
+  model_presets:
+    fast:
+      label: 快速模式
+      model: deepseek-v4-flash
+      provider: deepseek
+      max_tokens: 4096
+      temperature: 0.3
+    precise:
+      label: 精确模式
+      model: claude-sonnet-4-20250514
+      provider: anthropic
+      max_tokens: 8192
+      temperature: 0.1
+
+providers:
+  defaults: {}
+  items:
+    - name: openai
+      base_url: https://api.openai.com/v1
+      api_key: "${OPENAI_API_KEY}"
+
+tools:
+  filesystem:
+    enabled: true
+    workspace_only: true           # 限制文件操作在工作空间内
+    max_file_size_mb: 10
+  shell:
+    enabled: true
+    workspace_only: true
+    timeout_sec: 120
+  web:
+    enabled: true
+    search_provider: ddg           # 搜索引擎（ddg= DuckDuckGo）
+    fetch_timeout_sec: 30
+    max_search_results: 5
+
+memory:
+  enabled: true
+  base_dir: memory
+
+sessions:
+  storage: file                    # 会话持久化方式（memory 或 file）
+  storage_path: sessions
+
+logging:
+  level: info
+  file_path: logs/kobot.log
+  console_enabled: true
+
+security:
+  workspace_access: allow          # 工作空间访问策略
+  network_access: true
+```
+
+### 配置文件路径
+
+配置文件位置可通过 `KOBOT_CONFIG_DIR` 环境变量自定义：
+
+```bash
+export KOBOT_CONFIG_DIR="/path/to/config"
+```
+
+## 架构
+
+```
+kobot/
+├── src/
+│   ├── agent/          # Agent 生命周期管理
+│   │   ├── context.ts  # 系统提示词构建
+│   │   ├── hook.ts     # 事件钩子系统
+│   │   └── types.ts    # 钩子类型定义
+│   ├── channels/       # 交互渠道
+│   │   ├── cli.ts      # 命令行界面
+│   │   ├── webhook.ts  # Webhook HTTP 服务
+│   │   └── types.ts    # 渠道类型定义
+│   ├── config/         # 配置子系统
+│   │   ├── schema.ts   # Zod 配置模式定义
+│   │   ├── loader.ts   # 配置加载和保存
+│   │   └── paths.ts    # 路径解析工具
+│   ├── storage/        # 持久化存储
+│   │   ├── file.ts     # 文件存储实现
+│   │   ├── memory.ts   # 内存存储实现
+│   │   ├── session-manager.ts  # 会话管理器
+│   │   └── types.ts    # 存储类型定义
+│   ├── tools/          # 工具集
+│   │   ├── base.ts     # 工具基类（容错、重试、健康监控）
+│   │   ├── types.ts    # 工具类型定义
+│   │   ├── registry.ts # 工具注册中心
+│   │   ├── filesystem.ts  # 文件系统工具
+│   │   ├── shell.ts    # Shell 命令工具
+│   │   ├── web.ts      # 网络工具
+│   │   ├── search.ts   # 搜索工具
+│   │   ├── memory.ts   # 记忆管理工具
+│   │   ├── cron.ts     # 定时任务工具
+│   │   └── utilities.ts # 通用工具
+│   ├── utils/
+│   │   └── logger.ts   # 日志系统
+│   ├── kobot.ts        # 核心 Kobot 类
+│   ├── cli.ts          # CLI 入口
+│   ├── setup-wizard.ts # 设置向导
+│   ├── index.ts        # 公共导出
+│   └── types.ts        # 全局类型
+├── tests/
+│   └── kobot.test.ts   # 测试
+├── package.json
+└── tsconfig.json
+```
+
+### 核心模块
+
+#### Kobot 类
+
+`Kobot` 是框架的核心类，负责初始化 Agent、管理工具注册、处理会话和消息流。
+
+- `Kobot.fromConfig()` — 从配置文件初始化
+- `run()` — 同步处理消息
+- `stream()` — 流式处理消息（支持实时事件推送）
+- 会话管理：`listSessions()`、`getSessionDetail()`、`deleteSession()`
+
+#### 流式事件
+
+`stream()` 方法通过 AsyncGenerator 产生以下事件：
+
+| 事件类型 | 说明 |
+|---------|------|
+| `run_started` / `run_completed` / `run_failed` | 运行生命周期 |
+| `text_delta` / `text_completed` | 文本流式输出 |
+| `reasoning_delta` / `reasoning_completed` | 推理过程输出 |
+| `tool_started` / `tool_completed` / `tool_failed` | 工具执行事件 |
+| `file_edit` | 文件编辑事件 |
+
+## 可用工具
+
+| 工具名称 | 分类 | 说明 |
+|---------|------|------|
+| `read_file` | 文件系统 | 读取文件内容 |
+| `write_file` | 文件系统 | 写入文件 |
+| `edit_file` | 文件系统 | 编辑文件 |
+| `delete_file` | 文件系统 | 删除文件 |
+| `rename_file` | 文件系统 | 重命名文件 |
+| `create_directory` | 文件系统 | 创建目录 |
+| `remove_directory` | 文件系统 | 删除目录 |
+| `list_directory` | 文件系统 | 列出目录内容 |
+| `shell` | Shell | 执行 Shell 命令 |
+| `web_search` | 网络 | 搜索引擎查询 |
+| `web_fetch` | 网络 | 抓取网页内容 |
+| `memory_save` | 记忆 | 保存记忆 |
+| `memory_load` | 记忆 | 加载记忆 |
+| `memory_list` | 记忆 | 列出记忆 |
+| `memory_delete` | 记忆 | 删除记忆 |
+| `echo` | 通用 | 回显文本 |
+| `get_time` | 通用 | 获取当前时间 |
+| `calculate` | 通用 | 数学计算 |
+| `encode_base64` | 通用 | Base64 编码 |
+| `decode_base64` | 通用 | Base64 解码 |
+| `cron_add` | 定时任务 | 添加定时任务 |
+| `cron_remove` | 定时任务 | 移除定时任务 |
+| `cron_list` | 定时任务 | 列出定时任务 |
+| `grep` | 搜索 | 搜索文件内容 |
+| `glob` | 搜索 | 按模式匹配文件 |
+
+## 会话管理
+
+Kobot 支持会话持久化，保存对话历史和工具调用记录。
+
+### 存储配置
+
+```yaml
+sessions:
+  storage: file          # 文件存储（持久化）
+  storage_path: sessions # 存储路径（相对于 workspace）
+```
+
+默认使用 `file` 存储类型，会话文件保存在 `~/.kobot/sessions/` 目录。
+
+### 会话操作
+
+```bash
+# 列出所有会话
+kobot> sessions
+
+# 查看会话详情
+kobot> session sdk:default
+
+# 切换会话（恢复历史）
+kobot> use sdk:default
+```
+
+会话记录包含：
+- 模型变更（provider、modelId）
+- 用户消息和 AI 回复
+- 工具调用输入和结果
+- Token 用量统计
+
+## 开发
+
+### 本地开发
+
+```bash
+# 安装依赖
+npm install
+
+# 开发模式运行
+npm run dev
+
+# 编译 TypeScript
+npm run build
+
+# 运行测试
+npm test
+
+# 类型检查
+npm run lint
+```
+
+### 项目脚本
+
+| 命令 | 说明 |
+|------|------|
+| `npm run dev` | 开发模式（使用 tsx 直接运行） |
+| `npm run build` | 编译到 dist/ 目录 |
+| `npm start` | 生产模式运行 |
+| `npm test` | 运行测试 |
+| `npm run lint` | TypeScript 类型检查 |
+
+## 使用 SDK
+
+Kobot 可作为库集成到你的 Node.js 项目中：
+
+```typescript
+import { Kobot } from 'kobot-pi';
+
+// 初始化
+const bot = await Kobot.fromConfig({
+  model: 'deepseek-v4-flash',
+});
+
+// 同步处理
+const result = await bot.run('你好！');
+console.log(result.content);
+
+// 流式处理
+for await (const event of bot.stream('写一个 Hello World')) {
+  if (event.type === 'text_delta') {
+    process.stdout.write(event.content || '');
   }
 }
+
+// 自定义会话
+await bot.run('消息', { sessionKey: 'my-session' });
+
+// 关闭
+await bot.close();
 ```
 
-## 📖 文档
+## 日志
 
-| 文档                                                         | 说明                           |
-| ------------------------------------------------------------ | ------------------------------ |
-| [ARCHITECTURE.md](ARCHITECTURE.md)                           | 架构与执行流程说明             |
-| [AGENT_TOOLS.md](AGENT_TOOLS.md)                             | Agent 工具完整清单与说明       |
-| [CONFIGURATION.md](CONFIGURATION.md)                         | 配置文件完整说明               |
-| [API.md](API.md)                                             | HTTP API 和 WebSocket 协议文档 |
-| [SKILLS_DEVELOPMENT.md](SKILLS_DEVELOPMENT.md)               | 技能开发指南                   |
-| [ARCHITECTURE_OPTIMIZATION.md](ARCHITECTURE_OPTIMIZATION.md) | 架构优化方案                   |
-| [TOKEN_OPTIMIZATION.md](TOKEN_OPTIMIZATION.md)               | Token 消耗分析与优化           |
-
-## 📁 项目结构
-
-```
-nanobot-ts/
-├── src/                    # 后端源码
-│   ├── agent/              # Agent 核心逻辑
-│   │   ├── tools/          # 工具集（18+ 工具）
-│   │   ├── loop.ts         # 主 Agent 循环
-│   │   ├── runner.ts       # ReAct 工具调用循环
-│   │   ├── subagent.ts     # 子 Agent 管理
-│   │   └── skills.ts       # 技能加载器
-│   ├── api/                # HTTP API 服务
-│   ├── apps/               # CLI 应用服务
-│   ├── audio/              # 音频处理
-│   ├── bus/                # 消息总线
-│   ├── channels/           # 渠道适配器（16+ 渠道）
-│   ├── cli/                # 命令行接口
-│   ├── command/            # 命令路由
-│   ├── config/             # 配置管理
-│   ├── cron/               # 定时任务服务
-│   ├── gateway/            # 网关服务
-│   ├── pairing/            # 配对服务
-│   ├── providers/          # LLM Provider
-│   ├── sdk/                # SDK 客户端
-│   ├── security/           # 安全策略
-│   ├── session/            # 会话管理
-│   ├── skills/             # 技能运行时
-│   ├── triggers/           # 触发器
-│   ├── webui/              # WebUI 后端 API
-│   └── utils/              # 工具函数
-├── webui/                  # WebUI 前端
-│   ├── src/
-│   │   ├── components/     # React 组件
-│   │   ├── hooks/          # React Hooks
-│   │   ├── i18n/           # 国际化（10 种语言）
-│   │   └── lib/            # 工具库
-│   └── package.json
-├── skills/                 # 技能目录
-│   ├── github/             # GitHub 技能
-│   ├── weather/            # 天气技能
-│   ├── image-generation/   # 图像生成技能
-│   ├── memory/             # 记忆管理技能
-│   ├── summarize/          # 摘要生成技能
-│   ├── tmux/               # Tmux 控制技能
-│   ├── cron/               # 定时任务技能
-│   ├── skill-creator/      # 技能创建器
-│   └── my/                 # 我的助手技能
-├── templates/              # Agent 模板
-│   ├── agent/              # Agent 身份和提示词模板
-│   ├── memory/             # 记忆模板
-│   └── prompts/            # 提示词模板
-├── .nanobot/               # 运行时配置和数据
-│   ├── config.json         # 配置文件
-│   └── workspace/          # 工作目录
-└── package.json
-```
-
-## 🎯 CLI 命令
+日志文件默认保存在 `~/.kobot/logs/kobot.log`，使用 pino 结构化 JSON 格式。
 
 ```bash
-# 启动 WebUI
-nanobot webui [-p <port>]
-
-# 启动 CLI 聊天
-nanobot chat
-
-# 运行单条消息
-nanobot run <message>
-
-# 管理配置
-nanobot config init          # 初始化配置
-nanobot config show          # 显示当前配置
-nanobot config path          # 打印配置文件路径
-
-# 管理会话
-nanobot sessions list        # 列出所有会话
-nanobot sessions delete <session>
-
-# 列出可用工具
-nanobot tools
-
-# 显示帮助
-nanobot --help
+# 实时查看日志
+tail -f ~/.kobot/logs/kobot.log | npx pino-pretty
 ```
 
-## 🔧 配置说明
+日志配置：
+```yaml
+logging:
+  level: info             # trace / debug / info / warn / error / fatal
+  file_path: logs/kobot.log
+  console_enabled: true   # 是否输出到控制台
+```
 
-核心配置项（详细说明见 [CONFIGURATION.md](CONFIGURATION.md)）：
+## 许可证
 
-| 配置项                                | 默认值                    | 说明               |
-| ------------------------------------- | ------------------------- | ------------------ |
-| `agents.defaults.model`               | anthropic/claude-opus-4-5 | 默认模型           |
-| `agents.defaults.provider`            | auto                      | Provider 类型      |
-| `agents.defaults.workspace`           | .nanobot/workspace        | 工作目录           |
-| `agents.defaults.max_tool_iterations` | 200                       | ReAct 最大迭代次数 |
-| `api.port`                            | 8000                      | API 服务端口       |
-| `security.workspace_access`           | allow                     | 工作区访问权限     |
-
-## 🌐 多语言支持
-
-WebUI 支持以下语言：
-
-- 中文（简体/繁体）
-- English
-- Spanish
-- French
-- Indonesian
-- Japanese
-- Korean
-- Portuguese (Brazil)
-- Vietnamese
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
+MIT
