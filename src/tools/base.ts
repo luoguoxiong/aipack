@@ -31,7 +31,7 @@ const NON_RETRYABLE_ERRORS = [
 
 export interface RetryConfig {
   maxRetries: number;
-  initialDelay: number; // ms
+  initialDelay: number; // 毫秒
   backoffFactor: number;
 }
 

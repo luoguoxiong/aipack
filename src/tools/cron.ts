@@ -16,11 +16,11 @@ const tasks: Map<string, ScheduledTask> = new Map();
 export class CronAddTool extends BaseTool<typeof CronAddTool.parameters> {
   name = 'cron_add';
   label = 'Cron Add';
-  description = 'Add a scheduled cron task';
+  description = '添加一个定时 cron 任务';
   static parameters = Type.Object({
-    id: Type.String({ description: 'Unique identifier for the task' }),
-    cron: Type.String({ description: 'Cron expression' }),
-    command: Type.String({ description: 'Command to execute' }),
+    id: Type.String({ description: '任务的唯一标识符' }),
+    cron: Type.String({ description: 'Cron 表达式' }),
+    command: Type.String({ description: '要执行的命令' }),
   });
   parameters = CronAddTool.parameters;
 
@@ -45,7 +45,7 @@ export class CronAddTool extends BaseTool<typeof CronAddTool.parameters> {
 export class CronListTool extends BaseTool<typeof CronListTool.parameters> {
   name = 'cron_list';
   label = 'Cron List';
-  description = 'List all scheduled tasks';
+  description = '列出所有定时任务';
   static parameters = Type.Object({});
   parameters = CronListTool.parameters;
 
@@ -63,9 +63,9 @@ export class CronListTool extends BaseTool<typeof CronListTool.parameters> {
 export class CronRemoveTool extends BaseTool<typeof CronRemoveTool.parameters> {
   name = 'cron_remove';
   label = 'Cron Remove';
-  description = 'Remove a scheduled task';
+  description = '移除一个定时任务';
   static parameters = Type.Object({
-    id: Type.String({ description: 'The task ID' }),
+    id: Type.String({ description: '任务 ID' }),
   });
   parameters = CronRemoveTool.parameters;
 
@@ -81,10 +81,10 @@ export class CronRemoveTool extends BaseTool<typeof CronRemoveTool.parameters> {
 export class CronEnableTool extends BaseTool<typeof CronEnableTool.parameters> {
   name = 'cron_enable';
   label = 'Cron Enable';
-  description = 'Enable or disable a task';
+  description = '启用或禁用一个任务';
   static parameters = Type.Object({
-    id: Type.String({ description: 'The task ID' }),
-    enabled: Type.Boolean({ description: 'Enable or disable', default: true }),
+    id: Type.String({ description: '任务 ID' }),
+    enabled: Type.Boolean({ description: '启用或禁用', default: true }),
   });
   parameters = CronEnableTool.parameters;
 

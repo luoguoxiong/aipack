@@ -7,7 +7,7 @@ let loggerInstance: pino.Logger;
 
 function createPinoLogger(config?: Partial<LoggingConfig>): pino.Logger {
   const level = config?.level || process.env.NANOBOT_LOG_LEVEL || 'info';
-  const consoleEnabled = config?.console_enabled ?? true;
+  const consoleEnabled = (config?.console_enabled ?? true) && process.env.NANOBOT_LOG_CONSOLE !== 'false';
   const filePath = config?.file_path;
 
   const streams: Array<{ stream: pino.DestinationStream; level: string }> = [];
@@ -53,7 +53,7 @@ export function createLogger(config?: Partial<LoggingConfig>): pino.Logger {
   return loggerInstance;
 }
 
-// Create default logger (console only)
+// 创建默认日志记录器（仅控制台）
 loggerInstance = pino({
   level: process.env.NANOBOT_LOG_LEVEL || 'info',
   transport: process.env.NODE_ENV !== 'production' ? {
@@ -66,7 +66,7 @@ loggerInstance = pino({
   } : undefined,
 });
 
-// Export a proxy that always points to the current logger instance
+// 导出始终指向当前日志记录器实例的代理
 export const logger = new Proxy(loggerInstance, {
   get(target, prop) {
     if (prop === '__esModule') return false;

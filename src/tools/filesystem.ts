@@ -6,9 +6,9 @@ import { BaseTool, createToolResult, createToolError } from './base';
 export class ReadFileTool extends BaseTool<typeof ReadFileTool.parameters> {
   name = 'read_file';
   label = 'Read File';
-  description = 'Read the contents of a file';
+  description = '读取文件内容';
   static parameters = Type.Object({
-    file_path: Type.String({ description: 'The path to the file' }),
+    file_path: Type.String({ description: '文件路径' }),
   });
   parameters = ReadFileTool.parameters;
 
@@ -25,11 +25,11 @@ export class ReadFileTool extends BaseTool<typeof ReadFileTool.parameters> {
 export class WriteFileTool extends BaseTool<typeof WriteFileTool.parameters> {
   name = 'write_file';
   label = 'Write File';
-  description = 'Write content to a file';
+  description = '写入内容到文件';
   static parameters = Type.Object({
-    file_path: Type.String({ description: 'The path to the file' }),
-    content: Type.String({ description: 'The content to write' }),
-    append: Type.Boolean({ description: 'Append to file instead of overwriting', default: false }),
+    file_path: Type.String({ description: '文件路径' }),
+    content: Type.String({ description: '要写入的内容' }),
+    append: Type.Boolean({ description: '追加到文件而非覆盖', default: false }),
   });
   parameters = WriteFileTool.parameters;
 
@@ -50,9 +50,9 @@ export class WriteFileTool extends BaseTool<typeof WriteFileTool.parameters> {
 export class ListDirectoryTool extends BaseTool<typeof ListDirectoryTool.parameters> {
   name = 'list_directory';
   label = 'List Directory';
-  description = 'List files and directories in a directory';
+  description = '列出目录中的文件和目录';
   static parameters = Type.Object({
-    path: Type.String({ description: 'The path to the directory', default: '.' }),
+    path: Type.String({ description: '目录路径', default: '.' }),
   });
   parameters = ListDirectoryTool.parameters;
 
@@ -73,9 +73,9 @@ export class ListDirectoryTool extends BaseTool<typeof ListDirectoryTool.paramet
 export class CreateDirectoryTool extends BaseTool<typeof CreateDirectoryTool.parameters> {
   name = 'create_directory';
   label = 'Create Directory';
-  description = 'Create a new directory';
+  description = '创建新目录';
   static parameters = Type.Object({
-    path: Type.String({ description: 'The path to the directory' }),
+    path: Type.String({ description: '目录路径' }),
   });
   parameters = CreateDirectoryTool.parameters;
 
@@ -92,9 +92,9 @@ export class CreateDirectoryTool extends BaseTool<typeof CreateDirectoryTool.par
 export class DeleteFileTool extends BaseTool<typeof DeleteFileTool.parameters> {
   name = 'delete_file';
   label = 'Delete File';
-  description = 'Delete a file';
+  description = '删除文件';
   static parameters = Type.Object({
-    file_path: Type.String({ description: 'The path to the file' }),
+    file_path: Type.String({ description: '文件路径' }),
   });
   parameters = DeleteFileTool.parameters;
 
@@ -111,9 +111,9 @@ export class DeleteFileTool extends BaseTool<typeof DeleteFileTool.parameters> {
 export class DeleteDirectoryTool extends BaseTool<typeof DeleteDirectoryTool.parameters> {
   name = 'delete_directory';
   label = 'Delete Directory';
-  description = 'Delete a directory and all its contents';
+  description = '删除目录及其所有内容';
   static parameters = Type.Object({
-    path: Type.String({ description: 'The path to the directory' }),
+    path: Type.String({ description: '目录路径' }),
   });
   parameters = DeleteDirectoryTool.parameters;
 
@@ -130,10 +130,10 @@ export class DeleteDirectoryTool extends BaseTool<typeof DeleteDirectoryTool.par
 export class RenameFileTool extends BaseTool<typeof RenameFileTool.parameters> {
   name = 'rename_file';
   label = 'Rename File';
-  description = 'Rename or move a file';
+  description = '重命名或移动文件';
   static parameters = Type.Object({
-    old_path: Type.String({ description: 'The current path' }),
-    new_path: Type.String({ description: 'The new path' }),
+    old_path: Type.String({ description: '当前路径' }),
+    new_path: Type.String({ description: '新路径' }),
   });
   parameters = RenameFileTool.parameters;
 

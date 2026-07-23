@@ -189,7 +189,7 @@ export class Nanobot {
       config.agents.defaults.model_preset = options.modelPreset;
     }
 
-    // Initialize logger with config
+    // 使用配置初始化日志记录器
     if (config.logging) {
       createLogger(config.logging);
     }
@@ -216,22 +216,22 @@ export class Nanobot {
     try {
       const allModels: Model<any>[] = this.models.getModels();
       
-      // First try to find exact match with configured provider
+      // 先尝试在配置的提供商中精确匹配
       if (resolvedProvider !== 'auto') {
         model = allModels.find((m: Model<any>) => m.id === resolvedModelName && m.provider === resolvedProvider);
       }
       
-      // If no match with configured provider, try to find exact match with openai provider (most common)
+      // 如果未匹配到配置的提供商，尝试在 openai 提供商中精确匹配（最常见）
       if (!model) {
         model = allModels.find((m: Model<any>) => m.id === resolvedModelName && m.provider === 'openai');
       }
       
-      // If still no match, find any model with matching ID
+      // 如果仍未匹配，查找任意提供商中 ID 匹配的模型
       if (!model) {
         model = allModels.find((m: Model<any>) => m.id === resolvedModelName);
       }
       
-      // If no exact match, try to find models from the configured provider
+      // 如果未精确匹配，尝试从配置的提供商中获取模型
       if (!model && resolvedProvider !== 'auto') {
         const providerModels = allModels.filter((m: Model<any>) => m.provider === resolvedProvider);
         if (providerModels.length > 0) {
@@ -239,7 +239,7 @@ export class Nanobot {
         }
       }
       
-      // If still no match, try to find any openai model
+      // 如果仍未匹配，尝试查找任意 openai 模型
       if (!model) {
         const openaiModels = allModels.filter((m: Model<any>) => m.provider === 'openai');
         if (openaiModels.length > 0) {
@@ -247,7 +247,7 @@ export class Nanobot {
         }
       }
       
-      // If still no match, use the first model as fallback
+      // 如果仍未匹配，使用第一个模型作为回退
       if (!model && allModels.length > 0) {
         model = allModels[0];
       }
@@ -282,18 +282,18 @@ export class Nanobot {
     const contextBuilder = ContextBuilder.create(this.config);
     const systemPrompt = contextBuilder.buildSystemPrompt();
 
-    // Load saved session to restore state
+    // 加载已保存的会话以恢复状态
     const savedSession = await this.sessionManager.loadSession(sessionKey);
     let model = this.resolveModel();
     let messages: AgentMessage[] = [];
 
     if (savedSession && savedSession.entries.length > 0) {
-      // Restore messages
+      // 恢复消息
       messages = savedSession.entries
         .filter((entry: SessionTreeEntry): entry is MessageEntry => entry.type === 'message')
         .map((entry: MessageEntry) => entry.message);
 
-      // Restore last used model
+      // 恢复上次使用的模型
       const lastModelChange = [...savedSession.entries]
         .reverse()
         .find(entry => entry.type === 'model_change' || 
@@ -321,7 +321,7 @@ export class Nanobot {
               model = restoredModel;
             }
           } catch {
-            // Fallback if model not found
+            // 如果模型未找到，使用回退
             model = {
               id: restoredModelId,
               name: restoredModelId,
@@ -373,7 +373,7 @@ export class Nanobot {
     let stopReason = 'completed';
     let error: string | undefined;
 
-    // Store model info
+    // 存储模型信息
     if (model) {
       await sessionStorage.appendEntry({
         type: 'model_change',
@@ -409,7 +409,7 @@ export class Nanobot {
           const msg = event.message as AssistantMessage;
           logger.debug({ sessionKey, traceId, role: event.message.role, stopReason: msg.stopReason }, '[MESSAGE_END] Message completed');
           
-          // Store message entry
+          // 存储消息条目
           await sessionStorage.appendEntry({
             type: 'message',
             id: await sessionStorage.createEntryId(),
@@ -423,7 +423,7 @@ export class Nanobot {
             stopReason = msg.stopReason || 'completed';
             error = msg.errorMessage;
             
-            // Store token usage
+            // 存储 token 用量
             if (msg.usage) {
               await sessionStorage.appendEntry({
                 type: 'token_usage',
@@ -438,7 +438,7 @@ export class Nanobot {
         case 'tool_execution_start':
           logger.info({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId, args: event.args }, '[TOOL_START] Tool execution started');
           
-          // Store tool call entry
+          // 存储工具调用条目
           await sessionStorage.appendEntry({
             type: 'tool_call',
             id: await sessionStorage.createEntryId(),
@@ -459,7 +459,7 @@ export class Nanobot {
         case 'tool_execution_end':
           logger.info({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId, success: !event.isError }, '[TOOL_END] Tool execution completed');
           
-          // Store tool result entry
+          // 存储工具结果条目
           const resultContent = event.result?.content?.filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('') || '';
           await sessionStorage.appendEntry({
             type: 'tool_result',
@@ -509,7 +509,7 @@ export class Nanobot {
     const agent = await this.getOrCreateAgent(sessionKey);
     const model = agent.state.model;
 
-    // Store model info
+    // 存储模型信息
     if (model) {
       await sessionStorage.appendEntry({
         type: 'model_change',
@@ -599,7 +599,7 @@ export class Nanobot {
         case 'message_end':
           logger.debug({ sessionKey, role: event.message.role }, '[MESSAGE_END] Message completed');
           
-          // Store message entry
+          // 存储消息条目
           await sessionStorage.appendEntry({
             type: 'message',
             id: await sessionStorage.createEntryId(),
@@ -615,7 +615,7 @@ export class Nanobot {
             error = msg.errorMessage;
             pushEvent({ type: STREAM_EVENT_TEXT_COMPLETED, content: finalContent });
             
-            // Store token usage
+            // 存储 token 用量
             if (msg.usage) {
               await sessionStorage.appendEntry({
                 type: 'token_usage',
@@ -631,7 +631,7 @@ export class Nanobot {
         case 'tool_execution_start':
           logger.info({ sessionKey, toolName: event.toolName, toolCallId: event.toolCallId }, '[TOOL_START] Tool execution started');
           
-          // Store tool call entry
+          // 存储工具调用条目
           await sessionStorage.appendEntry({
             type: 'tool_call',
             id: await sessionStorage.createEntryId(),
@@ -674,7 +674,7 @@ export class Nanobot {
         case 'tool_execution_end':
           logger.info({ sessionKey, toolName: event.toolName, toolCallId: event.toolCallId, success: !event.isError }, '[TOOL_END] Tool execution completed');
           
-          // Store tool result entry
+          // 存储工具结果条目
           const resultContent = event.result?.content?.filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('') || '';
           await sessionStorage.appendEntry({
             type: 'tool_result',

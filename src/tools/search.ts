@@ -16,10 +16,10 @@ const IGNORE_FILES = [
 export class FindFilesTool extends BaseTool<typeof FindFilesTool.parameters> {
   name = 'find_files';
   label = 'Find Files';
-  description = 'Find files matching a pattern. Skips common dependency/build directories like node_modules, dist, .git, etc.';
+  description = '查找匹配模式的文件。跳过常见的依赖/构建目录，如 node_modules、dist、.git 等。';
   static parameters = Type.Object({
-    pattern: Type.String({ description: 'Glob pattern to match' }),
-    path: Type.String({ description: 'Directory to search in', default: '.' }),
+    pattern: Type.String({ description: '要匹配的 Glob 模式' }),
+    path: Type.String({ description: '要搜索的目录', default: '.' }),
   });
   parameters = FindFilesTool.parameters;
 
@@ -65,11 +65,11 @@ export class FindFilesTool extends BaseTool<typeof FindFilesTool.parameters> {
 export class GrepTool extends BaseTool<typeof GrepTool.parameters> {
   name = 'grep';
   label = 'Grep';
-  description = 'Search for text in files. Skips common dependency/build directories like node_modules, dist, .git, etc.';
+  description = '在文件中搜索文本。跳过常见的依赖/构建目录，如 node_modules、dist、.git 等。';
   static parameters = Type.Object({
-    pattern: Type.String({ description: 'Search pattern' }),
-    path: Type.String({ description: 'Directory or file to search in', default: '.' }),
-    max_lines: Type.Integer({ description: 'Maximum number of lines to return', default: 20 }),
+    pattern: Type.String({ description: '搜索模式' }),
+    path: Type.String({ description: '要搜索的目录或文件', default: '.' }),
+    max_lines: Type.Integer({ description: '返回的最大行数', default: 20 }),
   });
   parameters = GrepTool.parameters;
 

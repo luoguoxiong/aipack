@@ -8,10 +8,10 @@ const execAsync = promisify(exec);
 export class ShellTool extends BaseTool<typeof ShellTool.parameters> {
   name = 'shell';
   label = 'Shell';
-  description = 'Execute shell commands';
+  description = '执行 Shell 命令';
   static parameters = Type.Object({
-    command: Type.String({ description: 'The shell command to execute' }),
-    timeout: Type.Integer({ description: 'Timeout in seconds', default: 120 }),
+    command: Type.String({ description: '要执行的 Shell 命令' }),
+    timeout: Type.Integer({ description: '超时时间（秒）', default: 120 }),
   });
   parameters = ShellTool.parameters;
 
@@ -33,7 +33,7 @@ export class ShellTool extends BaseTool<typeof ShellTool.parameters> {
 export class GitStatusTool extends BaseTool<typeof GitStatusTool.parameters> {
   name = 'git_status';
   label = 'Git Status';
-  description = 'Get git status of the current repository';
+  description = '获取当前仓库的 Git 状态';
   static parameters = Type.Object({});
   parameters = GitStatusTool.parameters;
 
@@ -51,9 +51,9 @@ export class GitStatusTool extends BaseTool<typeof GitStatusTool.parameters> {
 export class GitLogTool extends BaseTool<typeof GitLogTool.parameters> {
   name = 'git_log';
   label = 'Git Log';
-  description = 'Get recent git commit log';
+  description = '获取最近的 Git 提交日志';
   static parameters = Type.Object({
-    limit: Type.Integer({ description: 'Number of commits to show', default: 10 }),
+    limit: Type.Integer({ description: '要显示的提交数量', default: 10 }),
   });
   parameters = GitLogTool.parameters;
 

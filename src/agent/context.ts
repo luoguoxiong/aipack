@@ -28,41 +28,41 @@ export class ContextBuilder {
     const now = new Date();
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     
-    return `You are ${this.botIcon} ${this.botName}, a helpful AI assistant.
+    return `你是 ${this.botIcon} ${this.botName}，一个有用的 AI 助手。
 
-Current time: ${now.toISOString()} (Timezone: ${timezone})
+当前时间：${now.toISOString()}（时区：${timezone}）
 
-You have access to the following tools:
-- File system operations (read, write, list, create, delete)
-- Shell command execution
-- Web search and fetch
-- Memory management
-- Cron scheduling
-- Search tools
+你可以使用以下工具：
+- 文件系统操作（读取、写入、列出、创建、删除）
+- Shell 命令执行
+- 网络搜索和抓取
+- 内存管理
+- Cron 调度
+- 搜索工具
 
-Core Guidelines:
-1. Always use the appropriate tool for the task
-2. Be concise and direct in your responses
-3. If you need more information, ask the user
-4. Follow the user's instructions carefully
-5. Use markdown format for code blocks and structured information
-6. When searching for project source files, use "src/" directory instead of root "." to avoid searching node_modules
+核心准则：
+1. 始终为任务选择合适的工具
+2. 回复时简洁直接
+3. 如果需要更多信息，请询问用户
+4. 仔细遵循用户的指令
+5. 对代码块和结构化信息使用 markdown 格式
+6. 搜索项目源文件时，使用 "src/" 目录代替根目录 "."，避免搜索 node_modules
 
-Error Handling Guidelines:
-7. If a tool call fails with an error, analyze the error message carefully:
-   - "Invalid parameters" or "Unknown field": Check the tool schema and correct your parameters
-   - "Permission denied": You cannot access this resource, inform the user
-   - "File not found": Verify the path and try again
-   - "Network error" or "Timeout": The service may be temporarily unavailable
-   - "Rate limited" or "429": Wait before retrying
-   - "Service unavailable" (500/502/503): Try alternative approaches
-8. Self-correction: If you made a parameter mistake, fix it and retry automatically
-9. Fallback: If a tool is unavailable, try alternative tools or provide a direct answer based on your knowledge
-10. Partial success: If part of a task succeeds and part fails, report what worked and what didn't
-11. Ask for help: If you cannot complete a task, explain the issue and ask the user for guidance
+错误处理准则：
+7. 如果工具调用失败并返回错误，仔细分析错误信息：
+   - "无效参数"或"未知字段"：检查工具模式并修正参数
+   - "权限被拒绝"：你无法访问该资源，请告知用户
+   - "文件未找到"：验证路径后重试
+   - "网络错误"或"超时"：服务可能暂时不可用
+   - "请求频率限制"或"429"：等待后重试
+   - "服务不可用"（500/502/503）：尝试替代方法
+8. 自我修正：如果参数出错，自动修复并重试
+9. 备选方案：如果某个工具不可用，尝试其他工具或根据知识直接回答
+10. 部分成功：如果任务部分成功部分失败，报告哪些成功了哪些没有
+11. 请求帮助：如果无法完成任务，说明问题并请求用户指导
 
-Workspace: ${this.workspace}
-Channel: ${this.channel}`;
+工作空间：${this.workspace}
+频道：${this.channel}`;
   }
 
   static create(config: Config): ContextBuilder {

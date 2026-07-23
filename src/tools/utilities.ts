@@ -4,9 +4,9 @@ import { BaseTool, createToolResult, createToolError } from './base';
 export class EchoTool extends BaseTool<typeof EchoTool.parameters> {
   name = 'echo';
   label = 'Echo';
-  description = 'Echo back the provided text';
+  description = '回显提供的文本';
   static parameters = Type.Object({
-    text: Type.String({ description: 'The text to echo' }),
+    text: Type.String({ description: '要回显的文本' }),
   });
   parameters = EchoTool.parameters;
 
@@ -18,7 +18,7 @@ export class EchoTool extends BaseTool<typeof EchoTool.parameters> {
 export class GetTimeTool extends BaseTool<typeof GetTimeTool.parameters> {
   name = 'get_time';
   label = 'Get Time';
-  description = 'Get the current time and date';
+  description = '获取当前时间和日期';
   static parameters = Type.Object({});
   parameters = GetTimeTool.parameters;
 
@@ -31,9 +31,9 @@ export class GetTimeTool extends BaseTool<typeof GetTimeTool.parameters> {
 export class CalculateTool extends BaseTool<typeof CalculateTool.parameters> {
   name = 'calculate';
   label = 'Calculate';
-  description = 'Perform mathematical calculations';
+  description = '执行数学计算';
   static parameters = Type.Object({
-    expression: Type.String({ description: 'The mathematical expression to evaluate' }),
+    expression: Type.String({ description: '要计算的数学表达式' }),
   });
   parameters = CalculateTool.parameters;
 
@@ -51,9 +51,9 @@ export class CalculateTool extends BaseTool<typeof CalculateTool.parameters> {
 export class EncodeBase64Tool extends BaseTool<typeof EncodeBase64Tool.parameters> {
   name = 'encode_base64';
   label = 'Encode Base64';
-  description = 'Encode text to Base64';
+  description = '将文本编码为 Base64';
   static parameters = Type.Object({
-    text: Type.String({ description: 'The text to encode' }),
+    text: Type.String({ description: '要编码的文本' }),
   });
   parameters = EncodeBase64Tool.parameters;
 
@@ -66,9 +66,9 @@ export class EncodeBase64Tool extends BaseTool<typeof EncodeBase64Tool.parameter
 export class DecodeBase64Tool extends BaseTool<typeof DecodeBase64Tool.parameters> {
   name = 'decode_base64';
   label = 'Decode Base64';
-  description = 'Decode Base64 text';
+  description = '解码 Base64 文本';
   static parameters = Type.Object({
-    text: Type.String({ description: 'The Base64 text to decode' }),
+    text: Type.String({ description: '要解码的 Base64 文本' }),
   });
   parameters = DecodeBase64Tool.parameters;
 

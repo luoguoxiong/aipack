@@ -12,10 +12,10 @@ export function setMemoryBaseDir(dir: string): void {
 export class MemorySaveTool extends BaseTool<typeof MemorySaveTool.parameters> {
   name = 'memory_save';
   label = 'Memory Save';
-  description = 'Save a memory entry';
+  description = '保存一条记忆';
   static parameters = Type.Object({
-    key: Type.String({ description: 'The key for the memory' }),
-    content: Type.String({ description: 'The content to save' }),
+    key: Type.String({ description: '记忆的键名' }),
+    content: Type.String({ description: '要保存的内容' }),
   });
   parameters = MemorySaveTool.parameters;
 
@@ -37,9 +37,9 @@ export class MemorySaveTool extends BaseTool<typeof MemorySaveTool.parameters> {
 export class MemoryLoadTool extends BaseTool<typeof MemoryLoadTool.parameters> {
   name = 'memory_load';
   label = 'Memory Load';
-  description = 'Load a memory entry';
+  description = '加载一条记忆';
   static parameters = Type.Object({
-    key: Type.String({ description: 'The key for the memory' }),
+    key: Type.String({ description: '记忆的键名' }),
   });
   parameters = MemoryLoadTool.parameters;
 
@@ -61,7 +61,7 @@ export class MemoryLoadTool extends BaseTool<typeof MemoryLoadTool.parameters> {
 export class MemoryListTool extends BaseTool<typeof MemoryListTool.parameters> {
   name = 'memory_list';
   label = 'Memory List';
-  description = 'List all memory keys';
+  description = '列出所有记忆键名';
   static parameters = Type.Object({});
   parameters = MemoryListTool.parameters;
 
@@ -85,9 +85,9 @@ export class MemoryListTool extends BaseTool<typeof MemoryListTool.parameters> {
 export class MemoryDeleteTool extends BaseTool<typeof MemoryDeleteTool.parameters> {
   name = 'memory_delete';
   label = 'Memory Delete';
-  description = 'Delete a memory entry';
+  description = '删除一条记忆';
   static parameters = Type.Object({
-    key: Type.String({ description: 'The key for the memory' }),
+    key: Type.String({ description: '记忆的键名' }),
   });
   parameters = MemoryDeleteTool.parameters;
 

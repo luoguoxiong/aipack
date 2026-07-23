@@ -289,7 +289,7 @@ export class CLIChannel implements Channel {
     this.currentSessionKey = sessionKey;
     console.log(`\nSwitched to session: ${sessionKey}`);
     
-    // Show session info
+    // 显示会话信息
     const detail = await this.bot.getSessionDetail(sessionKey);
     if (detail && detail.entries.length > 0) {
       const messageEntries = detail.entries.filter(e => e.type === 'message') as any[];

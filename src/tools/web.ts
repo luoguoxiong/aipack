@@ -5,10 +5,10 @@ import { BaseTool, createToolResult, createToolError } from './base';
 export class WebFetchTool extends BaseTool<typeof WebFetchTool.parameters> {
   name = 'web_fetch';
   label = 'Web Fetch';
-  description = 'Fetch the contents of a web page';
+  description = '获取网页内容';
   static parameters = Type.Object({
-    url: Type.String({ description: 'The URL to fetch' }),
-    timeout: Type.Integer({ description: 'Timeout in seconds', default: 30 }),
+    url: Type.String({ description: '要获取的 URL' }),
+    timeout: Type.Integer({ description: '超时时间（秒）', default: 30 }),
   });
   parameters = WebFetchTool.parameters;
 
@@ -25,10 +25,10 @@ export class WebFetchTool extends BaseTool<typeof WebFetchTool.parameters> {
 export class WebSearchTool extends BaseTool<typeof WebSearchTool.parameters> {
   name = 'web_search';
   label = 'Web Search';
-  description = 'Search the web using DuckDuckGo';
+  description = '使用 DuckDuckGo 搜索网络';
   static parameters = Type.Object({
-    query: Type.String({ description: 'The search query' }),
-    max_results: Type.Integer({ description: 'Maximum number of results', default: 5 }),
+    query: Type.String({ description: '搜索关键词' }),
+    max_results: Type.Integer({ description: '最大结果数量', default: 5 }),
   });
   parameters = WebSearchTool.parameters;
 

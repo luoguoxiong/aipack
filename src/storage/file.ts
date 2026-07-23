@@ -58,7 +58,7 @@ export class FileStorage implements StorageAdapter {
     try {
       await fs.promises.unlink(lockFile);
     } catch {
-      // Ignore if lock file doesn't exist
+      // 如果锁文件不存在则忽略
     }
   }
 
@@ -116,7 +116,7 @@ export class FileStorage implements StorageAdapter {
         try {
           await fs.promises.unlink(filePath);
         } catch {
-          // Ignore delete errors
+          // 忽略删除错误
         }
         return null;
       }
@@ -192,7 +192,7 @@ export class FileStorage implements StorageAdapter {
           await fs.promises.unlink(filePath);
         }
       } catch {
-        // ignore
+        // 忽略
       }
     }
   }
