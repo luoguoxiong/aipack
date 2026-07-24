@@ -14,6 +14,7 @@
 - **丰富的工具集** — 文件系统操作、Shell 执行、网络搜索和爬取、记忆管理、定时任务等
 - **会话持久化** — 支持内存和文件两种会话存储方式，可恢复对话历史
 - **容错机制** — 工具执行自动重试、健康监控、友好的错误提示
+- **Agent Progress Guard** — 运行时进展检测与自动干预，识别状态冻结、错误循环、工具循环等停滞模式，支持自适应权重和语义分析
 - **结构化日志** — 基于 pino 的分级日志系统，支持文件和控制台输出
 
 ## 快速开始
@@ -190,6 +191,18 @@ logging:
   file_path: logs/kobot.log
   console_enabled: true
 
+progress_guard:
+  enabled: true # 是否启用
+  profile: assistant # 预设：coding / research / assistant / workflow
+  window_size: 20 # 检测窗口大小
+  min_turns_before_detect: 3 # 最少多少轮后才开始检测
+  suspicious_threshold: 0.4 # 可疑阈值
+  stuck_threshold: 0.7 # 卡住阈值
+  failed_threshold: 0.9 # 失败阈值
+  confirmation_turns: 2 # 确认升级所需连续轮数
+  downgrade_turns: 3 # 降级所需连续轮数
+  debug: false
+
 security:
   workspace_access: allow # 工作空间访问策略
   network_access: true
@@ -236,6 +249,17 @@ kobot/
 │   │   ├── memory.ts   # 记忆管理工具
 │   │   ├── cron.ts     # 定时任务工具
 │   │   └── utilities.ts # 通用工具
+│   ├── progress-guard/ # Agent Progress Guard
+│   │   ├── index.ts    # 主入口，集成所有组件
+│   │   ├── types.ts    # 核心类型定义
+│   │   ├── trace-collector.ts  # 执行轨迹采集
+│   │   ├── state-engine.ts     # 资源状态引擎
+│   │   ├── progress-analyzer.ts # 进展分析（6 种检测策略）
+│   │   ├── risk-engine.ts       # 风险评分引擎
+│   │   ├── recovery-controller.ts # 恢复控制器（分级干预）
+│   │   ├── metrics.ts           # 指标采集
+│   │   ├── adaptive-weights.ts  # 自适应权重学习
+│   │   └── semantic-analyzer.ts # 语义循环检测
 │   ├── utils/
 │   │   └── logger.ts   # 日志系统
 │   ├── kobot.ts        # 核心 Kobot 类
@@ -271,6 +295,31 @@ kobot/
 | `reasoning_delta` / `reasoning_completed`         | 推理过程输出 |
 | `tool_started` / `tool_completed` / `tool_failed` | 工具执行事件 |
 | `file_edit`                                       | 文件编辑事件 |
+
+#### Agent Progress Guard
+
+`ProgressGuard` 是 Agent 运行时控制平面，实时检测 Agent 执行是否陷入停滞或循环，并自动进行分级干预。
+
+- 多维度进展评分（状态变化、信息增益、错误移动、新颖度、输出增长）
+- 6 种检测策略：`state_freeze` / `error_loop` / `tool_cycle` / `action_repeat` / `progress_stagnation` / `budget_waste`
+- 语义循环检测（SimHash + n-gram）
+- 自适应权重学习，根据历史反馈自动调整策略权重
+- 分级干预状态机：`normal → suspicious → stuck → failed`，支持降级恢复
+- 白名单机制（批量操作、长思考链、自我修正等豁免规则）
+- Dashboard 实时指标可查
+
+```typescript
+// 获取诊断报告
+const diagnosis = progressGuard.getDiagnosis();
+
+// 获取 Dashboard 数据
+const dashboard = progressGuard.getDashboardData();
+
+// 事件监听
+progressGuard.on((event) => {
+  console.log(event.type, event.score);
+});
+```
 
 ## 可用工具
 
