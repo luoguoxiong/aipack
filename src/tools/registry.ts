@@ -8,10 +8,6 @@ import { getMemoryTools } from "./memory";
 import { getCronTools } from "./cron";
 import { getUtilityTools } from "./utilities";
 import { getSearchTools } from "./search";
-import { getApplyPatchTools } from "./apply_patch";
-import { getSchedulerTools, TaskScheduler } from "./scheduler";
-import { getSelfTools } from "./self";
-import { getMessageTools } from "./message";
 
 export interface ToolExecutionRecord {
   tool_name: string;
@@ -112,11 +108,6 @@ export function createDefaultToolRegistry(options?: {
   cron?: boolean;
   utilities?: boolean;
   search?: boolean;
-  apply_patch?: boolean;
-  scheduler?: boolean;
-  self?: boolean;
-  message?: boolean;
-  schedulerInstance?: TaskScheduler;
 }): ToolRegistry {
   const registry = new ToolRegistry();
   const opts = {
@@ -127,10 +118,6 @@ export function createDefaultToolRegistry(options?: {
     cron: true,
     utilities: true,
     search: true,
-    apply_patch: true,
-    scheduler: true,
-    self: true,
-    message: true,
     ...options,
   };
 
@@ -141,10 +128,6 @@ export function createDefaultToolRegistry(options?: {
   if (opts.cron) registry.registerMany(getCronTools());
   if (opts.utilities) registry.registerMany(getUtilityTools());
   if (opts.search) registry.registerMany(getSearchTools());
-  if (opts.apply_patch) registry.registerMany(getApplyPatchTools());
-  if (opts.scheduler) registry.registerMany(getSchedulerTools(options?.schedulerInstance));
-  if (opts.self) registry.registerMany(getSelfTools());
-  if (opts.message) registry.registerMany(getMessageTools());
 
   return registry;
 }

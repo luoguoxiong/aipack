@@ -105,57 +105,11 @@ export class MemoryDeleteTool extends BaseTool<typeof MemoryDeleteTool.parameter
   }
 }
 
-export class MemorySearchTool extends BaseTool<typeof MemorySearchTool.parameters> {
-  name = 'memory_search';
-  label = 'Memory Search';
-  description = '搜索记忆条目，匹配 key 或 content 字段';
-  static parameters = Type.Object({
-    query: Type.String({ description: '搜索关键词' }),
-    limit: Type.Integer({ description: '最大返回结果数', default: 10 }),
-  });
-  parameters = MemorySearchTool.parameters;
-
-  async execute(toolCallId: string, params: { query: string; limit: number }) {
-    try {
-      const dir = path.resolve(memoryBaseDir);
-      if (!fs.existsSync(dir)) {
-        return createToolResult('No matching memory entries found.');
-      }
-      const entries = await fs.promises.readdir(dir);
-      const results: string[] = [];
-      const query = params.query.toLowerCase();
-
-      for (const file of entries) {
-        if (!file.endsWith('.json')) continue;
-        try {
-          const data = JSON.parse(await fs.promises.readFile(path.join(dir, file), 'utf-8'));
-          const keyMatch = file.replace('.json', '').toLowerCase().includes(query);
-          const contentMatch = (data.content || '').toLowerCase().includes(query);
-          if (keyMatch || contentMatch) {
-            results.push(`- ${file.replace('.json', '')}: ${String(data.content).slice(0, 100)}${String(data.content).length > 100 ? '...' : ''}`);
-            if (results.length >= params.limit) break;
-          }
-        } catch {
-          continue;
-        }
-      }
-
-      if (results.length === 0) {
-        return createToolResult('No matching memory entries found.');
-      }
-      return createToolResult(`Found ${results.length} result(s):\n${results.join('\n')}`);
-    } catch (err) {
-      return createToolError(`Failed to search memory: ${(err as Error).message}`);
-    }
-  }
-}
-
 export function getMemoryTools(): BaseTool[] {
   return [
     new MemorySaveTool(),
     new MemoryLoadTool(),
     new MemoryListTool(),
     new MemoryDeleteTool(),
-    new MemorySearchTool(),
   ];
 }

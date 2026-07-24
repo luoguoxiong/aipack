@@ -1,4 +1,3 @@
-import os from 'os';
 import { Type } from "@earendil-works/pi-ai";
 import { BaseTool, createToolResult, createToolError } from './base';
 
@@ -83,30 +82,6 @@ export class DecodeBase64Tool extends BaseTool<typeof DecodeBase64Tool.parameter
   }
 }
 
-export class SystemInfoTool extends BaseTool<typeof SystemInfoTool.parameters> {
-  name = 'system_info';
-  label = 'System Info';
-  description = '获取当前系统和环境信息';
-  static parameters = Type.Object({});
-  parameters = SystemInfoTool.parameters;
-
-  async execute(toolCallId: string) {
-    const info = {
-      platform: os.platform(),
-      arch: os.arch(),
-      release: os.release(),
-      hostname: os.hostname(),
-      cpus: os.cpus().length,
-      total_memory_mb: Math.round(os.totalmem() / (1024 * 1024)),
-      free_memory_mb: Math.round(os.freemem() / (1024 * 1024)),
-      homedir: os.homedir(),
-      uptime_seconds: Math.round(os.uptime()),
-      node_version: process.version,
-    };
-    return createToolResult(JSON.stringify(info, null, 2));
-  }
-}
-
 export function getUtilityTools(): BaseTool[] {
   return [
     new EchoTool(),
@@ -114,6 +89,5 @@ export function getUtilityTools(): BaseTool[] {
     new CalculateTool(),
     new EncodeBase64Tool(),
     new DecodeBase64Tool(),
-    new SystemInfoTool(),
   ];
 }

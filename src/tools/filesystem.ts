@@ -147,40 +147,6 @@ export class RenameFileTool extends BaseTool<typeof RenameFileTool.parameters> {
   }
 }
 
-export class EditFileTool extends BaseTool<typeof EditFileTool.parameters> {
-  name = 'edit_file';
-  label = 'Edit File';
-  description = '通过精确匹配 old_string 替换为 new_string 来编辑文件（old_string 必须在文件中唯一）';
-  static parameters = Type.Object({
-    file_path: Type.String({ description: '文件路径' }),
-    old_string: Type.String({ description: '要替换的精确文本' }),
-    new_string: Type.String({ description: '替换后的新文本' }),
-  });
-  parameters = EditFileTool.parameters;
-
-  async execute(toolCallId: string, params: { file_path: string; old_string: string; new_string: string }) {
-    try {
-      let content = await fs.promises.readFile(params.file_path, 'utf-8');
-
-      if (!content.includes(params.old_string)) {
-        return createToolError(`Error: old_string not found in file. Make sure the text matches exactly.`);
-      }
-
-      const occurrences = content.split(params.old_string).length - 1;
-      if (occurrences > 1) {
-        return createToolError(`Error: old_string found ${occurrences} times in file. The old_string must be unique.`);
-      }
-
-      const newContent = content.replace(params.old_string, params.new_string);
-      await fs.promises.writeFile(params.file_path, newContent, 'utf-8');
-
-      return createToolResult(`File edited successfully: ${params.file_path}`);
-    } catch (err) {
-      return createToolError(`Failed to edit file: ${(err as Error).message}`);
-    }
-  }
-}
-
 export function getFilesystemTools(): BaseTool[] {
   return [
     new ReadFileTool(),
@@ -190,6 +156,5 @@ export function getFilesystemTools(): BaseTool[] {
     new DeleteFileTool(),
     new DeleteDirectoryTool(),
     new RenameFileTool(),
-    new EditFileTool(),
   ];
 }

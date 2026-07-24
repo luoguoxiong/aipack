@@ -32,6 +32,10 @@ kobot/
 │   │   ├── search.ts    # 内容搜索
 │   │   ├── memory.ts    # 记忆管理
 │   │   ├── cron.ts      # 定时任务
+│   │   ├── apply_patch.ts  # 代码补丁
+│   │   ├── scheduler.ts    # 任务调度
+│   │   ├── self.ts      # 运行时自省
+│   │   ├── message.ts   # 消息推送
 │   │   └── utilities.ts # 通用工具
 │   ├── utils/
 │   │   └── logger.ts    # 日志系统（pino）
