@@ -252,6 +252,21 @@ export const LoggingConfigSchema = z.object({
 
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
 
+export const ProgressGuardConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  profile: z.enum(['coding', 'research', 'assistant', 'workflow']).default('assistant'),
+  window_size: z.number().int().min(5).max(100).default(20),
+  min_turns_before_detect: z.number().int().min(1).default(3),
+  suspicious_threshold: z.number().min(0).max(1).default(0.4),
+  stuck_threshold: z.number().min(0).max(1).default(0.7),
+  failed_threshold: z.number().min(0).max(1).default(0.9),
+  confirmation_turns: z.number().int().min(1).default(2),
+  downgrade_turns: z.number().int().min(1).default(3),
+  debug: z.boolean().default(false),
+}).passthrough();
+
+export type ProgressGuardConfig = z.infer<typeof ProgressGuardConfigSchema>;
+
 export const ConfigSchema = z.object({
   schema_version: z.number().int().default(1),
   workspace: z.string().default('~/.kobot'),
@@ -268,6 +283,7 @@ export const ConfigSchema = z.object({
   security: SecurityConfigSchema.default({}),
   sessions: SessionsConfigSchema.default({}),
   logging: LoggingConfigSchema.default({}),
+  progress_guard: ProgressGuardConfigSchema.default({}),
 }).passthrough();
 
 export type Config = z.infer<typeof ConfigSchema>;

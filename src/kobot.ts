@@ -17,6 +17,8 @@ import { ContextBuilder } from "./agent/context";
 import { SessionManager, createSessionManager } from "./storage/session-manager";
 import type { MessageEntry, SessionTreeEntry } from "./storage/types";
 import { logger, createLogger } from "./utils/logger";
+import { ProgressGuard, DEFAULT_CONFIG as DEFAULT_PG_CONFIG } from "./progress-guard";
+import type { ProgressGuardConfig as PGConfig } from "./progress-guard";
 
 export const STREAM_EVENT_RUN_STARTED = 'run_started';
 export const STREAM_EVENT_RUN_COMPLETED = 'run_completed';
@@ -156,6 +158,7 @@ export class Kobot {
   private agents: Map<string, Agent> = new Map();
   private models: any;
   private sessionManager: SessionManager;
+  private progressGuard: ProgressGuard;
 
   private constructor(config: Config, toolRegistry: ToolRegistry, models: any) {
     this.config = config;
@@ -164,6 +167,42 @@ export class Kobot {
     this.sessionManager = createSessionManager({
       storageType: config.sessions?.storage === 'file' ? 'file' : 'memory',
       storagePath: config.sessions?.storage_path,
+    });
+
+    // 初始化 Progress Guard
+    const pgConfig = config.progress_guard || {};
+    this.progressGuard = new ProgressGuard({
+      enabled: pgConfig.enabled ?? true,
+      profile: pgConfig.profile ?? 'assistant',
+      windowSize: pgConfig.window_size ?? 20,
+      minTurnsBeforeDetect: pgConfig.min_turns_before_detect ?? 3,
+      thresholds: {
+        suspicious: pgConfig.suspicious_threshold ?? 0.4,
+        stuck: pgConfig.stuck_threshold ?? 0.7,
+        failed: pgConfig.failed_threshold ?? 0.9,
+      },
+      stateMachine: {
+        confirmationTurns: pgConfig.confirmation_turns ?? 2,
+        downgradeTurns: pgConfig.downgrade_turns ?? 3,
+      },
+      debug: pgConfig.debug ?? false,
+    });
+
+    // 监听 Progress Guard 事件
+    this.progressGuard.on((event) => {
+      switch (event.type) {
+        case 'risk_change':
+          logger.info({ level: event.level, score: event.score, previous: event.previousLevel }, '[PG] Risk level changed');
+          break;
+        case 'intervention':
+          logger.warn({ level: event.level, action: event.action }, '[PG] Intervention triggered');
+          break;
+        case 'progress_update':
+          if (this.progressGuard.getDiagnosis().riskLevel !== 'normal') {
+            logger.debug({ score: event.score, trend: event.trend, turn: event.turn }, '[PG] Progress update');
+          }
+          break;
+      }
     });
   }
 
@@ -430,6 +469,25 @@ export class Kobot {
     const agent = await this.getOrCreateAgent(sessionKey);
     const model = agent.state.model;
 
+    // 挂载 Progress Guard 到当前 Agent
+    if (this.progressGuard.isEnabled) {
+      this.progressGuard.reset();
+      this.progressGuard.attach({
+        steer: (msg: string) => {
+          // 注入消息到 agent state
+          agent.state.messages.push({
+            role: 'user',
+            content: msg,
+            timestamp: Date.now(),
+          });
+        },
+        abort: (reason: string) => {
+          logger.error({ reason }, '[PG] Agent aborted by Progress Guard');
+          throw new Error(`Progress Guard: ${reason}`);
+        },
+      });
+    }
+
     const toolsUsed: string[] = [];
     let finalContent = '';
     let stopReason = 'completed';
@@ -457,6 +515,7 @@ export class Kobot {
           break;
         case 'turn_start':
           logger.debug({ sessionKey, traceId }, '[TURN_START] Turn started');
+          this.progressGuard.startTurn();
           break;
         case 'turn_end':
           const turnMsg = event.message as AssistantMessage;
@@ -484,6 +543,11 @@ export class Kobot {
             finalContent = extractTextContent(msg.content);
             stopReason = msg.stopReason || 'completed';
             error = msg.errorMessage;
+
+            // Progress Guard: 记录助手输出
+            if (finalContent) {
+              this.progressGuard.recordAssistantOutput(finalContent, msg.usage?.totalTokens);
+            }
             
             // 存储 token 用量
             if (msg.usage) {
@@ -520,7 +584,7 @@ export class Kobot {
           break;
         case 'tool_execution_end':
           logger.info({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId, success: !event.isError }, '[TOOL_END] Tool execution completed');
-          
+
           // 存储工具结果条目
           const resultContent = event.result?.content?.filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('') || '';
           await sessionStorage.appendEntry({
@@ -535,6 +599,22 @@ export class Kobot {
             isError: event.isError,
             usage: event.result?.usage,
           });
+
+          // Progress Guard: 记录工具调用结果并检测
+          if (this.progressGuard.isEnabled) {
+            const pgIntervention = this.progressGuard.recordToolCall(
+              event.toolName,
+              (event as any).args || {},
+              {
+                success: !event.isError,
+                output: resultContent,
+                error: event.isError ? resultContent : undefined,
+              },
+            );
+            if (pgIntervention === 'terminate') {
+              logger.error({ sessionKey }, '[PG] Agent terminated by Progress Guard');
+            }
+          }
           break;
       }
     });
@@ -570,6 +650,24 @@ export class Kobot {
     const sessionStorage = this.sessionManager.getSessionStorage(sessionKey);
     const agent = await this.getOrCreateAgent(sessionKey);
     const model = agent.state.model;
+
+    // 挂载 Progress Guard 到当前 Agent (stream 模式)
+    if (this.progressGuard.isEnabled) {
+      this.progressGuard.reset();
+      this.progressGuard.attach({
+        steer: (msg: string) => {
+          agent.state.messages.push({
+            role: 'user',
+            content: msg,
+            timestamp: Date.now(),
+          });
+        },
+        abort: (reason: string) => {
+          logger.error({ reason }, '[PG] Agent aborted by Progress Guard (stream)');
+          throw new Error(`Progress Guard: ${reason}`);
+        },
+      });
+    }
 
     // 存储模型信息
     if (model) {
@@ -633,6 +731,7 @@ export class Kobot {
           break;
         case 'turn_start':
           logger.debug({ sessionKey }, '[TURN_START] Turn started');
+          this.progressGuard.startTurn();
           break;
         case 'turn_end':
           const turnMsg = event.message as AssistantMessage;
@@ -660,7 +759,7 @@ export class Kobot {
 
         case 'message_end':
           logger.debug({ sessionKey, role: event.message.role }, '[MESSAGE_END] Message completed');
-          
+
           // 存储消息条目
           await sessionStorage.appendEntry({
             type: 'message',
@@ -669,13 +768,18 @@ export class Kobot {
             timestamp: new Date().toISOString(),
             message: event.message,
           });
-          
+
           if (event.message.role === 'assistant') {
             const msg = event.message as AssistantMessage;
             finalContent = extractTextContent(msg.content);
             stopReason = msg.stopReason || 'completed';
             error = msg.errorMessage;
             pushEvent({ type: STREAM_EVENT_TEXT_COMPLETED, content: finalContent });
+
+            // Progress Guard: 记录助手输出
+            if (finalContent) {
+              this.progressGuard.recordAssistantOutput(finalContent, msg.usage?.totalTokens);
+            }
             
             // 存储 token 用量
             if (msg.usage) {
@@ -773,6 +877,22 @@ export class Kobot {
                 error: event.isError ? event.result?.content?.filter((c: { type: string }): c is TextContent => c.type === 'text').map((c: TextContent) => c.text).join('') : undefined,
               },
             });
+          }
+
+          // Progress Guard: 记录工具调用结果并检测 (stream)
+          if (this.progressGuard.isEnabled) {
+            const pgIntervention = this.progressGuard.recordToolCall(
+              event.toolName,
+              (event as any).args || {},
+              {
+                success: !event.isError,
+                output: resultContent,
+                error: event.isError ? resultContent : undefined,
+              },
+            );
+            if (pgIntervention === 'terminate') {
+              logger.error({ sessionKey }, '[PG] Agent terminated by Progress Guard (stream)');
+            }
           }
           break;
       }
@@ -915,6 +1035,11 @@ export class Kobot {
 
   get config_(): Config {
     return this.config;
+  }
+
+  /** 获取 Progress Guard 实例 */
+  get progressGuard_(): ProgressGuard {
+    return this.progressGuard;
   }
 
   async close(): Promise<void> {
