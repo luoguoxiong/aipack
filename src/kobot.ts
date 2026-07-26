@@ -19,6 +19,7 @@ import type { MessageEntry, SessionTreeEntry } from "./storage/types";
 import { logger, createLogger } from "./utils/logger";
 import { ProgressGuard, DEFAULT_CONFIG as DEFAULT_PG_CONFIG } from "./progress-guard";
 import type { ProgressGuardConfig as PGConfig } from "./progress-guard";
+import { AgentContextRuntime } from "./context-runtime";
 
 export const STREAM_EVENT_RUN_STARTED = 'run_started';
 export const STREAM_EVENT_RUN_COMPLETED = 'run_completed';
@@ -156,6 +157,7 @@ export class Kobot {
   private toolRegistry: ToolRegistry;
   private agent: Agent | null = null;
   private agents: Map<string, Agent> = new Map();
+  private acrRuntimes: Map<string, AgentContextRuntime> = new Map();
   private models: any;
   private sessionManager: SessionManager;
   private progressGuard: ProgressGuard;
@@ -317,6 +319,31 @@ export class Kobot {
     return model!;
   }
 
+  private getOrCreateACR(sessionKey: string, workspacePath?: string): AgentContextRuntime | null {
+    const acrConfig = this.config.context_runtime;
+    if (!acrConfig?.enabled) {
+      return null;
+    }
+
+    if (this.acrRuntimes.has(sessionKey)) {
+      return this.acrRuntimes.get(sessionKey)!;
+    }
+
+    const workspace = workspacePath || this.config.agents.defaults.workspace || process.cwd();
+    
+    const acr = new AgentContextRuntime({
+      workspacePath: workspace,
+      config: {
+        profile: acrConfig.profile as 'coding' | 'research' | 'assistant',
+        contextLimit: acrConfig.context_limit || 128000,
+      },
+    });
+
+    this.acrRuntimes.set(sessionKey, acr);
+    logger.info({ sessionKey, profile: acrConfig.profile, contextLimit: acrConfig.context_limit }, 'ACR runtime created');
+    return acr;
+  }
+
   private async getOrCreateAgent(sessionKey: string): Promise<Agent> {
     if (this.agents.has(sessionKey)) {
       return this.agents.get(sessionKey)!;
@@ -383,6 +410,9 @@ export class Kobot {
       }
     }
 
+    // Get or create ACR runtime for this session
+    const acr = this.getOrCreateACR(sessionKey);
+
     let agent: Agent;
 
     agent = new Agent({
@@ -397,6 +427,38 @@ export class Kobot {
         return this.models.streamSimple(model, context, options);
       },
       transformContext: async (messages, signal) => {
+        // Use ACR if enabled
+        if (acr) {
+          try {
+            const check = await acr.checkBeforeModelCall(messages);
+            if (check.shouldCompact && check.level) {
+              const trigger = check.reasons.length > 0 ? check.reasons[0] : 'manual';
+              logger.info({
+                level: check.level,
+                trigger: check.reasons,
+                messagesBefore: messages.length,
+              }, 'ACR: Context compression triggered');
+              
+              const compressionResult = await acr.compressAndGetResult(check.level, trigger);
+              
+              logger.info({
+                level: check.level,
+                messagesBefore: compressionResult.messagesBefore,
+                messagesAfter: compressionResult.messagesAfter,
+                tokensSaved: compressionResult.tokensSaved,
+                duration: compressionResult.durationMs,
+              }, 'ACR: Context compression applied');
+              
+              // Sync back to agent state
+              agent.state.messages = compressionResult.messages;
+              return compressionResult.messages;
+            }
+          } catch (err) {
+            logger.warn({ err: (err as Error).message }, 'ACR compression failed, falling back to default');
+          }
+        }
+
+        // Fallback to original simple compression (or no compression)
         // 1. 估算当前上下文 token
         const estimate = estimateContextTokens(messages);
         const contextWindow = this.config.agents.defaults.context_window_tokens || 200000;
@@ -468,6 +530,7 @@ export class Kobot {
 
     const agent = await this.getOrCreateAgent(sessionKey);
     const model = agent.state.model;
+    const acr = this.getOrCreateACR(sessionKey);
 
     // 挂载 Progress Guard 到当前 Agent
     if (this.progressGuard.isEnabled) {
@@ -615,6 +678,19 @@ export class Kobot {
               logger.error({ sessionKey }, '[PG] Agent terminated by Progress Guard');
             }
           }
+
+          // ACR: 记录工具调用结果用于状态提取和压缩
+          if (acr) {
+            acr.observeAfterToolCall(
+              event.toolName,
+              (event as any).args || {},
+              {
+                success: !event.isError,
+                output: resultContent,
+                error: event.isError ? resultContent : undefined,
+              },
+            );
+          }
           break;
       }
     });
@@ -650,6 +726,7 @@ export class Kobot {
     const sessionStorage = this.sessionManager.getSessionStorage(sessionKey);
     const agent = await this.getOrCreateAgent(sessionKey);
     const model = agent.state.model;
+    const acr = this.getOrCreateACR(sessionKey);
 
     // 挂载 Progress Guard 到当前 Agent (stream 模式)
     if (this.progressGuard.isEnabled) {
@@ -894,6 +971,19 @@ export class Kobot {
               logger.error({ sessionKey }, '[PG] Agent terminated by Progress Guard (stream)');
             }
           }
+
+          // ACR: 记录工具调用结果用于状态提取和压缩 (stream)
+          if (acr) {
+            acr.observeAfterToolCall(
+              event.toolName,
+              (event as any).args || {},
+              {
+                success: !event.isError,
+                output: resultContent,
+                error: event.isError ? resultContent : undefined,
+              },
+            );
+          }
           break;
       }
     });
@@ -1026,6 +1116,7 @@ export class Kobot {
 
   async deleteSession(sessionKey: string): Promise<boolean> {
     this.agents.delete(sessionKey);
+    this.acrRuntimes.delete(sessionKey);
     return this.sessionManager.deleteSession(sessionKey);
   }
 
@@ -1042,8 +1133,14 @@ export class Kobot {
     return this.progressGuard;
   }
 
+  /** 获取 ACR runtime 实例（用于调试/监控） */
+  getACR(sessionKey: string = 'sdk:default'): AgentContextRuntime | undefined {
+    return this.acrRuntimes.get(sessionKey);
+  }
+
   async close(): Promise<void> {
     this.agents.clear();
+    this.acrRuntimes.clear();
   }
 
   async [Symbol.asyncDispose](): Promise<void> {

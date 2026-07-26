@@ -5,3 +5,7 @@ dist/
 .env
 .env.local
 *.log
+
+# ACR test outputs
+acr-compare-output/
+acr-real-session-compare/
