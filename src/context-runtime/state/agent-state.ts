@@ -18,6 +18,46 @@ import type {
 import { getMessageContent } from './message-adapter';
 
 /**
+ * 从助手消息中提取工具调用列表
+ * 支持 pi-agent-core 的 content 数组格式（type: "toolCall"）
+ * 同时兼容旧格式（toolCalls / tool_calls / functionCall 字段）
+ */
+function extractToolCallsFromAssistant(msg: AgentMessage): Array<{ id: string; name?: string }> {
+  const calls: Array<{ id: string; name?: string }> = [];
+
+  // pi-agent-core 格式：工具调用在 content 数组中，type 为 "toolCall"
+  if ('content' in msg && Array.isArray((msg as any).content)) {
+    for (const block of (msg as any).content) {
+      if (block.type === 'toolCall' && block.id) {
+        calls.push({ id: block.id, name: block.name });
+      }
+    }
+  }
+
+  // 兼容旧格式：toolCalls / tool_calls 字段
+  if (calls.length === 0) {
+    const toolCalls = (msg as any).toolCalls || (msg as any).tool_calls;
+    if (toolCalls && Array.isArray(toolCalls)) {
+      for (const tc of toolCalls) {
+        if (tc.id) {
+          calls.push({ id: tc.id, name: tc.name || tc.function?.name });
+        }
+      }
+    }
+  }
+
+  // 兼容 functionCall 格式
+  if (calls.length === 0) {
+    const functionCall = (msg as any).functionCall || (msg as any).function_call;
+    if (functionCall?.id) {
+      calls.push({ id: functionCall.id, name: functionCall.name });
+    }
+  }
+
+  return calls;
+}
+
+/**
  * 创建初始 Agent 状态
  * 返回一个全新的、空的 AgentState 对象
  */
@@ -293,9 +333,9 @@ export function detectPhase(messages: AgentMessage[]): TaskPhase {
       toolName = (msg as any).toolName || (msg as any).name || '';
     } else if (msg.role === 'assistant') {
       // 检查助手消息中的工具调用
-      const toolCalls = (msg as any).tool_calls || (msg as any).toolCalls;
-      if (toolCalls && Array.isArray(toolCalls) && toolCalls.length > 0) {
-        toolName = toolCalls[0]?.function?.name || toolCalls[0]?.name || '';
+      const toolCalls = extractToolCallsFromAssistant(msg);
+      if (toolCalls.length > 0) {
+        toolName = toolCalls[0]?.name || '';
       }
       content = getMessageContent(msg);
     } else if (msg.role === 'bashExecution') {

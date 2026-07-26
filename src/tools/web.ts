@@ -17,7 +17,7 @@ export class WebFetchTool extends BaseTool<typeof WebFetchTool.parameters> {
       const response = await axios.get(params.url, { timeout: params.timeout * 1000 });
       return createToolResult(response.data.toString());
     } catch (err) {
-      return createToolError(`Failed to fetch URL: ${(err as Error).message}`);
+      return createToolError(`获取 URL 失败：${(err as Error).message}`);
     }
   }
 }
@@ -40,7 +40,7 @@ export class WebSearchTool extends BaseTool<typeof WebSearchTool.parameters> {
       
       const results = (response.data.results || []).slice(0, params.max_results);
       if (results.length === 0) {
-        return createToolResult('No search results found.');
+        return createToolResult('未找到搜索结果。');
       }
       
       const formatted = results.map((r: { title: string; snippet: string; first_url: string }) => 
@@ -49,7 +49,7 @@ export class WebSearchTool extends BaseTool<typeof WebSearchTool.parameters> {
       
       return createToolResult(formatted);
     } catch (err) {
-      return createToolError(`Search failed: ${(err as Error).message}`);
+      return createToolError(`搜索失败：${(err as Error).message}`);
     }
   }
 }

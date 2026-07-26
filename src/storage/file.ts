@@ -50,7 +50,7 @@ export class FileStorage implements StorageAdapter {
       }
     }
 
-    throw new Error(`Failed to acquire lock for session ${key}`);
+    throw new Error(`获取会话 ${key} 的锁失败`);
   }
 
   private async releaseLock(key: string): Promise<void> {
@@ -101,7 +101,7 @@ export class FileStorage implements StorageAdapter {
         const data = await fs.promises.readFile(filePath, 'utf-8');
         
         if (!this.validateJson(data)) {
-          logger.warn({ filePath }, 'Session file contains invalid JSON, deleting');
+          logger.warn({ filePath }, '会话文件包含无效 JSON，正在删除');
           await fs.promises.unlink(filePath);
           return null;
         }
@@ -112,7 +112,7 @@ export class FileStorage implements StorageAdapter {
           return null;
         }
         
-        logger.error({ filePath, err }, 'Failed to load session file, deleting corrupted file');
+        logger.error({ filePath, err }, '加载会话文件失败，正在删除损坏的文件');
         try {
           await fs.promises.unlink(filePath);
         } catch {

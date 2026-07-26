@@ -27,11 +27,11 @@ export class FindFilesTool extends BaseTool<typeof FindFilesTool.parameters> {
     try {
       const files = await this.glob(params.pattern, params.path);
       if (files.length === 0) {
-        return createToolResult('No files found');
+        return createToolResult('未找到文件');
       }
       return createToolResult(files.join('\n'));
     } catch (err) {
-      return createToolError(`Failed to find files: ${(err as Error).message}`);
+      return createToolError(`查找文件失败：${(err as Error).message}`);
     }
   }
 
@@ -77,11 +77,11 @@ export class GrepTool extends BaseTool<typeof GrepTool.parameters> {
     try {
       const results = await this.search(params.pattern, params.path);
       if (results.length === 0) {
-        return createToolResult('No matches found');
+        return createToolResult('未找到匹配项');
       }
       return createToolResult(results.slice(0, params.max_lines).join('\n'));
     } catch (err) {
-      return createToolError(`Search failed: ${(err as Error).message}`);
+      return createToolError(`搜索失败：${(err as Error).message}`);
     }
   }
 

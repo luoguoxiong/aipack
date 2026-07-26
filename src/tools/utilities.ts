@@ -24,7 +24,7 @@ export class GetTimeTool extends BaseTool<typeof GetTimeTool.parameters> {
 
   async execute(toolCallId: string) {
     const now = new Date();
-    return createToolResult(`Current time: ${now.toLocaleString()}\nUTC: ${now.toISOString()}`);
+    return createToolResult(`当前时间：${now.toLocaleString()}\nUTC：${now.toISOString()}`);
   }
 }
 

@@ -103,7 +103,7 @@ export class WorkspaceObserver {
       this.pendingCheck = false;
       return this.state;
     } catch (err) {
-      logger.debug({ err }, 'Workspace observer check failed');
+      logger.debug({ err }, '工作区观察者检查失败');
       if (this.config.fallbackToToolInference) {
         this.state = this.createFallbackState();
         return this.state;
@@ -211,7 +211,7 @@ export class WorkspaceObserver {
         });
         lastCommit = log.trim();
       } catch {
-        // ignore
+        // 忽略
       }
 
       return {
@@ -226,7 +226,7 @@ export class WorkspaceObserver {
         diffSummary,
       };
     } catch (err) {
-      logger.debug({ err }, 'Git state retrieval failed');
+      logger.debug({ err }, 'Git 状态获取失败');
       return null;
     }
   }

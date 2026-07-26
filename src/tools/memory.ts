@@ -27,9 +27,9 @@ export class MemorySaveTool extends BaseTool<typeof MemorySaveTool.parameters> {
       }
       const filePath = path.join(dir, `${params.key}.json`);
       await fs.promises.writeFile(filePath, JSON.stringify({ content: params.content, timestamp: Date.now() }), 'utf-8');
-      return createToolResult(`Memory saved: ${params.key}`);
+      return createToolResult(`记忆已保存：${params.key}`);
     } catch (err) {
-      return createToolError(`Failed to save memory: ${(err as Error).message}`);
+      return createToolError(`保存记忆失败：${(err as Error).message}`);
     }
   }
 }
@@ -47,13 +47,13 @@ export class MemoryLoadTool extends BaseTool<typeof MemoryLoadTool.parameters> {
     try {
       const filePath = path.join(path.resolve(memoryBaseDir), `${params.key}.json`);
       if (!fs.existsSync(filePath)) {
-        return createToolError(`Memory not found: ${params.key}`);
+        return createToolError(`记忆未找到: ${params.key}`);
       }
       const content = await fs.promises.readFile(filePath, 'utf-8');
       const data = JSON.parse(content);
       return createToolResult(data.content);
     } catch (err) {
-      return createToolError(`Failed to load memory: ${(err as Error).message}`);
+      return createToolError(`加载记忆失败：${(err as Error).message}`);
     }
   }
 }
@@ -69,15 +69,15 @@ export class MemoryListTool extends BaseTool<typeof MemoryListTool.parameters> {
     try {
       const dir = path.resolve(memoryBaseDir);
       if (!fs.existsSync(dir)) {
-        return createToolResult('No memories found');
+        return createToolResult('未找到记忆');
       }
       const entries = await fs.promises.readdir(dir);
       const keys = entries
         .filter(e => e.endsWith('.json'))
         .map(e => e.replace('.json', ''));
-      return createToolResult(keys.join('\n') || 'No memories found');
+      return createToolResult(keys.join('\n') || '未找到记忆');
     } catch (err) {
-      return createToolError(`Failed to list memories: ${(err as Error).message}`);
+      return createToolError(`列出记忆失败：${(err as Error).message}`);
     }
   }
 }
@@ -95,12 +95,12 @@ export class MemoryDeleteTool extends BaseTool<typeof MemoryDeleteTool.parameter
     try {
       const filePath = path.join(path.resolve(memoryBaseDir), `${params.key}.json`);
       if (!fs.existsSync(filePath)) {
-        return createToolError(`Memory not found: ${params.key}`);
+        return createToolError(`记忆未找到: ${params.key}`);
       }
       await fs.promises.unlink(filePath);
-      return createToolResult(`Memory deleted: ${params.key}`);
+      return createToolResult(`记忆已删除: ${params.key}`);
     } catch (err) {
-      return createToolError(`Failed to delete memory: ${(err as Error).message}`);
+      return createToolError(`删除记忆失败: ${(err as Error).message}`);
     }
   }
 }

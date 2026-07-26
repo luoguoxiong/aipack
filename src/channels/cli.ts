@@ -21,7 +21,7 @@ export class CLIChannel implements Channel {
 
   async start(bot: Kobot): Promise<void> {
     this.bot = bot;
-    logger.info({ channel: this.id }, 'CLI channel started');
+    logger.info({ channel: this.id }, 'CLI 频道已启动');
     
     this.rl = readline.createInterface({
       input: process.stdin,
@@ -30,9 +30,9 @@ export class CLIChannel implements Channel {
       prompt: this.config.prompt || 'kobot> ',
     });
 
-    console.log(`[${this.name}] channel started (logo: image/logo.png)`);
-    console.log('Type "exit" or "quit" to exit');
-    console.log('Type "help" for available commands');
+    console.log(`[${this.name}] 频道已启动 (logo: image/logo.png)`);
+    console.log('输入 "exit" 或 "quit" 退出');
+    console.log('输入 "help" 查看可用命令');
     console.log('---');
 
     this.rl.on('line', async (input) => {
@@ -99,8 +99,8 @@ export class CLIChannel implements Channel {
     if (this.bot) {
       await this.bot.close();
     }
-    logger.info({ channel: this.id }, 'CLI channel stopped');
-    console.log('\nGoodbye! (logo: image/logo.png)');
+    logger.info({ channel: this.id }, 'CLI 频道已停止');
+    console.log('\n再见！(logo: image/logo.png)');
     process.exit(0);
   }
 
@@ -127,44 +127,44 @@ export class CLIChannel implements Channel {
             process.stdout.write('\n');
             break;
           case STREAM_EVENT_TOOL_STARTED:
-            console.log(`\n🔧 Running: ${event.tool_name}`);
+            console.log(`\n🔧 正在运行：${event.tool_name}`);
             break;
           case STREAM_EVENT_TOOL_COMPLETED:
-            console.log(`✅ ${event.tool_name} completed`);
+            console.log(`✅ ${event.tool_name} 完成`);
             break;
           case STREAM_EVENT_TOOL_FAILED:
-            console.log(`\n❌ ${event.tool_name} failed:`);
-            console.log(`   ${event.content || event.error || 'Unknown error'}`);
-            console.log(`   💡 Tip: Check your input parameters and try again`);
+            console.log(`\n❌ ${event.tool_name} 失败：`);
+            console.log(`   ${event.content || event.error || '未知错误'}`);
+            console.log(`   💡 提示：请检查输入参数并重试`);
             break;
           case STREAM_EVENT_RUN_FAILED:
-            console.log(`\n❌ Error occurred:`);
-            console.log(`   ${event.error || 'Unknown error'}`);
+            console.log(`\n❌ 发生错误：`);
+            console.log(`   ${event.error || '未知错误'}`);
             console.log('');
-            console.log('💡 Troubleshooting tips:');
-            console.log('   1. Check your API key configuration (OPENAI_API_KEY, GROQ_API_KEY, DEEPSEEK_API_KEY)');
-            console.log('   2. Verify network connectivity');
-            console.log('   3. Check log file for detailed error (see logging.file_path in config)');
+            console.log('💡 故障排除提示：');
+            console.log('   1. 检查您的 API Key 配置（OPENAI_API_KEY、GROQ_API_KEY、DEEPSEEK_API_KEY）');
+            console.log('   2. 验证网络连接');
+            console.log('   3. 查看日志文件了解详细错误（请参阅配置中的 logging.file_path）');
             break;
         }
       }
 
       if (!hasResponse) {
-        console.log('\n(No response received)');
+        console.log('\n（未收到响应）');
         console.log('');
-        console.log('💡 Troubleshooting tips:');
-        console.log('   1. Make sure you have configured API keys:');
+        console.log('💡 故障排除提示：');
+        console.log('   1. 确保已配置 API Key：');
         console.log('      export OPENAI_API_KEY="your-key"');
         console.log('      export GROQ_API_KEY="your-key"');
         console.log('      export DEEPSEEK_API_KEY="your-key"');
-        console.log('   2. Check log file (see logging.file_path in config)');
+        console.log('   2. 查看日志文件（请参阅配置中的 logging.file_path）');
       }
     } catch (err) {
-      logger.error({ err, input }, 'CLI message handling error');
-      console.error('\n❌ Unexpected error:');
+      logger.error({ err, input }, 'CLI 消息处理错误');
+      console.error('\n❌ 意外错误：');
       console.error(`   ${(err as Error).message}`);
       console.error('');
-      console.error('💡 Please check the log file for details (see logging.file_path in config)');
+      console.error('💡 请查看日志文件了解详情（请参阅配置中的 logging.file_path）');
     }
   }
 
@@ -176,21 +176,21 @@ export class CLIChannel implements Channel {
   }
 
   private showHelp(): void {
-    console.log('\nAvailable commands:');
-    console.log('  exit/quit - Exit the bot');
-    console.log('  help - Show this help message');
-    console.log('  tools - List available tools');
-    console.log('  sessions - List active sessions');
-    console.log('  session <key> - View detailed session information');
-    console.log('  use <key> - Switch to another session (restore history)');
-    console.log('  Any other input will be sent to the bot');
+    console.log('\n可用命令：');
+    console.log('  exit/quit - 退出机器人');
+    console.log('  help - 显示此帮助信息');
+    console.log('  tools - 列出可用工具');
+    console.log('  sessions - 列出活动会话');
+    console.log('  session <key> - 查看详细会话信息');
+    console.log('  use <key> - 切换到另一个会话（恢复历史记录）');
+    console.log('  任何其他输入将发送给机器人');
     console.log('');
   }
 
   private showTools(): void {
     if (!this.bot) return;
     const tools = this.bot.tools;
-    console.log('\nAvailable tools:');
+    console.log('\n可用工具：');
     tools.forEach((tool) => {
       console.log(`  - ${tool}`);
     });
@@ -200,38 +200,38 @@ export class CLIChannel implements Channel {
   private async showSessions(): Promise<void> {
     if (!this.bot) return;
     const sessions = await this.bot.listSessions();
-    console.log('\nActive sessions:');
+    console.log('\n活动会话：');
     if (sessions.length === 0) {
-      console.log('  (none)');
+      console.log('  （无）');
     } else {
       sessions.forEach((session) => {
         console.log(`  - ${session}`);
       });
     }
     console.log('');
-    console.log('Use "session <key>" to view session details');
+    console.log('使用 "session <key>" 查看会话详情');
     console.log('');
   }
 
   private async showSessionDetail(sessionKey: string): Promise<void> {
     if (!this.bot) return;
     
-    console.log(`\nSession: ${sessionKey}`);
+    console.log(`\n会话：${sessionKey}`);
     console.log('----------------------------------------');
     
     const detail = await this.bot.getSessionDetail(sessionKey);
     if (!detail) {
-      console.log('Session not found');
+      console.log('会话未找到');
       console.log('');
       return;
     }
     
-    console.log(`Created: ${detail.createdAt}`);
-    console.log(`Updated: ${detail.updatedAt}`);
+    console.log(`创建时间：${detail.createdAt}`);
+    console.log(`更新时间：${detail.updatedAt}`);
     console.log('');
     
     if (detail.entries.length === 0) {
-      console.log('No entries');
+      console.log('无条目');
       console.log('');
       return;
     }
@@ -279,15 +279,15 @@ export class CLIChannel implements Channel {
     
     const sessions = await this.bot.listSessions();
     if (!sessions.includes(sessionKey)) {
-      console.log(`\nSession "${sessionKey}" not found.`);
-      console.log('Available sessions:');
+      console.log(`\n会话「${sessionKey}」未找到。`);
+      console.log('可用会话：');
       sessions.forEach(s => console.log(`  - ${s}`));
       console.log('');
       return;
     }
     
     this.currentSessionKey = sessionKey;
-    console.log(`\nSwitched to session: ${sessionKey}`);
+    console.log(`\n已切换到会话：${sessionKey}`);
     
     // 显示会话信息
     const detail = await this.bot.getSessionDetail(sessionKey);
@@ -295,9 +295,9 @@ export class CLIChannel implements Channel {
       const messageEntries = detail.entries.filter(e => e.type === 'message') as any[];
       const lastMessage = messageEntries[messageEntries.length - 1];
       if (lastMessage && lastMessage.message) {
-        console.log(`Last message: ${lastMessage.message.role === 'user' ? 'You:' : 'Bot:'} ${lastMessage.message.content?.slice(0, 50)}${lastMessage.message.content?.length > 50 ? '...' : ''}`);
+        console.log(`最后消息：${lastMessage.message.role === 'user' ? '你：' : '机器人：'} ${lastMessage.message.content?.slice(0, 50)}${lastMessage.message.content?.length > 50 ? '...' : ''}`);
       }
-      console.log(`Total messages: ${messageEntries.length}`);
+      console.log(`消息总数：${messageEntries.length}`);
     }
     console.log('');
   }

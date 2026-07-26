@@ -27,7 +27,7 @@ export class FeishuChannel implements Channel {
       await this.handleEventCallback(req, res);
     });
 
-    // Also handle POST on root (in case Feishu sends to root URL)
+    // 同时处理根路径的 POST（以防飞书发送到根 URL）
     this.app.post('/', async (req: Request, res: Response) => {
       await this.handleEventCallback(req, res);
     });
@@ -93,28 +93,28 @@ export class FeishuChannel implements Channel {
         body: JSON.stringify(body).slice(0, 200),
       });
 
-      // URL verification challenge
+      // URL 验证挑战
       if (body.type === 'url_verification') {
         res.json({ challenge: body.challenge });
         return;
       }
 
-      // Message event
+      // 消息事件
       if (body.header?.event_type === 'im.message.receive_v1') {
         res.json({ code: 0 });
 
-        // Process asynchronously
+        // 异步处理
         this.handleMessageEvent(body.event).catch((err) => {
           console.error(`❌ [${this.name}] Message handler error:`, err);
         });
         return;
       }
 
-      // Other event types
+      // 其他事件类型
       res.json({ code: 0 });
     } catch (err) {
       console.error(`❌ [${this.name}] Event callback error:`, err);
-      res.status(500).json({ code: 500, msg: 'Internal error' });
+      res.status(500).json({ code: 500, msg: '内部错误' });
     }
   }
 
@@ -141,7 +141,7 @@ export class FeishuChannel implements Channel {
 
   private async handleMessageEvent(event: any): Promise<void> {
     if (!this.bot) {
-      console.error(`❌ [${this.name}] Bot not initialized`);
+      console.error(`❌ [${this.name}] 机器人未初始化`);
       return;
     }
 
@@ -152,12 +152,12 @@ export class FeishuChannel implements Channel {
 
     const messageId = message.message_id;
     const chatId = message.chat_id;
-    const chatType = message.chat_type; // "p2p" or "group"
+    const chatType = message.chat_type; // "p2p" 或 "group"
     const senderId = sender.sender_id?.open_id;
     const senderName = sender.sender_id?.name || '';
     const messageType = message.message_type;
 
-    // Only handle text messages
+    // 只处理文本消息
     if (messageType !== 'text') return;
 
     const content = JSON.parse(message.content || '{}');
@@ -197,8 +197,8 @@ export class FeishuChannel implements Channel {
   }
 
   private async replyToMessage(messageId: string, content: string, token: string): Promise<void> {
-    // Feishu text format supports newlines and basic content
-    // Note: Feishu post format does NOT support markdown tag
+    // 飞书文本格式支持换行和基本内容
+    // 注意：飞书富文本格式不支持 markdown 标签
     const body = {
       msg_type: 'text',
       content: JSON.stringify({ text: content }),

@@ -56,7 +56,7 @@ export class ToolRegistry {
   ): Promise<ToolResult> {
     const tool = this.tools.get(toolName);
     if (!tool) {
-      return createToolError(`Unknown tool "${toolName}"`);
+      return createToolError(`未知工具「${toolName}」`);
     }
 
     const startTime = Date.now();
@@ -66,7 +66,7 @@ export class ToolRegistry {
       const validatedArgs = tool.validateArguments(args);
       result = await tool.execute(toolCallId, validatedArgs);
     } catch (err) {
-      result = createToolError(`Error executing tool ${toolName}: ${(err as Error).message}`);
+      result = createToolError(`执行工具 ${toolName} 时出错：${(err as Error).message}`);
     }
 
     const durationMs = Date.now() - startTime;
@@ -76,7 +76,7 @@ export class ToolRegistry {
     if (textContent.length > maxChars) {
       result = {
         ...result,
-        content: [{ type: 'text', text: textContent.slice(0, maxChars) + `\n[truncated from ${textContent.length} chars]` }],
+        content: [{ type: 'text', text: textContent.slice(0, maxChars) + `\n[已从 ${textContent.length} 字符截断]` }],
       };
     }
 

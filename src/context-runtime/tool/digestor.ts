@@ -218,9 +218,9 @@ export class ToolDigestor {
     const functions = lines.filter(l => l.match(/function\s+\w+|const\s+\w+\s*=|class\s+\w+/)).slice(0, 5);
 
     const structureParts: string[] = [];
-    if (imports.length > 0) structureParts.push(`${imports.length} imports`);
-    if (exports.length > 0) structureParts.push(`${exports.length} exports`);
-    if (functions.length > 0) structureParts.push(`${functions.length} functions/classes`);
+    if (imports.length > 0) structureParts.push(`${imports.length} 个导入`);
+    if (exports.length > 0) structureParts.push(`${exports.length} 个导出`);
+    if (functions.length > 0) structureParts.push(`${functions.length} 个函数/类`);
 
     const summary = `读取文件: ${lines.length} 行${structureParts.length > 0 ? ` (${structureParts.join(', ')})` : ''}`;
 

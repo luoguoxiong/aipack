@@ -35,9 +35,9 @@ export class CronAddTool extends BaseTool<typeof CronAddTool.parameters> {
         enabled: true,
         nextRun,
       });
-      return createToolResult(`Task added: ${params.id}`);
+      return createToolResult(`任务已添加: ${params.id}`);
     } catch (err) {
-      return createToolError(`Invalid cron expression: ${(err as Error).message}`);
+      return createToolError(`无效的 cron 表达式: ${(err as Error).message}`);
     }
   }
 }
@@ -51,7 +51,7 @@ export class CronListTool extends BaseTool<typeof CronListTool.parameters> {
 
   async execute(toolCallId: string) {
     if (tasks.size === 0) {
-      return createToolResult('No scheduled tasks');
+      return createToolResult('无定时任务');
     }
     const result = Array.from(tasks.values()).map(task => 
       `${task.id}: ${task.cron} -> ${task.command} (${task.enabled ? 'enabled' : 'disabled'})`
@@ -71,10 +71,10 @@ export class CronRemoveTool extends BaseTool<typeof CronRemoveTool.parameters> {
 
   async execute(toolCallId: string, params: { id: string }) {
     if (!tasks.has(params.id)) {
-      return createToolError(`Task not found: ${params.id}`);
+      return createToolError(`任务未找到: ${params.id}`);
     }
     tasks.delete(params.id);
-    return createToolResult(`Task removed: ${params.id}`);
+    return createToolResult(`任务已移除: ${params.id}`);
   }
 }
 
@@ -91,10 +91,10 @@ export class CronEnableTool extends BaseTool<typeof CronEnableTool.parameters> {
   async execute(toolCallId: string, params: { id: string; enabled: boolean }) {
     const task = tasks.get(params.id);
     if (!task) {
-      return createToolError(`Task not found: ${params.id}`);
+      return createToolError(`任务未找到: ${params.id}`);
     }
     task.enabled = params.enabled;
-    return createToolResult(`Task ${params.id} ${params.enabled ? 'enabled' : 'disabled'}`);
+    return createToolResult(`任务 ${params.id} ${params.enabled ? '已启用' : '已禁用'}`);
   }
 }
 

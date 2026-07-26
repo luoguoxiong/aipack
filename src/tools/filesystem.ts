@@ -17,7 +17,7 @@ export class ReadFileTool extends BaseTool<typeof ReadFileTool.parameters> {
       const content = await fs.promises.readFile(params.file_path, 'utf-8');
       return createToolResult(content);
     } catch (err) {
-      return createToolError(`Failed to read file: ${(err as Error).message}`);
+      return createToolError(`读取文件失败: ${(err as Error).message}`);
     }
   }
 }
@@ -40,9 +40,9 @@ export class WriteFileTool extends BaseTool<typeof WriteFileTool.parameters> {
         await fs.promises.mkdir(dir, { recursive: true });
       }
       await fs.promises.writeFile(params.file_path, params.content, { flag: params.append ? 'a' : 'w' });
-      return createToolResult(`File written successfully: ${params.file_path}`);
+      return createToolResult(`文件写入成功: ${params.file_path}`);
     } catch (err) {
-      return createToolError(`Failed to write file: ${(err as Error).message}`);
+      return createToolError(`写入文件失败: ${(err as Error).message}`);
     }
   }
 }
@@ -65,7 +65,7 @@ export class ListDirectoryTool extends BaseTool<typeof ListDirectoryTool.paramet
       }).join('\n');
       return createToolResult(result);
     } catch (err) {
-      return createToolError(`Failed to list directory: ${(err as Error).message}`);
+      return createToolError(`列出目录失败: ${(err as Error).message}`);
     }
   }
 }
@@ -82,9 +82,9 @@ export class CreateDirectoryTool extends BaseTool<typeof CreateDirectoryTool.par
   async execute(toolCallId: string, params: { path: string }) {
     try {
       await fs.promises.mkdir(params.path, { recursive: true });
-      return createToolResult(`Directory created: ${params.path}`);
+      return createToolResult(`目录已创建: ${params.path}`);
     } catch (err) {
-      return createToolError(`Failed to create directory: ${(err as Error).message}`);
+      return createToolError(`创建目录失败: ${(err as Error).message}`);
     }
   }
 }
@@ -101,9 +101,9 @@ export class DeleteFileTool extends BaseTool<typeof DeleteFileTool.parameters> {
   async execute(toolCallId: string, params: { file_path: string }) {
     try {
       await fs.promises.unlink(params.file_path);
-      return createToolResult(`File deleted: ${params.file_path}`);
+      return createToolResult(`文件已删除: ${params.file_path}`);
     } catch (err) {
-      return createToolError(`Failed to delete file: ${(err as Error).message}`);
+      return createToolError(`删除文件失败: ${(err as Error).message}`);
     }
   }
 }
@@ -120,9 +120,9 @@ export class DeleteDirectoryTool extends BaseTool<typeof DeleteDirectoryTool.par
   async execute(toolCallId: string, params: { path: string }) {
     try {
       await fs.promises.rm(params.path, { recursive: true, force: true });
-      return createToolResult(`Directory deleted: ${params.path}`);
+      return createToolResult(`目录已删除: ${params.path}`);
     } catch (err) {
-      return createToolError(`Failed to delete directory: ${(err as Error).message}`);
+      return createToolError(`删除目录失败: ${(err as Error).message}`);
     }
   }
 }
@@ -140,9 +140,9 @@ export class RenameFileTool extends BaseTool<typeof RenameFileTool.parameters> {
   async execute(toolCallId: string, params: { old_path: string; new_path: string }) {
     try {
       await fs.promises.rename(params.old_path, params.new_path);
-      return createToolResult(`File renamed: ${params.old_path} -> ${params.new_path}`);
+      return createToolResult(`文件已重命名: ${params.old_path} -> ${params.new_path}`);
     } catch (err) {
-      return createToolError(`Failed to rename file: ${(err as Error).message}`);
+      return createToolError(`重命名文件失败: ${(err as Error).message}`);
     }
   }
 }

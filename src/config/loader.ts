@@ -31,7 +31,7 @@ export async function loadConfig(configPath?: string): Promise<Config> {
       const raw = yaml.load(content) as unknown;
       config = ConfigSchema.parse(raw);
     } catch (err) {
-      console.warn(`Failed to load config from ${resolvedPath}, using defaults:`, (err as Error).message);
+      console.warn(`从 ${resolvedPath} 加载配置失败，使用默认配置：`, (err as Error).message);
       config = defaultConfig();
     }
   }

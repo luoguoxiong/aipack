@@ -22,13 +22,13 @@ export class WebhookChannel implements Channel {
     this.server = http.createServer(async (req, res) => {
       if (req.url !== this.config.path) {
         res.writeHead(404);
-        res.end('Not found');
+        res.end('未找到');
         return;
       }
 
       if (req.method !== 'POST') {
         res.writeHead(405);
-        res.end('Method not allowed');
+        res.end('方法不允许');
         return;
       }
 
@@ -36,13 +36,13 @@ export class WebhookChannel implements Channel {
         const authHeader = req.headers['authorization'];
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
           res.writeHead(401);
-          res.end('Unauthorized');
+          res.end('未授权');
           return;
         }
         const token = authHeader.slice(7);
         if (token !== this.config.secret) {
           res.writeHead(403);
-          res.end('Forbidden');
+          res.end('禁止访问');
           return;
         }
       }
@@ -53,7 +53,7 @@ export class WebhookChannel implements Channel {
         
         if (!message.content || !message.chatId || !message.senderId) {
           res.writeHead(400);
-          res.end('Missing required fields');
+          res.end('缺少必填字段');
           return;
         }
 
@@ -117,7 +117,7 @@ export class WebhookChannel implements Channel {
 
   private async handleMessage(message: ChannelMessage): Promise<ChannelResponse> {
     if (!this.bot) {
-      return { status: 'error', error: 'Bot not initialized' };
+      return { status: 'error', error: '机器人未初始化' };
     }
 
     try {

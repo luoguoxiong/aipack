@@ -161,6 +161,7 @@ export class Kobot {
   private models: any;
   private sessionManager: SessionManager;
   private progressGuard: ProgressGuard;
+  private requestQueues: Map<string, Promise<void>> = new Map();
 
   private constructor(config: Config, toolRegistry: ToolRegistry, models: any) {
     this.config = config;
@@ -194,14 +195,14 @@ export class Kobot {
     this.progressGuard.on((event) => {
       switch (event.type) {
         case 'risk_change':
-          logger.info({ level: event.level, score: event.score, previous: event.previousLevel }, '[PG] Risk level changed');
+          logger.info({ level: event.level, score: event.score, previous: event.previousLevel }, '[PG] 风险等级已变更');
           break;
         case 'intervention':
-          logger.warn({ level: event.level, action: event.action }, '[PG] Intervention triggered');
+          logger.warn({ level: event.level, action: event.action }, '[PG] 已触发干预');
           break;
         case 'progress_update':
           if (this.progressGuard.getDiagnosis().riskLevel !== 'normal') {
-            logger.debug({ score: event.score, trend: event.trend, turn: event.turn }, '[PG] Progress update');
+            logger.debug({ score: event.score, trend: event.trend, turn: event.turn }, '[PG] 进展更新');
           }
           break;
       }
@@ -209,7 +210,7 @@ export class Kobot {
   }
 
   static async fromConfig(options: KobotOptions = {}): Promise<Kobot> {
-    logger.info({ options }, 'Initializing Kobot from config');
+    logger.info({ options }, '正在从配置初始化 Kobot');
     
     let config: Config;
     if (options.config) {
@@ -218,7 +219,7 @@ export class Kobot {
       const configPath = options.configPath 
         ? path.resolve(options.configPath.replace('~', process.env.HOME || ''))
         : getConfigPath();
-      logger.debug({ configPath }, 'Loading config');
+      logger.debug({ configPath }, '正在加载配置');
       config = await loadConfig(configPath);
     }
 
@@ -240,7 +241,7 @@ export class Kobot {
       createLogger(config.logging);
     }
 
-    logger.debug({ model: config.agents.defaults.model, provider: config.agents.defaults.provider }, 'Model configuration');
+    logger.debug({ model: config.agents.defaults.model, provider: config.agents.defaults.provider }, '模型配置');
     
     const toolRegistry = createDefaultToolRegistry();
     if (config.memory.base_dir) {
@@ -248,7 +249,7 @@ export class Kobot {
     }
 
     const models = builtinModels();
-    logger.info({ modelCount: models.getModels().length }, 'Loaded models');
+    logger.info({ modelCount: models.getModels().length }, '已加载模型');
 
     return new Kobot(config, toolRegistry, models);
   }
@@ -299,7 +300,7 @@ export class Kobot {
       }
       
       if (!model) {
-        throw new Error('No models available');
+        throw new Error('没有可用的模型');
       }
     } catch {
       model = {
@@ -410,7 +411,7 @@ export class Kobot {
       }
     }
 
-    // Get or create ACR runtime for this session
+    // 获取或创建此会话的 ACR 运行时
     const acr = this.getOrCreateACR(sessionKey);
 
     let agent: Agent;
@@ -427,7 +428,7 @@ export class Kobot {
         return this.models.streamSimple(model, context, options);
       },
       transformContext: async (messages, signal) => {
-        // Use ACR if enabled
+        // 如果启用了 ACR 则使用
         if (acr) {
           try {
             const check = await acr.checkBeforeModelCall(messages);
@@ -437,7 +438,7 @@ export class Kobot {
                 level: check.level,
                 trigger: check.reasons,
                 messagesBefore: messages.length,
-              }, 'ACR: Context compression triggered');
+              }, 'ACR：已触发上下文压缩');
               
               const compressionResult = await acr.compressAndGetResult(check.level, trigger);
               
@@ -447,18 +448,18 @@ export class Kobot {
                 messagesAfter: compressionResult.messagesAfter,
                 tokensSaved: compressionResult.tokensSaved,
                 duration: compressionResult.durationMs,
-              }, 'ACR: Context compression applied');
+              }, 'ACR：已应用上下文压缩');
               
-              // Sync back to agent state
+              // 同步回 agent 状态
               agent.state.messages = compressionResult.messages;
               return compressionResult.messages;
             }
           } catch (err) {
-            logger.warn({ err: (err as Error).message }, 'ACR compression failed, falling back to default');
+            logger.warn({ err: (err as Error).message }, 'ACR 压缩失败，使用默认回退方案');
           }
         }
 
-        // Fallback to original simple compression (or no compression)
+        // 回退到原始的简单压缩（或不压缩）
         // 1. 估算当前上下文 token
         const estimate = estimateContextTokens(messages);
         const contextWindow = this.config.agents.defaults.context_window_tokens || 200000;
@@ -521,12 +522,27 @@ export class Kobot {
 
   async run(message: string, options: RunOptions = {}): Promise<RunResult> {
     const sessionKey = options.sessionKey || 'sdk:default';
+
+    const prevQueue = this.requestQueues.get(sessionKey) ?? Promise.resolve();
+    let resolveQueue!: () => void;
+    const currentQueue = new Promise<void>((resolve) => {
+      resolveQueue = resolve;
+    });
+    this.requestQueues.set(sessionKey, prevQueue.then(() => currentQueue));
+
+    try {
+      await prevQueue;
+    } catch {
+      // 前一个请求的错误不影响当前请求
+    }
+
+    try {
     const sessionStorage = this.sessionManager.getSessionStorage(sessionKey);
     
     const traceId = await sessionStorage.createEntryId();
     const parentId = await sessionStorage.getLeafId();
     
-    logger.info({ sessionKey, traceId, parentId, message: message.substring(0, 50) }, 'Running message');
+    logger.info({ sessionKey, traceId, parentId, message: message.substring(0, 50) }, '正在运行消息');
 
     const agent = await this.getOrCreateAgent(sessionKey);
     const model = agent.state.model;
@@ -545,7 +561,7 @@ export class Kobot {
           });
         },
         abort: (reason: string) => {
-          logger.error({ reason }, '[PG] Agent aborted by Progress Guard');
+          logger.error({ reason }, '[PG] Agent 被 Progress Guard 中止');
           throw new Error(`Progress Guard: ${reason}`);
         },
       });
@@ -571,27 +587,27 @@ export class Kobot {
     const unsubscribe = agent.subscribe(async (event) => {
       switch (event.type) {
         case 'agent_start':
-          logger.info({ sessionKey, traceId }, '[AGENT_START] Agent run started');
+          logger.info({ sessionKey, traceId }, '[AGENT_START] Agent 运行已开始');
           break;
         case 'agent_end':
-          logger.info({ sessionKey, traceId, messageCount: event.messages.length }, '[AGENT_END] Agent run completed');
+          logger.info({ sessionKey, traceId, messageCount: event.messages.length }, '[AGENT_END] Agent 运行已完成');
           break;
         case 'turn_start':
-          logger.debug({ sessionKey, traceId }, '[TURN_START] Turn started');
+          logger.debug({ sessionKey, traceId }, '[TURN_START] 回合已开始');
           this.progressGuard.startTurn();
           break;
         case 'turn_end':
           const turnMsg = event.message as AssistantMessage;
-          logger.debug({ sessionKey, traceId, stopReason: turnMsg.stopReason, toolResultCount: event.toolResults.length }, '[TURN_END] Turn completed');
+          logger.debug({ sessionKey, traceId, stopReason: turnMsg.stopReason, toolResultCount: event.toolResults.length }, '[TURN_END] 回合已完成');
           break;
         case 'message_start':
-          logger.debug({ sessionKey, traceId, role: event.message.role }, '[MESSAGE_START] Message started');
+          logger.debug({ sessionKey, traceId, role: event.message.role }, '[MESSAGE_START] 消息已开始');
           break;
         case 'message_update':
           break;
         case 'message_end':
           const msg = event.message as AssistantMessage;
-          logger.debug({ sessionKey, traceId, role: event.message.role, stopReason: msg.stopReason }, '[MESSAGE_END] Message completed');
+          logger.debug({ sessionKey, traceId, role: event.message.role, stopReason: msg.stopReason }, '[MESSAGE_END] 消息已完成');
           
           // 存储消息条目
           await sessionStorage.appendEntry({
@@ -625,7 +641,7 @@ export class Kobot {
           }
           break;
         case 'tool_execution_start':
-          logger.info({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId, args: event.args }, '[TOOL_START] Tool execution started');
+          logger.info({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId, args: event.args }, '[TOOL_START] 工具执行已开始');
           
           // 存储工具调用条目
           await sessionStorage.appendEntry({
@@ -643,10 +659,10 @@ export class Kobot {
           }
           break;
         case 'tool_execution_update':
-          logger.debug({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId }, '[TOOL_UPDATE] Tool execution in progress');
+          logger.debug({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId }, '[TOOL_UPDATE] 工具执行中');
           break;
         case 'tool_execution_end':
-          logger.info({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId, success: !event.isError }, '[TOOL_END] Tool execution completed');
+          logger.info({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId, success: !event.isError }, '[TOOL_END] 工具执行已完成');
 
           // 存储工具结果条目
           const resultContent = event.result?.content?.filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('') || '';
@@ -716,6 +732,9 @@ export class Kobot {
       },
       error,
     };
+    } finally {
+      resolveQueue();
+    }
   }
 
   async *stream(
@@ -723,10 +742,25 @@ export class Kobot {
     options: RunOptions = {},
   ): AsyncGenerator<StreamEvent> {
     const sessionKey = options.sessionKey || 'sdk:default';
-    const sessionStorage = this.sessionManager.getSessionStorage(sessionKey);
-    const agent = await this.getOrCreateAgent(sessionKey);
-    const model = agent.state.model;
-    const acr = this.getOrCreateACR(sessionKey);
+
+    const prevQueue = this.requestQueues.get(sessionKey) ?? Promise.resolve();
+    let resolveQueue!: () => void;
+    const currentQueue = new Promise<void>((resolve) => {
+      resolveQueue = resolve;
+    });
+    this.requestQueues.set(sessionKey, prevQueue.then(() => currentQueue));
+
+    try {
+      await prevQueue;
+    } catch {
+      // 前一个请求的错误不影响当前请求
+    }
+
+    try {
+      const sessionStorage = this.sessionManager.getSessionStorage(sessionKey);
+      const agent = await this.getOrCreateAgent(sessionKey);
+      const model = agent.state.model;
+      const acr = this.getOrCreateACR(sessionKey);
 
     // 挂载 Progress Guard 到当前 Agent (stream 模式)
     if (this.progressGuard.isEnabled) {
@@ -1038,6 +1072,9 @@ export class Kobot {
     } finally {
       unsubscribe();
     }
+    } finally {
+      resolveQueue();
+    }
   }
 
   async getSessionInfo(sessionKey: string): Promise<SessionInfo | null> {
@@ -1136,6 +1173,20 @@ export class Kobot {
   /** 获取 ACR runtime 实例（用于调试/监控） */
   getACR(sessionKey: string = 'sdk:default'): AgentContextRuntime | undefined {
     return this.acrRuntimes.get(sessionKey);
+  }
+
+  /** 检查指定会话是否正在处理请求 */
+  isBusy(sessionKey: string = 'sdk:default'): boolean {
+    const agent = this.agents.get(sessionKey);
+    return agent?.state.isStreaming ?? false;
+  }
+
+  /** 等待指定会话空闲 */
+  async waitForIdle(sessionKey: string = 'sdk:default'): Promise<void> {
+    const agent = this.agents.get(sessionKey);
+    if (agent && agent.state.isStreaming) {
+      await agent.waitForIdle();
+    }
   }
 
   async close(): Promise<void> {

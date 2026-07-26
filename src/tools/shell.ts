@@ -19,7 +19,7 @@ export class ShellTool extends BaseTool<typeof ShellTool.parameters> {
     try {
       const { stdout, stderr } = await execAsync(params.command, { timeout: params.timeout * 1000 });
       const result = stderr ? `${stdout}\n--- STDERR ---\n${stderr}` : stdout;
-      return createToolResult(result.trim() || '(empty output)');
+      return createToolResult(result.trim() || '（空输出）');
     } catch (err) {
       const error = err as Error & { code?: number; stdout?: string; stderr?: string };
       const output = error.stdout || '';
@@ -43,7 +43,7 @@ export class GitStatusTool extends BaseTool<typeof GitStatusTool.parameters> {
       const result = stderr ? `${stdout}\n${stderr}` : stdout;
       return createToolResult(result.trim());
     } catch (err) {
-      return createToolError(`Git status failed: ${(err as Error).message}`);
+      return createToolError(`Git 状态获取失败：${(err as Error).message}`);
     }
   }
 }
@@ -63,7 +63,7 @@ export class GitLogTool extends BaseTool<typeof GitLogTool.parameters> {
       const result = stderr ? `${stdout}\n${stderr}` : stdout;
       return createToolResult(result.trim());
     } catch (err) {
-      return createToolError(`Git log failed: ${(err as Error).message}`);
+      return createToolError(`Git 日志获取失败：${(err as Error).message}`);
     }
   }
 }

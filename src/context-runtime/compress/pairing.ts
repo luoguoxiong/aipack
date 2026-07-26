@@ -15,6 +15,46 @@ interface ToolCallInfo {
 }
 
 /**
+ * 从助手消息中提取工具调用列表
+ * 支持 pi-agent-core 的 content 数组格式（type: "toolCall"）
+ * 同时兼容旧格式（toolCalls / functionCall 字段）
+ */
+function extractToolCallsFromAssistant(msg: AgentMessage): Array<{ id: string; name?: string }> {
+  const calls: Array<{ id: string; name?: string }> = [];
+
+  // pi-agent-core 格式：工具调用在 content 数组中，type 为 "toolCall"
+  if ('content' in msg && Array.isArray((msg as any).content)) {
+    for (const block of (msg as any).content) {
+      if (block.type === 'toolCall' && block.id) {
+        calls.push({ id: block.id, name: block.name });
+      }
+    }
+  }
+
+  // 兼容旧格式：toolCalls 字段
+  if (calls.length === 0) {
+    const toolCalls = (msg as any).toolCalls || (msg as any).tool_calls;
+    if (toolCalls && Array.isArray(toolCalls)) {
+      for (const tc of toolCalls) {
+        if (tc.id) {
+          calls.push({ id: tc.id, name: tc.name || tc.function?.name });
+        }
+      }
+    }
+  }
+
+  // 兼容 functionCall 格式
+  if (calls.length === 0) {
+    const functionCall = (msg as any).functionCall || (msg as any).function_call;
+    if (functionCall?.id) {
+      calls.push({ id: functionCall.id, name: functionCall.name });
+    }
+  }
+
+  return calls;
+}
+
+/**
  * 确保工具配对完整性
  *
  * 规则：
@@ -34,18 +74,11 @@ export function ensureToolPairing(messages: AgentMessage[]): AgentMessage[] {
 
     // 检查助手消息中的工具调用
     if (msg.role === 'assistant') {
-      const toolCalls = (msg as any).toolCalls;
-      if (toolCalls && Array.isArray(toolCalls)) {
-        for (const tc of toolCalls) {
-          if (tc.id) {
-            callMap.set(tc.id, { id: tc.id, msgIndex: i, toolName: tc.name });
-          }
+      const toolCalls = extractToolCallsFromAssistant(msg);
+      for (const tc of toolCalls) {
+        if (tc.id) {
+          callMap.set(tc.id, { id: tc.id, msgIndex: i, toolName: tc.name });
         }
-      }
-      // 也检查 function_call 格式
-      const functionCall = (msg as any).functionCall;
-      if (functionCall?.id) {
-        callMap.set(functionCall.id, { id: functionCall.id, msgIndex: i, toolName: functionCall.name });
       }
     }
 
@@ -101,11 +134,9 @@ export function countOrphanedPairs(messages: AgentMessage[]): {
 
   for (const msg of messages) {
     if (msg.role === 'assistant') {
-      const toolCalls = (msg as any).toolCalls || (msg as any).tool_calls;
-      if (toolCalls && Array.isArray(toolCalls)) {
-        for (const tc of toolCalls) {
-          if (tc.id) callIds.add(tc.id);
-        }
+      const toolCalls = extractToolCallsFromAssistant(msg);
+      for (const tc of toolCalls) {
+        if (tc.id) callIds.add(tc.id);
       }
     }
     if (msg.role === 'toolResult') {
@@ -147,11 +178,9 @@ export function findResultForCall(messages: AgentMessage[], callId: string): Age
 export function findCallForResult(messages: AgentMessage[], toolCallId: string): AgentMessage | null {
   for (const msg of messages) {
     if (msg.role === 'assistant') {
-      const toolCalls = (msg as any).toolCalls || (msg as any).tool_calls;
-      if (toolCalls && Array.isArray(toolCalls)) {
-        for (const tc of toolCalls) {
-          if (tc.id === toolCallId) return msg;
-        }
+      const toolCalls = extractToolCallsFromAssistant(msg);
+      for (const tc of toolCalls) {
+        if (tc.id === toolCallId) return msg;
       }
     }
   }

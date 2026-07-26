@@ -36,14 +36,14 @@ export function resolveSubPath(workspaceResolved: string, subPath: string): stri
 }
 
 /**
- * @deprecated Use resolveHomePath instead
+ * @deprecated 请改用 resolveHomePath
  */
 export function getWorkspacePath(workspace: string): string {
   return resolveHomePath(workspace);
 }
 
 /**
- * @deprecated Use resolveSubPath instead
+ * @deprecated 请改用 resolveSubPath
  */
 export function getMemoryPath(baseDir: string): string {
   if (baseDir.startsWith('~')) {

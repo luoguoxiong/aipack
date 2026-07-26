@@ -16,56 +16,56 @@ const program = new Command();
 
 program
   .name('kobot')
-  .description('Kobot - A lightweight personal AI assistant')
+  .description('Kobot - 轻量级个人 AI 助手')
   .version('0.0.2');
 
 program
   .command('start', { isDefault: true })
-  .description('Start Kobot interactive CLI (default command)')
+  .description('启动 Kobot 交互式命令行（默认命令）')
   .action(async () => {
     await startBot();
   });
 
 const resetCmd = program
   .command('reset')
-  .description('Reset Kobot data - config, logs, sessions, etc.');
+  .description('重置 Kobot 数据 - 配置、日志、会话等');
 
 resetCmd
   .command('all')
-  .description('Reset everything (config, logs, sessions, memory)')
-  .option('-y, --yes', 'Skip confirmation prompt')
+  .description('重置所有数据（配置、日志、会话、记忆）')
+  .option('-y, --yes', '跳过确认提示')
   .action(async (options) => {
     await resetAll(options.yes);
   });
 
 resetCmd
   .command('config')
-  .description('Reset config to defaults')
-  .option('-y, --yes', 'Skip confirmation prompt')
+  .description('重置配置为默认值')
+  .option('-y, --yes', '跳过确认提示')
   .action(async (options) => {
     await resetConfig(options.yes);
   });
 
 resetCmd
   .command('logs')
-  .description('Clear all log files')
-  .option('-y, --yes', 'Skip confirmation prompt')
+  .description('清空所有日志文件')
+  .option('-y, --yes', '跳过确认提示')
   .action(async (options) => {
     await resetLogs(options.yes);
   });
 
 resetCmd
   .command('sessions')
-  .description('Clear all session data')
-  .option('-y, --yes', 'Skip confirmation prompt')
+  .description('清空所有会话数据')
+  .option('-y, --yes', '跳过确认提示')
   .action(async (options) => {
     await resetSessions(options.yes);
   });
 
 resetCmd
   .command('memory')
-  .description('Clear all memory data')
-  .option('-y, --yes', 'Skip confirmation prompt')
+  .description('清空所有记忆数据')
+  .option('-y, --yes', '跳过确认提示')
   .action(async (options) => {
     await resetMemory(options.yes);
   });
@@ -162,36 +162,36 @@ async function resetAll(skipConfirm: boolean): Promise<void> {
   const paths = await resolvePaths();
   
   const confirmed = await confirmAction(
-    '⚠️  This will reset ALL data including config, logs, sessions, and memory. Continue?',
+    '⚠️  这将重置所有数据，包括配置、日志、会话和记忆。确定继续吗？',
     skipConfirm
   );
   
   if (!confirmed) {
-    console.log('Reset cancelled.');
+    console.log('已取消重置。');
     return;
   }
   
-  console.log('🔄 Resetting all Kobot data...');
+  console.log('🔄 正在重置所有 Kobot 数据...');
   
   doResetConfig(paths);
   doResetLogs(paths);
   doResetSessions(paths);
   doResetMemory(paths);
   
-  console.log('\n✅ All data reset complete.');
-  console.log('   Run "kobot start" to reconfigure and start Kobot.');
+  console.log('\n✅ 所有数据重置完成。');
+  console.log('   运行 "kobot start" 重新配置并启动 Kobot。');
 }
 
 async function resetConfig(skipConfirm: boolean): Promise<void> {
   const paths = await resolvePaths();
   
   const confirmed = await confirmAction(
-    `⚠️  This will reset config to defaults and remove .env file.\n   Config: ${paths.configPath}\n   .env: ${paths.envPath}\n   Continue?`,
+    `⚠️  这将把配置重置为默认值并删除 .env 文件。\n   配置文件: ${paths.configPath}\n   .env 文件: ${paths.envPath}\n   确定继续吗？`,
     skipConfirm
   );
   
   if (!confirmed) {
-    console.log('Reset cancelled.');
+    console.log('已取消重置。');
     return;
   }
   
@@ -199,20 +199,20 @@ async function resetConfig(skipConfirm: boolean): Promise<void> {
 }
 
 function doResetConfig(paths: ResolvedPaths): void {
-  console.log('🔄 Resetting config...');
+  console.log('🔄 正在重置配置...');
   
   if (fs.existsSync(paths.configPath)) {
     fs.unlinkSync(paths.configPath);
-    console.log(`   ✅ Removed config.yaml`);
+    console.log(`   ✅ 已删除 config.yaml`);
   } else {
-    console.log(`   ℹ️  config.yaml not found, skipping`);
+    console.log(`   ℹ️  config.yaml 不存在，跳过`);
   }
   
   if (fs.existsSync(paths.envPath)) {
     fs.unlinkSync(paths.envPath);
-    console.log(`   ✅ Removed .env`);
+    console.log(`   ✅ 已删除 .env`);
   } else {
-    console.log(`   ℹ️  .env not found, skipping`);
+    console.log(`   ℹ️  .env 不存在，跳过`);
   }
   
   // 重新生成默认配置 - 注意：默认配置中 workspace 是 ~/.kobot
@@ -220,9 +220,9 @@ function doResetConfig(paths: ResolvedPaths): void {
   const config = defaultConfig();
   config.sessions = { storage: 'file', storage_path: 'sessions' };
   saveConfig(config, paths.configPath).then(() => {
-    console.log(`   ✅ Generated default config`);
+    console.log(`   ✅ 已生成默认配置`);
   }).catch(() => {
-    console.log(`   ⚠️  Failed to generate default config`);
+    console.log(`   ⚠️  生成默认配置失败`);
   });
 }
 
@@ -230,12 +230,12 @@ async function resetLogs(skipConfirm: boolean): Promise<void> {
   const paths = await resolvePaths();
   
   const confirmed = await confirmAction(
-    `⚠️  This will clear all log files in:\n   ${paths.logsDir}\n   Continue?`,
+    `⚠️  这将清空以下目录中的所有日志文件:\n   ${paths.logsDir}\n   确定继续吗？`,
     skipConfirm
   );
   
   if (!confirmed) {
-    console.log('Reset cancelled.');
+    console.log('已取消重置。');
     return;
   }
   
@@ -243,13 +243,13 @@ async function resetLogs(skipConfirm: boolean): Promise<void> {
 }
 
 function doResetLogs(paths: ResolvedPaths): void {
-  console.log('🔄 Clearing logs...');
+  console.log('🔄 正在清空日志...');
   
   if (fs.existsSync(paths.logsDir)) {
     const count = removeDirContents(paths.logsDir);
-    console.log(`   ✅ Removed ${count} log file(s)`);
+    console.log(`   ✅ 已删除 ${count} 个日志文件`);
   } else {
-    console.log(`   ℹ️  Logs directory not found, skipping`);
+    console.log(`   ℹ️  日志目录不存在，跳过`);
   }
 }
 
@@ -257,12 +257,12 @@ async function resetSessions(skipConfirm: boolean): Promise<void> {
   const paths = await resolvePaths();
   
   const confirmed = await confirmAction(
-    `⚠️  This will delete ALL session data in:\n   ${paths.sessionsDir}\n   Continue?`,
+    `⚠️  这将删除以下目录中的所有会话数据:\n   ${paths.sessionsDir}\n   确定继续吗？`,
     skipConfirm
   );
   
   if (!confirmed) {
-    console.log('Reset cancelled.');
+    console.log('已取消重置。');
     return;
   }
   
@@ -270,13 +270,13 @@ async function resetSessions(skipConfirm: boolean): Promise<void> {
 }
 
 function doResetSessions(paths: ResolvedPaths): void {
-  console.log('🔄 Clearing sessions...');
+  console.log('🔄 正在清空会话...');
   
   if (fs.existsSync(paths.sessionsDir)) {
     const count = removeDirContents(paths.sessionsDir);
-    console.log(`   ✅ Removed ${count} session file(s)`);
+    console.log(`   ✅ 已删除 ${count} 个会话文件`);
   } else {
-    console.log(`   ℹ️  Sessions directory not found, skipping`);
+    console.log(`   ℹ️  会话目录不存在，跳过`);
   }
 }
 
@@ -284,12 +284,12 @@ async function resetMemory(skipConfirm: boolean): Promise<void> {
   const paths = await resolvePaths();
   
   const confirmed = await confirmAction(
-    `⚠️  This will delete ALL memory data in:\n   ${paths.memoryDir}\n   Continue?`,
+    `⚠️  这将删除以下目录中的所有记忆数据:\n   ${paths.memoryDir}\n   确定继续吗？`,
     skipConfirm
   );
   
   if (!confirmed) {
-    console.log('Reset cancelled.');
+    console.log('已取消重置。');
     return;
   }
   
@@ -297,18 +297,18 @@ async function resetMemory(skipConfirm: boolean): Promise<void> {
 }
 
 function doResetMemory(paths: ResolvedPaths): void {
-  console.log('🔄 Clearing memory...');
+  console.log('🔄 正在清空记忆...');
   
   if (fs.existsSync(paths.memoryDir)) {
     const count = removeDirContents(paths.memoryDir);
-    console.log(`   ✅ Removed ${count} memory file(s)`);
+    console.log(`   ✅ 已删除 ${count} 个记忆文件`);
   } else {
-    console.log(`   ℹ️  Memory directory not found, skipping`);
+    console.log(`   ℹ️  记忆目录不存在，跳过`);
   }
 }
 
 async function startBot(): Promise<void> {
-  console.log('Starting Kobot...');
+  console.log('正在启动 Kobot...');
   
   // 在机器人初始化前禁用 CLI 模式下的控制台日志
   process.env.KOBOT_LOG_CONSOLE = 'false';
@@ -332,11 +332,11 @@ async function startBot(): Promise<void> {
   try {
     const bot = await Kobot.fromConfig({ model: selectedModel });
     
-    console.log('✅ Kobot initialized successfully');
-    console.log(`   Model: ${bot.config_.agents.defaults.model}`);
-    console.log(`   Tools: ${bot.tools.length} available`);
+    console.log('✅ Kobot 初始化成功');
+    console.log(`   模型: ${bot.config_.agents.defaults.model}`);
+    console.log(`   工具: ${bot.tools.length} 个可用`);
 
-    // Start Feishu channel if configured via environment variables
+    // 如果通过环境变量配置了飞书，则启动飞书渠道
     const feishuAppId = process.env.FEISHU_APP_ID;
     const feishuAppSecret = process.env.FEISHU_APP_SECRET;
     if (feishuAppId && feishuAppSecret) {
@@ -362,16 +362,16 @@ async function startBot(): Promise<void> {
 
     await cliChannel.start(bot);
   } catch (err) {
-    console.error('❌ Error starting kobot:', (err as Error).message);
-    console.log('\n💡 Tips:');
-    console.log('   - Make sure you have configured API keys in environment variables');
-    console.log('   - OPENAI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY, etc.');
-    console.log('   - Check your config file at ~/.kobot/config.yaml');
+    console.error('❌ 启动 kobot 时出错:', (err as Error).message);
+    console.log('\n💡 提示:');
+    console.log('   - 请确保已在环境变量中配置 API Key');
+    console.log('   - 例如: OPENAI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY 等');
+    console.log('   - 检查配置文件: ~/.kobot/config.yaml');
     process.exit(1);
   }
 }
 
 program.parseAsync(process.argv).catch((err) => {
-  console.error('Fatal error:', err);
+  console.error('致命错误:', err);
   process.exit(1);
 });

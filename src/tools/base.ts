@@ -145,7 +145,7 @@ export abstract class BaseTool<TParameters extends TSchema = TSchema> {
     signal?: AbortSignal,
     onUpdate?: AgentToolUpdateCallback<unknown>,
   ): Promise<AgentToolResult<unknown>> {
-    throw new Error('execute() must be implemented');
+    throw new Error('必须实现 execute() 方法');
   }
 
   private isRetryableError(errorMessage: string): boolean {
@@ -189,7 +189,7 @@ export abstract class BaseTool<TParameters extends TSchema = TSchema> {
         if (!this.isRetryableError(errorMessage) || this.isNonRetryableError(errorMessage)) {
           logger.warn(
             { toolName: this.name, toolCallId, attempt, error: errorMessage },
-            'Tool execution failed (non-retryable)'
+            '工具执行失败（不可重试）'
           );
           break;
         }
@@ -198,7 +198,7 @@ export abstract class BaseTool<TParameters extends TSchema = TSchema> {
         if (attempt >= this.retryConfig.maxRetries) {
           logger.error(
             { toolName: this.name, toolCallId, attempt: attempt + 1, error: errorMessage },
-            'Tool execution failed after max retries'
+            '工具在最大重试次数后执行失败'
           );
           break;
         }
@@ -210,12 +210,12 @@ export abstract class BaseTool<TParameters extends TSchema = TSchema> {
         logger.warn(
           { toolName: this.name, toolCallId, attempt: attempt + 1, 
             maxRetries: this.retryConfig.maxRetries, delayMs, error: errorMessage },
-          'Retrying tool execution'
+          '正在重试工具执行'
         );
         
         // 检查是否被取消
         if (signal?.aborted) {
-          logger.info({ toolName: this.name, toolCallId }, 'Tool execution cancelled');
+          logger.info({ toolName: this.name, toolCallId }, '工具执行已取消');
           break;
         }
         
@@ -228,13 +228,13 @@ export abstract class BaseTool<TParameters extends TSchema = TSchema> {
       return this.createFriendlyError(lastError.message);
     }
     
-    return createToolError('Unknown error occurred');
+    return createToolError('发生未知错误');
   }
 
   private createFriendlyError(errorMessage: string): AgentToolResult<unknown> {
     logger.error(
       { toolName: this.name, error: errorMessage },
-      'Tool execution failed'
+      '工具执行失败'
     );
     
     let friendlyMessage = this.summarizeError(errorMessage);
@@ -245,34 +245,34 @@ export abstract class BaseTool<TParameters extends TSchema = TSchema> {
     const lower = errorMessage.toLowerCase();
     
     if (lower.includes('permission') || lower.includes('403')) {
-      return `Permission denied: This tool requires higher permissions. Please check file permissions or run with appropriate privileges.`;
+      return `权限被拒绝：此工具需要更高的权限。请检查文件权限或以适当的权限运行。`;
     }
     
     if (lower.includes('enoent') || lower.includes('not found') || lower.includes('404')) {
-      return `File not found: The specified path does not exist. Please verify the path and try again.`;
+      return `文件未找到：指定的路径不存在。请验证路径后重试。`;
     }
     
     if (lower.includes('timeout') || lower.includes('504')) {
-      return `Operation timed out: The tool took too long to complete. This is often due to network issues or server overload.`;
+      return `操作超时：工具执行时间过长。这通常是由于网络问题或服务器过载造成的。`;
     }
     
     if (lower.includes('429') || lower.includes('rate limit')) {
-      return `Rate limited: Too many requests in a short time. Please wait a moment and try again.`;
+      return `请求频率限制：短时间内请求过多。请稍候再试。`;
     }
     
     if (lower.includes('500') || lower.includes('502') || lower.includes('503')) {
-      return `Service unavailable: The remote service is temporarily down. Please try again later.`;
+      return `服务不可用：远程服务暂时宕机。请稍后重试。`;
     }
     
     if (lower.includes('network') || lower.includes('connect') || lower.includes('dns')) {
-      return `Network error: Could not connect to the remote service. Please check your network connection.`;
+      return `网络错误：无法连接到远程服务。请检查您的网络连接。`;
     }
     
     if (lower.includes('invalid') || lower.includes('bad request') || lower.includes('400')) {
-      return `Invalid parameters: The provided arguments are incorrect. Please check the tool documentation and try again with valid parameters.`;
+      return `参数无效：提供的参数不正确。请查看工具文档并使用有效参数重试。`;
     }
     
-    return `Tool execution failed: ${errorMessage}`;
+    return `工具执行失败：${errorMessage}`;
   }
 
   prepareArguments?(args: unknown): Static<TParameters> {
