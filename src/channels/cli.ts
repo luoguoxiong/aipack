@@ -11,12 +11,16 @@ export class CLIChannel implements Channel {
   private rl: readline.Interface | null = null;
   private history: string[] = [];
   private bot: Kobot | null = null;
-  private currentSessionKey: string = 'sdk:default';
+  private currentSessionKey: string;
 
   constructor(config: CLIConfig) {
     this.id = config.id;
     this.name = config.name;
     this.config = config;
+    // 生成唯一的 session key，格式：cli_YYYYMMDD_HHMMSS
+    const now = new Date();
+    const timestamp = now.toISOString().replace(/[-:T]/g, '').slice(0, 15);
+    this.currentSessionKey = `cli_${timestamp}`;
   }
 
   async start(bot: Kobot): Promise<void> {
@@ -30,9 +34,11 @@ export class CLIChannel implements Channel {
       prompt: this.config.prompt || 'kobot> ',
     });
 
-    console.log(`[${this.name}] 频道已启动 (logo: image/logo.png)`);
+    console.log(`[${this.name}] 频道已启动`);
+    console.log(`Session: ${this.currentSessionKey}`);
     console.log('输入 "exit" 或 "quit" 退出');
     console.log('输入 "help" 查看可用命令');
+    console.log('输入 "sessions" 查看历史会话');
     console.log('---');
 
     this.rl.on('line', async (input) => {
@@ -100,7 +106,7 @@ export class CLIChannel implements Channel {
       await this.bot.close();
     }
     logger.info({ channel: this.id }, 'CLI 频道已停止');
-    console.log('\n再见！(logo: image/logo.png)');
+    console.log('\n再见！');
     process.exit(0);
   }
 

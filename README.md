@@ -190,6 +190,12 @@ logging:
   level: info
   file_path: logs/kobot.log
   console_enabled: true
+  rotation:
+    enabled: true # 是否启用日志轮转
+    max_size: 10M # 单个日志文件最大大小
+    max_files: 30 # 保留日志文件最大数量
+    compress: true # 是否压缩旧日志文件
+  separate_error_log: true # 是否单独记录错误日志
 
 progress_guard:
   enabled: true # 是否启用
@@ -466,7 +472,19 @@ logging:
   level: info # trace / debug / info / warn / error / fatal
   file_path: logs/kobot.log
   console_enabled: true # 是否输出到控制台
+  rotation:
+    enabled: true # 是否启用日志轮转（生产环境必备，防止日志无限增长）
+    max_size: 10M # 单个日志文件最大大小（支持 K/M/G 单位）
+    max_files: 30 # 保留日志文件最大数量
+    compress: true # 是否压缩旧日志文件（.gz 格式）
+  separate_error_log: true # 是否单独记录错误日志到 kobot-error.log
 ```
+
+生产环境日志最佳实践：
+- 始终启用 `rotation.enabled` 和 `separate_error_log`
+- 建议设置 `max_size` 为 10-20M，`max_files` 根据需求保留 7-30 天
+- 生产环境可将 `console_enabled` 设为 false，减少 I/O 开销
+- 使用结构化日志格式便于后续分析和监控
 
 ## 许可证
 

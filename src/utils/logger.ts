@@ -9,8 +9,10 @@ function createPinoLogger(config?: Partial<LoggingConfig>): pino.Logger {
   const level = config?.level || process.env.KOBOT_LOG_LEVEL || 'info';
   const consoleEnabled = (config?.console_enabled ?? true) && process.env.KOBOT_LOG_CONSOLE !== 'false';
   const filePath = config?.file_path;
+  const rotationEnabled = config?.rotation?.enabled !== false;
+  const separateErrorLog = config?.separate_error_log !== false;
 
-  const streams: Array<{ stream: pino.DestinationStream; level: string }> = [];
+  const streams: Array<{ stream: any; level: string }> = [];
 
   if (consoleEnabled) {
     if (process.env.NODE_ENV !== 'production') {
@@ -38,11 +40,62 @@ function createPinoLogger(config?: Partial<LoggingConfig>): pino.Logger {
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
     }
-    
-    streams.push({
-      stream: fs.createWriteStream(filePath, { flags: 'a' }),
-      level,
-    });
+
+    if (rotationEnabled) {
+      const rotationConfig = config?.rotation;
+      const maxSize = rotationConfig?.max_size || '10M';
+      const maxFiles = rotationConfig?.max_files || 30;
+      const compress = rotationConfig?.compress !== false;
+      
+      streams.push({
+        stream: pino.transport({
+          target: 'pino-roll',
+          options: {
+            file: filePath,
+            size: maxSize,
+            maxFiles,
+            compress,
+            mkdir: true,
+          },
+        }),
+        level,
+      });
+
+      if (separateErrorLog) {
+        const ext = path.extname(filePath);
+        const baseName = path.basename(filePath, ext);
+        const errorFilePath = path.join(logDir, `${baseName}-error${ext}`);
+        
+        streams.push({
+          stream: pino.transport({
+            target: 'pino-roll',
+            options: {
+              file: errorFilePath,
+              size: maxSize,
+              maxFiles,
+              compress,
+              mkdir: true,
+            },
+          }),
+          level: 'error',
+        });
+      }
+    } else {
+      streams.push({
+        stream: fs.createWriteStream(filePath, { flags: 'a' }),
+        level,
+      });
+
+      if (separateErrorLog) {
+        const ext = path.extname(filePath);
+        const baseName = path.basename(filePath, ext);
+        const errorFilePath = path.join(logDir, `${baseName}-error${ext}`);
+        streams.push({
+          stream: fs.createWriteStream(errorFilePath, { flags: 'a' }),
+          level: 'error',
+        });
+      }
+    }
   }
 
   return pino({ level }, pino.multistream(streams));
@@ -53,7 +106,6 @@ export function createLogger(config?: Partial<LoggingConfig>): pino.Logger {
   return loggerInstance;
 }
 
-// 创建默认日志记录器（仅控制台）
 loggerInstance = pino({
   level: process.env.KOBOT_LOG_LEVEL || 'info',
   transport: process.env.NODE_ENV !== 'production' ? {
@@ -66,7 +118,6 @@ loggerInstance = pino({
   } : undefined,
 });
 
-// 导出始终指向当前日志记录器实例的代理
 export const logger = new Proxy(loggerInstance, {
   get(target, prop) {
     if (prop === '__esModule') return false;

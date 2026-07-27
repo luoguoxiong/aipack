@@ -66,7 +66,7 @@ export const ModelPresetConfigSchema = z.object({
 export type ModelPresetConfig = z.infer<typeof ModelPresetConfigSchema>;
 
 export const AgentDefaultsSchema = z.object({
-  workspace: z.string().default('workspace'),
+  workspace: z.string().default('.'),
   model_preset: z.string().optional().nullable(),
   model: z.string().default('deepseek-v4-flash'),
   provider: z.string().default('auto'),
@@ -248,6 +248,13 @@ export const LoggingConfigSchema = z.object({
   level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   file_path: z.string().default('logs/kobot.log'),
   console_enabled: z.boolean().default(true),
+  rotation: z.object({
+    enabled: z.boolean().default(true),
+    max_size: z.string().default('10M'),
+    max_files: z.number().int().min(1).default(30),
+    compress: z.boolean().default(true),
+  }).default({}),
+  separate_error_log: z.boolean().default(true),
 });
 
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
