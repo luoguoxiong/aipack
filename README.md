@@ -8,14 +8,13 @@
 
 ## 特性
 
-- **多模型支持** — 内置 OpenAI、Anthropic、DeepSeek、Groq、Google Gemini 等多家模型提供商支持
-- **交互式 CLI** — 开箱即用的命令行交互界面，支持会话管理和历史记录
-- **Webhook 集成** — 可通过 HTTP API 接入第三方服务
-- **丰富的工具集** — 文件系统操作、Shell 执行、网络搜索和爬取、记忆管理、定时任务、代码补丁、任务调度、运行时自省、消息推送等
-- **会话持久化** — 支持内存和文件两种会话存储方式，可恢复对话历史
-- **容错机制** — 工具执行自动重试、健康监控、友好的错误提示
-- **Agent Progress Guard** — 运行时进展检测与自动干预，识别状态冻结、错误循环、工具循环等停滞模式，支持自适应权重和语义分析
-- **结构化日志** — 基于 pino 的分级日志系统，支持文件和控制台输出
+- **多模型支持** — 内置 OpenAI、Anthropic、DeepSeek、Groq、Google Gemini 等 20+ 模型提供商支持，支持自定义兼容 OpenAI API 的服务
+- **多渠道交互** — 交互式 CLI、Webhook HTTP API、飞书机器人
+- **丰富的工具集** — 文件系统操作、Shell 执行、网络搜索和爬取、记忆管理、定时任务、代码补丁、搜索、消息推送等 20+ 工具
+- **会话持久化** — 支持内存和文件两种会话存储方式，可恢复对话历史，支持会话树形结构（含工具调用链记录）
+- **Agent Progress Guard (APG)** — 运行时进展检测与自动干预，6 种检测策略识别状态冻结、错误循环、工具循环等停滞模式，支持自适应权重和语义分析
+- **Agent Context Runtime (ACR) v2.1** — 上下文运行时操作系统，管理完整上下文生命周期：观察 → 理解 → 压缩 → 记忆 → 重建 → 继续
+- **结构化日志** — 基于 pino 的分级日志系统，支持文件轮转和错误日志分离
 
 ## 快速开始
 
@@ -77,26 +76,49 @@ agents:
 
 ## CLI 使用
 
+### 命令行入口
+
+```bash
+# 启动交互式 CLI（默认命令）
+kobot start
+
+# 回放历史会话以复现问题
+kobot replay <sessionKey>
+
+# 重置数据
+kobot reset all              # 重置所有数据
+kobot reset config           # 重置配置
+kobot reset logs             # 清空日志
+kobot reset sessions         # 清空会话
+kobot reset memory           # 清空记忆
+```
+
+重置命令支持 `-y` / `--yes` 参数跳过确认提示。
+
+### 交互式命令
+
 启动后进入交互式命令行界面：
 
 ```
 CLI channel started
+Session: cli_20260727_120000
 Type "exit" or "quit" to exit
 Type "help" for available commands
 ---
 kobot>
 ```
 
-### 内置命令
+内置命令：
 
-| 命令            | 说明                           |
-| --------------- | ------------------------------ |
-| `help`          | 显示帮助信息                   |
-| `tools`         | 列出所有可用工具               |
-| `sessions`      | 列出所有会话                   |
-| `session <key>` | 查看会话详细信息               |
-| `use <key>`     | 切换到指定会话（恢复历史记录） |
-| `exit` / `quit` | 退出                           |
+| 命令               | 说明                           |
+| ------------------ | ------------------------------ |
+| `help`             | 显示帮助信息                   |
+| `tools`            | 列出所有可用工具               |
+| `sessions`         | 列出所有会话                   |
+| `session <key>`    | 查看会话详细信息               |
+| `use <key>`        | 切换到指定会话（恢复历史记录） |
+| `replay <key>`     | 回放历史会话以复现问题         |
+| `exit` / `quit`    | 退出                           |
 
 ### 示例会话
 
@@ -116,6 +138,48 @@ Active sessions:
   - sdk:default
 ```
 
+## 多渠道支持
+
+### Webhook
+
+通过 HTTP API 接入第三方服务。启动 Webhook 服务后，可通过 POST 请求发送消息并获取 AI 回复。
+
+```yaml
+# 在配置文件中启用 Webhook
+# Webhook 服务默认在 cli.ts 中不自动启动
+```
+
+Webhook 请求格式：
+
+```json
+POST /webhook
+{
+  "content": "你好",
+  "chatId": "user123",
+  "senderId": "user123",
+  "senderName": "用户"
+}
+```
+
+支持可选的 Bearer Token 认证（通过配置 `secret` 字段）。
+
+### 飞书 (Feishu)
+
+通过环境变量配置飞书机器人：
+
+```bash
+export FEISHU_APP_ID="your-app-id"
+export FEISHU_APP_SECRET="your-app-secret"
+export FEISHU_PORT="3000"
+export FEISHU_PATH="/webhook/event"
+```
+
+启动 Kobot 后，配置了飞书环境变量会自动启动飞书渠道。支持：
+
+- 文本消息处理
+- 会话隔离（按 chatId）
+- 流式回复
+
 ## 配置
 
 Kobot 的配置文件位于 `~/.kobot/config.yaml`。首次启动时如文件不存在会自动创建默认配置。
@@ -129,18 +193,23 @@ workspace: ~/.kobot
 
 agents:
   defaults:
-    workspace: workspace # 默认工作空间
-    model: deepseek-v4-flash # 默认模型
-    provider: auto # 模型提供商（auto 为自动选择）
+    workspace: workspace            # 默认工作空间
+    model: deepseek-v4-flash        # 默认模型
+    provider: auto                  # 模型提供商（auto 为自动选择）
     max_tokens: 8192
     context_window_tokens: 200000
+    context_block_limit: ~          # 上下文块限制
     temperature: 0.1
-    max_tool_iterations: 200 # 单次任务最大工具调用次数
-    bot_name: kobot
-    bot_icon: 🐈
-    unified_session: false
-    disabled_skills: []
+    max_tool_iterations: 200        # 单次任务最大工具调用次数
+    max_concurrent_subagents: 1     # 最大并发子 agent 数
+    fail_on_tool_error: true        # 工具错误是否终止任务
+    max_tool_result_chars: 16000    # 工具结果最大字符数
+    provider_retry_mode: standard   # 提供商重试模式（standard/persistent）
     timezone: Asia/Shanghai
+    bot_name: kobot
+    bot_icon: image/logo.png
+    unified_session: false          # 是否使用统一会话
+    disabled_skills: []             # 禁用的技能列表
 
   model_presets:
     fast:
@@ -156,62 +225,117 @@ agents:
       max_tokens: 8192
       temperature: 0.1
 
+  instances: {}                     # 按实例的配置覆盖
+
 providers:
   defaults: {}
   items:
     - name: openai
       base_url: https://api.openai.com/v1
       api_key: '${OPENAI_API_KEY}'
+    - name: custom
+      base_url: https://your-api.com/v1
+      api_key: '${CUSTOM_API_KEY}'
+      default_model: your-model
+      extra_headers: {}             # 额外请求头
+      extra_query: {}               # 额外查询参数
 
 tools:
   filesystem:
     enabled: true
-    workspace_only: true # 限制文件操作在工作空间内
+    workspace_only: true            # 限制文件操作在工作空间内
     max_file_size_mb: 10
+    allowed_patterns: []            # 允许的文件模式
+    denied_patterns: []             # 禁止的文件模式
   shell:
     enabled: true
     workspace_only: true
     timeout_sec: 120
+    sandbox_backend: none           # 沙箱后端（none/docker）
   web:
     enabled: true
-    search_provider: ddg # 搜索引擎（ddg= DuckDuckGo）
+    search_provider: ddg            # 搜索引擎（ddg = DuckDuckGo）
     fetch_timeout_sec: 30
     max_search_results: 5
+  image_generation:
+    enabled: true
+    provider: auto
+    model: ~
+    size: 1024x1024
+    quality: standard
+  mcp:
+    enabled: true
+    servers: {}                     # MCP 服务器配置
+  cli_apps:
+    enabled: true
+    apps: {}                        # CLI 应用配置
 
 memory:
   enabled: true
   base_dir: memory
+  dream:
+    enabled: true
+    interval_h: 2                   # 记忆整理间隔（小时）
+    max_batch_size: 20
+    max_iterations: 15
 
 sessions:
-  storage: file # 会话持久化方式（memory 或 file）
+  storage: file                     # 会话持久化方式（memory 或 file）
   storage_path: sessions
 
 logging:
-  level: info
+  level: info                       # trace / debug / info / warn / error / fatal
   file_path: logs/kobot.log
   console_enabled: true
   rotation:
-    enabled: true # 是否启用日志轮转
-    max_size: 10M # 单个日志文件最大大小
-    max_files: 30 # 保留日志文件最大数量
-    compress: true # 是否压缩旧日志文件
-  separate_error_log: true # 是否单独记录错误日志
+    enabled: true                   # 是否启用日志轮转
+    max_size: 10M                   # 单个日志文件最大大小
+    max_files: 30                   # 保留日志文件最大数量
+    compress: true                  # 是否压缩旧日志文件
+  separate_error_log: true          # 是否单独记录错误日志
 
 progress_guard:
-  enabled: true # 是否启用
-  profile: assistant # 预设：coding / research / assistant / workflow
-  window_size: 20 # 检测窗口大小
-  min_turns_before_detect: 3 # 最少多少轮后才开始检测
-  suspicious_threshold: 0.4 # 可疑阈值
-  stuck_threshold: 0.7 # 卡住阈值
-  failed_threshold: 0.9 # 失败阈值
-  confirmation_turns: 2 # 确认升级所需连续轮数
-  downgrade_turns: 3 # 降级所需连续轮数
+  enabled: true
+  profile: assistant                # 预设：coding / research / assistant / workflow
+  window_size: 20                   # 检测窗口大小
+  min_turns_before_detect: 3        # 最少多少轮后才开始检测
+  suspicious_threshold: 0.4         # 可疑阈值
+  stuck_threshold: 0.7              # 卡住阈值
+  failed_threshold: 0.9             # 失败阈值
+  confirmation_turns: 2             # 确认升级所需连续轮数
+  downgrade_turns: 3                # 降级所需连续轮数
+  debug: false
+
+context_runtime:
+  enabled: true
+  profile: coding                   # 预设：coding / research / assistant
+  context_limit: 128000             # 上下文限制 token 数
   debug: false
 
 security:
-  workspace_access: allow # 工作空间访问策略
+  workspace_access: allow           # 工作空间访问策略（allow/deny/ask）
   network_access: true
+  pth_guard: true                   # 路径穿越防护
+
+cron:
+  enabled: true
+  timezone: UTC
+
+gateway:
+  enabled: false                    # API 网关
+  host: 127.0.0.1
+  port: 8765
+  cors_origins:
+    - http://localhost:5173
+  auth_token: ~
+  webui_path: ~
+
+api:
+  enabled: false                    # REST API 服务
+  host: 127.0.0.1
+  port: 8000
+  api_keys: []
+  cors_origins: []
 ```
 
 ### 配置文件路径
@@ -227,58 +351,102 @@ export KOBOT_CONFIG_DIR="/path/to/config"
 ```
 kobot/
 ├── src/
-│   ├── agent/          # Agent 生命周期管理
-│   │   ├── context.ts  # 系统提示词构建
-│   │   ├── hook.ts     # 事件钩子系统
-│   │   └── types.ts    # 钩子类型定义
-│   ├── channels/       # 交互渠道
-│   │   ├── cli.ts      # 命令行界面
-│   │   ├── webhook.ts  # Webhook HTTP 服务
-│   │   └── types.ts    # 渠道类型定义
-│   ├── config/         # 配置子系统
-│   │   ├── schema.ts   # Zod 配置模式定义
-│   │   ├── loader.ts   # 配置加载和保存
-│   │   └── paths.ts    # 路径解析工具
-│   ├── storage/        # 持久化存储
-│   │   ├── file.ts     # 文件存储实现
-│   │   ├── memory.ts   # 内存存储实现
-│   │   ├── session-manager.ts  # 会话管理器
-│   │   └── types.ts    # 存储类型定义
-│   ├── tools/          # 工具集
-│   │   ├── base.ts     # 工具基类（容错、重试、健康监控）
-│   │   ├── types.ts    # 工具类型定义
-│   │   ├── registry.ts # 工具注册中心
-│   │   ├── filesystem.ts  # 文件系统工具
-│   │   ├── shell.ts    # Shell 命令工具
-│   │   ├── web.ts      # 网络工具
-│   │   ├── search.ts   # 搜索工具
-│   │   ├── memory.ts   # 记忆管理工具
-│   │   ├── cron.ts     # 定时任务工具
-│   │   ├── apply_patch.ts # 代码补丁工具
-│   │   ├── scheduler.ts   # 任务调度工具
-│   │   ├── self.ts     # 运行时自省工具
-│   │   ├── message.ts  # 消息推送工具
-│   │   └── utilities.ts # 通用工具
-│   ├── progress-guard/ # Agent Progress Guard
-│   │   ├── index.ts    # 主入口，集成所有组件
-│   │   ├── types.ts    # 核心类型定义
-│   │   ├── trace-collector.ts  # 执行轨迹采集
-│   │   ├── state-engine.ts     # 资源状态引擎
+│   ├── agent/              # Agent 生命周期管理
+│   │   ├── context.ts      # 系统提示词构建
+│   │   ├── hook.ts         # 事件钩子系统
+│   │   └── types.ts        # 钩子类型定义
+│   ├── channels/           # 交互渠道
+│   │   ├── cli.ts          # 命令行界面
+│   │   ├── webhook.ts      # Webhook HTTP 服务
+│   │   ├── feishu.ts       # 飞书机器人集成
+│   │   └── types.ts        # 渠道类型定义
+│   ├── config/             # 配置子系统
+│   │   ├── schema.ts       # Zod 配置模式定义（完整配置类型）
+│   │   ├── loader.ts       # 配置加载和保存
+│   │   └── paths.ts        # 路径解析工具
+│   ├── storage/            # 持久化存储
+│   │   ├── file.ts         # 文件存储实现
+│   │   ├── memory.ts       # 内存存储实现
+│   │   ├── session-manager.ts  # 会话管理器（树形结构）
+│   │   └── types.ts        # 存储类型定义
+│   ├── tools/              # 工具集
+│   │   ├── base.ts         # 工具基类（容错、重试、健康监控）
+│   │   ├── types.ts        # 工具类型定义
+│   │   ├── registry.ts     # 工具注册中心
+│   │   ├── filesystem.ts   # 文件系统工具（7个）
+│   │   ├── shell.ts        # Shell 命令工具
+│   │   ├── web.ts          # 网络工具（搜索+抓取）
+│   │   ├── search.ts       # 搜索工具（grep+glob）
+│   │   ├── memory.ts       # 记忆管理工具（CRUD）
+│   │   ├── cron.ts         # 定时任务工具（4个）
+│   │   ├── utilities.ts    # 通用工具（echo/时间/计算/编解码）
+│   │   ├── apply_patch.ts  # 代码补丁工具
+│   │   ├── scheduler.ts    # 任务调度工具
+│   │   ├── self.ts         # 运行时自省工具
+│   │   └── message.ts      # 消息推送工具
+│   ├── progress-guard/     # Agent Progress Guard
+│   │   ├── index.ts        # 主入口，集成所有组件
+│   │   ├── types.ts        # 核心类型定义
+│   │   ├── trace-collector.ts   # 执行轨迹采集
+│   │   ├── state-engine.ts      # 资源状态引擎
 │   │   ├── progress-analyzer.ts # 进展分析（6 种检测策略）
 │   │   ├── risk-engine.ts       # 风险评分引擎
-│   │   ├── recovery-controller.ts # 恢复控制器（分级干预）
+│   │   ├── recovery-controller.ts  # 恢复控制器（分级干预）
 │   │   ├── metrics.ts           # 指标采集
 │   │   ├── adaptive-weights.ts  # 自适应权重学习
 │   │   └── semantic-analyzer.ts # 语义循环检测
+│   ├── context-runtime/    # Agent Context Runtime (ACR) v2.1
+│   │   ├── runtime.ts      # 主运行时入口
+│   │   ├── types.ts        # 类型定义
+│   │   ├── state/          # 状态管理
+│   │   │   ├── agent-state.ts
+│   │   │   ├── message-adapter.ts
+│   │   │   ├── state-extractor.ts
+│   │   │   ├── snapshot-builder.ts
+│   │   │   └── index.ts
+│   │   ├── compress/       # 压缩策略
+│   │   │   ├── index.ts
+│   │   │   ├── transition.ts
+│   │   │   ├── l1-clean.ts
+│   │   │   ├── l2-window.ts
+│   │   │   └── pairing.ts
+│   │   ├── monitor/        # 监控器
+│   │   │   ├── index.ts
+│   │   │   ├── token-monitor.ts
+│   │   │   └── density-monitor.ts
+│   │   ├── tool/           # 工具处理
+│   │   │   ├── index.ts
+│   │   │   └── digestor.ts
+│   │   ├── memory/         # 记忆系统
+│   │   │   ├── index.ts
+│   │   │   └── session-memory.ts
+│   │   ├── observer/       # 观察者
+│   │   │   ├── index.ts
+│   │   │   └── workspace-observer.ts
+│   │   ├── observability/  # 可观测性
+│   │   │   ├── index.ts
+│   │   │   └── metrics.ts
+│   │   ├── config/         # 配置预设
+│   │   │   └── defaults.ts
+│   │   └── index.ts
 │   ├── utils/
-│   │   └── logger.ts   # 日志系统
-│   ├── kobot.ts        # 核心 Kobot 类
-│   ├── cli.ts          # CLI 入口
-│   ├── setup-wizard.ts # 设置向导
-│   ├── index.ts        # 公共导出
-│   └── types.ts        # 全局类型
+│   │   └── logger.ts       # 日志系统（pino + 轮转）
+│   ├── kobot.ts            # 核心 Kobot 类（SDK 入口）
+│   ├── cli.ts              # CLI 入口（start/replay/reset 命令）
+│   ├── setup-wizard.ts     # 首次启动设置向导
+│   ├── index.ts            # 公共导出
+│   └── types.ts            # 全局类型
 ├── tests/
-│   └── kobot.test.ts   # 测试
+│   └── kobot.test.ts       # 测试
+├── docs/                   # 详细文档
+│   ├── configuration.md    # 配置参考
+│   ├── context-compression.md  # 上下文压缩策略设计文档
+│   ├── context-compressionv2.md
+│   ├── development.md      # 开发指南
+│   ├── feishu.md           # 飞书集成指南
+│   └── loop-detector.md    # 循环检测设计
+├── image/
+│   └── logo.png            # Logo
 ├── package.json
 └── tsconfig.json
 ```
@@ -289,111 +457,265 @@ kobot/
 
 `Kobot` 是框架的核心类，负责初始化 Agent、管理工具注册、处理会话和消息流。
 
-- `Kobot.fromConfig()` — 从配置文件初始化
-- `run()` — 同步处理消息
-- `stream()` — 流式处理消息（支持实时事件推送）
-- 会话管理：`listSessions()`、`getSessionDetail()`、`deleteSession()`
+```typescript
+import { Kobot } from 'kobot-pi';
+
+// 从配置文件初始化
+const bot = await Kobot.fromConfig();
+
+// 同步处理消息
+const result = await bot.run('你好！');
+
+// 流式处理消息
+for await (const event of bot.stream('写一个 Hello World')) {
+  if (event.type === 'text_delta') {
+    process.stdout.write(event.content || '');
+  }
+}
+
+// 会话管理
+const sessions = await bot.listSessions();
+const detail = await bot.getSessionDetail('my-session');
+const deleted = await bot.deleteSession('my-session');
+
+// 会话回放
+const replayResult = await bot.replaySession('my-session');
+
+// 其他
+const isBusy = bot.isBusy('session-key');
+await bot.waitForIdle('session-key');
+await bot.close();
+```
 
 #### 流式事件
 
 `stream()` 方法通过 AsyncGenerator 产生以下事件：
 
-| 事件类型                                          | 说明         |
-| ------------------------------------------------- | ------------ |
-| `run_started` / `run_completed` / `run_failed`    | 运行生命周期 |
-| `text_delta` / `text_completed`                   | 文本流式输出 |
-| `reasoning_delta` / `reasoning_completed`         | 推理过程输出 |
-| `tool_started` / `tool_completed` / `tool_failed` | 工具执行事件 |
-| `file_edit`                                       | 文件编辑事件 |
+| 事件类型                                         | 说明         |
+| ------------------------------------------------ | ------------ |
+| `run_started` / `run_completed` / `run_failed`   | 运行生命周期 |
+| `text_delta` / `text_completed`                  | 文本流式输出 |
+| `reasoning_delta` / `reasoning_completed`        | 推理过程输出 |
+| `tool_started` / `tool_completed` / `tool_failed`| 工具执行事件 |
+| `file_edit`                                      | 文件编辑事件（含 start/end/error） |
+
+流式事件可配合 Webhook、飞书等渠道实现实时响应。
+
+#### 会话管理
+
+Kobot 支持会话持久化，保存对话历史和工具调用记录。会话以树形结构存储，包含：
+
+- 模型变更（provider、modelId）
+- 用户消息和 AI 回复
+- 工具调用输入和结果（完整配对）
+- Token 用量统计
+
+会话回放功能可通过 `kobot replay <sessionKey>` 或 SDK 的 `bot.replaySession()` 方法，按顺序重新发送历史用户消息以复现和诊断问题。
 
 #### Agent Progress Guard
 
 `ProgressGuard` 是 Agent 运行时控制平面，实时检测 Agent 执行是否陷入停滞或循环，并自动进行分级干预。
 
-- 多维度进展评分（状态变化、信息增益、错误移动、新颖度、输出增长）
-- 6 种检测策略：`state_freeze` / `error_loop` / `tool_cycle` / `action_repeat` / `progress_stagnation` / `budget_waste`
+**工作原理**：
+
+```
+每轮结束后 → 轨迹采集 → 多维度评分 → 风险引擎 → 分级干预
+```
+
+- 多维度进展评分：状态变化、信息增益、错误移动、新颖度、输出增长
+- 6 种检测策略：
+  - `state_freeze` — 状态冻结检测
+  - `error_loop` — 错误循环检测
+  - `tool_cycle` — 工具循环检测
+  - `action_repeat` — 动作重复检测
+  - `progress_stagnation` — 进展停滞检测
+  - `budget_waste` — 预算浪费检测
 - 语义循环检测（SimHash + n-gram）
 - 自适应权重学习，根据历史反馈自动调整策略权重
 - 分级干预状态机：`normal → suspicious → stuck → failed`，支持降级恢复
 - 白名单机制（批量操作、长思考链、自我修正等豁免规则）
-- Dashboard 实时指标可查
 
 ```typescript
 // 获取诊断报告
-const diagnosis = progressGuard.getDiagnosis();
+const diagnosis = bot.progressGuard_.getDiagnosis();
 
 // 获取 Dashboard 数据
-const dashboard = progressGuard.getDashboardData();
+const dashboard = bot.progressGuard_.getDashboardData();
 
 // 事件监听
-progressGuard.on((event) => {
+bot.progressGuard_.on((event) => {
   console.log(event.type, event.score);
 });
 ```
 
+#### Agent Context Runtime (ACR) v2.1
+
+ACR 是 Agent 上下文运行时操作系统，管理完整的上下文生命周期：
+
+**核心流程**：
+```
+观察（Observe）→ 理解（Understand）→ 压缩（Compress）
+→ 记忆（Remember）→ 重建（Rebuild）→ 继续（Continue）
+```
+
+**压缩级别**：
+| 级别 | 策略               | 类型   | 压缩比 | 说明                     |
+| ---- | ------------------ | ------ | ------ | ------------------------ |
+| L0   | 无压缩             | -      | 0%     | 正常运行                 |
+| L1   | 去重 + 清理        | 无损   | 10-20% | 移除重复和无效内容       |
+| L2   | 滑窗 + 关键锚点    | 半无损 | 30-50% | 保留近期和关键消息       |
+| L3   | 中间步骤总结       | 有损   | 50-70% | 折叠失败尝试，合并重复读 |
+| L4   | 语义聚类 + 摘要    | 有损   | 70-85% | 会话分段，分层摘要       |
+| L5   | 激进重写           | 有损   | 85-95% | 仅保留最核心信息         |
+
+- 多触发器：Token 阈值、停滞检测（与 Progress Guard 联动）、错误风暴、阶段完成、用户主动触发
+- 三场景预设配置：`coding` / `research` / `assistant`
+- 工具配对完整性保证（tool_call 与 tool_result 永不分离）
+- 压缩后平滑过渡（注入过渡消息避免模型困惑）
+- 与记忆系统协同（压缩前自动提取重要信息）
+
 ## 可用工具
 
-| 工具名称           | 分类     | 说明            |
-| ------------------ | -------- | --------------- |
-| `read_file`        | 文件系统 | 读取文件内容    |
-| `write_file`       | 文件系统 | 写入文件        |
-| `edit_file`        | 文件系统 | 编辑文件        |
-| `delete_file`      | 文件系统 | 删除文件        |
-| `rename_file`      | 文件系统 | 重命名文件      |
-| `create_directory` | 文件系统 | 创建目录        |
-| `remove_directory` | 文件系统 | 删除目录        |
-| `list_directory`   | 文件系统 | 列出目录内容    |
-| `shell`            | Shell    | 执行 Shell 命令 |
-| `web_search`       | 网络     | 搜索引擎查询    |
-| `web_fetch`        | 网络     | 抓取网页内容    |
-| `memory_save`      | 记忆     | 保存记忆        |
-| `memory_load`      | 记忆     | 加载记忆        |
-| `memory_list`      | 记忆     | 列出记忆        |
-| `memory_delete`    | 记忆     | 删除记忆        |
-| `echo`             | 通用     | 回显文本        |
-| `get_time`         | 通用     | 获取当前时间    |
-| `calculate`        | 通用     | 数学计算        |
-| `encode_base64`    | 通用     | Base64 编码     |
-| `decode_base64`    | 通用     | Base64 解码     |
-| `cron_add`         | 定时任务 | 添加定时任务    |
-| `cron_remove`      | 定时任务 | 移除定时任务    |
-| `cron_list`        | 定时任务 | 列出定时任务    |
-| `grep`             | 搜索     | 搜索文件内容    |
-| `glob`             | 搜索     | 按模式匹配文件  |
+Kobot 内置 25+ 工具，覆盖文件操作、命令执行、网络访问、记忆管理、定时任务等场景。
 
-## 会话管理
+### 文件系统
 
-Kobot 支持会话持久化，保存对话历史和工具调用记录。
+| 工具名称             | 说明             |
+| -------------------- | ---------------- |
+| `read_file`          | 读取文件内容     |
+| `write_file`         | 写入/追加文件    |
+| `edit_file`          | 编辑文件         |
+| `delete_file`        | 删除文件         |
+| `rename_file`        | 重命名/移动文件  |
+| `create_directory`   | 创建目录         |
+| `delete_directory`   | 删除目录         |
+| `list_directory`     | 列出目录内容     |
+| `apply_patch`        | 应用代码补丁     |
 
-### 存储配置
+### Shell
 
-```yaml
-sessions:
-  storage: file # 文件存储（持久化）
-  storage_path: sessions # 存储路径（相对于 workspace）
+| 工具名称 | 说明                     |
+| -------- | ------------------------ |
+| `shell`  | 执行 Shell 命令          |
+
+### 网络
+
+| 工具名称      | 说明                  |
+| ------------- | --------------------- |
+| `web_search`  | 搜索引擎查询          |
+| `web_fetch`   | 抓取网页内容          |
+
+### 搜索
+
+| 工具名称      | 说明                  |
+| ------------- | --------------------- |
+| `grep`        | 在文件中搜索文本      |
+| `find_files`  | 按 Glob 模式匹配文件  |
+
+### 记忆管理
+
+| 工具名称        | 说明             |
+| --------------- | ---------------- |
+| `memory_save`   | 保存一条记忆     |
+| `memory_load`   | 加载一条记忆     |
+| `memory_list`   | 列出所有记忆键名 |
+| `memory_delete` | 删除一条记忆     |
+
+### 定时任务
+
+| 工具名称        | 说明               |
+| --------------- | ------------------ |
+| `cron_add`      | 添加定时 cron 任务 |
+| `cron_remove`   | 移除定时任务       |
+| `cron_list`     | 列出所有定时任务   |
+| `cron_enable`   | 启用/禁用任务      |
+
+### 通用工具
+
+| 工具名称         | 说明             |
+| ---------------- | ---------------- |
+| `echo`           | 回显文本         |
+| `get_time`       | 获取当前时间     |
+| `calculate`      | 执行数学计算     |
+| `encode_base64`  | Base64 编码      |
+| `decode_base64`  | Base64 解码      |
+
+### 其他
+
+| 工具名称       | 分类     | 说明             |
+| -------------- | -------- | ---------------- |
+| `scheduler`    | 调度     | 任务调度         |
+| `self`         | 自省     | 运行时自省       |
+| `message`      | 推送     | 消息推送         |
+
+## 使用 SDK
+
+Kobot 可作为库集成到你的 Node.js 项目中：
+
+```typescript
+import { Kobot } from 'kobot-pi';
+
+// 初始化
+const bot = await Kobot.fromConfig({
+  model: 'deepseek-v4-flash',
+});
+
+// 同步处理
+const result = await bot.run('你好！');
+console.log(result.content);
+
+// 流式处理
+for await (const event of bot.stream('写一个 Hello World')) {
+  if (event.type === 'text_delta') {
+    process.stdout.write(event.content || '');
+  }
+}
+
+// 自定义会话（多会话隔离）
+await bot.run('消息1', { sessionKey: 'session-a' });
+await bot.run('消息2', { sessionKey: 'session-b' });
+
+// 会话回放（复现问题）
+const replay = await bot.replaySession('session-a');
+console.log(replay.turns); // 每轮的 userMessage / response / error
+
+// 检查会话状态
+const isBusy = bot.isBusy('session-a');
+await bot.waitForIdle('session-a');
+
+// 关闭
+await bot.close();
 ```
 
-默认使用 `file` 存储类型，会话文件保存在 `~/.kobot/sessions/` 目录。
+## 日志
 
-### 会话操作
+日志文件默认保存在 `~/.kobot/logs/kobot.log`，使用 pino 结构化 JSON 格式。
 
 ```bash
-# 列出所有会话
-kobot> sessions
-
-# 查看会话详情
-kobot> session sdk:default
-
-# 切换会话（恢复历史）
-kobot> use sdk:default
+# 实时查看日志
+tail -f ~/.kobot/logs/kobot.log | npx pino-pretty
 ```
 
-会话记录包含：
+日志配置：
 
-- 模型变更（provider、modelId）
-- 用户消息和 AI 回复
-- 工具调用输入和结果
-- Token 用量统计
+```yaml
+logging:
+  level: info                     # trace / debug / info / warn / error / fatal
+  file_path: logs/kobot.log
+  console_enabled: true           # 是否输出到控制台
+  rotation:
+    enabled: true                 # 是否启用日志轮转（生产环境必备）
+    max_size: 10M                 # 单个日志文件最大大小（支持 K/M/G 单位）
+    max_files: 30                 # 保留日志文件最大数量
+    compress: true                # 是否压缩旧日志文件（.gz 格式）
+  separate_error_log: true        # 是否单独记录错误日志到 kobot-error.log
+```
+
+生产环境日志最佳实践：
+- 始终启用 `rotation.enabled` 和 `separate_error_log`
+- 建议设置 `max_size` 为 10-20M，`max_files` 根据需求保留 7-30 天
+- 生产环境可将 `console_enabled` 设为 false，减少 I/O 开销
+- 使用结构化日志格式便于后续分析和监控
 
 ## 开发
 
@@ -426,65 +748,12 @@ npm run lint
 | `npm test`      | 运行测试                      |
 | `npm run lint`  | TypeScript 类型检查           |
 
-## 使用 SDK
+### 详细文档
 
-Kobot 可作为库集成到你的 Node.js 项目中：
-
-```typescript
-import { Kobot } from 'kobot-pi';
-
-// 初始化
-const bot = await Kobot.fromConfig({
-  model: 'deepseek-v4-flash',
-});
-
-// 同步处理
-const result = await bot.run('你好！');
-console.log(result.content);
-
-// 流式处理
-for await (const event of bot.stream('写一个 Hello World')) {
-  if (event.type === 'text_delta') {
-    process.stdout.write(event.content || '');
-  }
-}
-
-// 自定义会话
-await bot.run('消息', { sessionKey: 'my-session' });
-
-// 关闭
-await bot.close();
-```
-
-## 日志
-
-日志文件默认保存在 `~/.kobot/logs/kobot.log`，使用 pino 结构化 JSON 格式。
-
-```bash
-# 实时查看日志
-tail -f ~/.kobot/logs/kobot.log | npx pino-pretty
-```
-
-日志配置：
-
-```yaml
-logging:
-  level: info # trace / debug / info / warn / error / fatal
-  file_path: logs/kobot.log
-  console_enabled: true # 是否输出到控制台
-  rotation:
-    enabled: true # 是否启用日志轮转（生产环境必备，防止日志无限增长）
-    max_size: 10M # 单个日志文件最大大小（支持 K/M/G 单位）
-    max_files: 30 # 保留日志文件最大数量
-    compress: true # 是否压缩旧日志文件（.gz 格式）
-  separate_error_log: true # 是否单独记录错误日志到 kobot-error.log
-```
-
-生产环境日志最佳实践：
-- 始终启用 `rotation.enabled` 和 `separate_error_log`
-- 建议设置 `max_size` 为 10-20M，`max_files` 根据需求保留 7-30 天
-- 生产环境可将 `console_enabled` 设为 false，减少 I/O 开销
-- 使用结构化日志格式便于后续分析和监控
+- [开发指南](docs/development.md)
+- [飞书集成](docs/feishu.md)
+- [上下文压缩策略设计](docs/context-compression.md)
+- [循环检测设计](docs/loop-detector.md)
 
 ## 许可证
 
