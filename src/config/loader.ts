@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { ConfigSchema, Config, defaultConfig } from './schema';
-import { getConfigPath, resolveWorkspace, resolveSubPath } from './paths';
+import { getConfigPath, resolveWorkspace, resolveSubPath, resolveHomePath } from './paths';
 
 /**
  * 向后兼容：旧版配置中的子路径带 .kobot/ 前缀（如 .kobot/memory），
@@ -52,7 +52,8 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     config.logging.file_path = resolveSubPath(workspaceResolved, stripLegacyPrefix(config.logging.file_path));
   }
   if (config.agents?.defaults?.workspace) {
-    config.agents.defaults.workspace = resolveSubPath(workspaceResolved, stripLegacyPrefix(config.agents.defaults.workspace));
+    // agents.defaults.workspace 是代理操作文件的项目工作区，应相对于 CWD 解析而非数据目录
+    config.agents.defaults.workspace = resolveHomePath(config.agents.defaults.workspace);
   }
 
   // 文件不存在时创建默认配置（仅当路径等于默认配置路径时）

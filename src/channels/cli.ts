@@ -86,6 +86,13 @@ export class CLIChannel implements Channel {
         return;
       }
 
+      if (trimmed.startsWith('replay ')) {
+        const sessionKey = trimmed.slice(7).trim();
+        await this.replaySession(sessionKey);
+        this.rl!.prompt();
+        return;
+      }
+
       await this.handleMessage(trimmed);
       this.rl!.prompt();
     });
@@ -189,6 +196,7 @@ export class CLIChannel implements Channel {
     console.log('  sessions - 列出活动会话');
     console.log('  session <key> - 查看详细会话信息');
     console.log('  use <key> - 切换到另一个会话（恢复历史记录）');
+    console.log('  replay <key> - 回放历史会话以复现问题');
     console.log('  任何其他输入将发送给机器人');
     console.log('');
   }
@@ -304,6 +312,45 @@ export class CLIChannel implements Channel {
         console.log(`最后消息：${lastMessage.message.role === 'user' ? '你：' : '机器人：'} ${lastMessage.message.content?.slice(0, 50)}${lastMessage.message.content?.length > 50 ? '...' : ''}`);
       }
       console.log(`消息总数：${messageEntries.length}`);
+    }
+    console.log('');
+  }
+
+  private async replaySession(sessionKey: string): Promise<void> {
+    if (!this.bot) return;
+
+    console.log(`\n开始回放会话：${sessionKey}`);
+    console.log('----------------------------------------');
+
+    try {
+      const result = await this.bot.replaySession(sessionKey,
+        // 每轮开始前显示进度
+        (current, total, message) => {
+          console.log(`[${current}/${total}] 正在回放：${message.slice(0, 80)}${message.length > 80 ? '...' : ''}`);
+        },
+        // 每轮完成后立即显示结果
+        (current, total, turn) => {
+          if (turn.error) {
+            console.log(`  ❌ 错误：${turn.error}`);
+          } else if (turn.response) {
+            const preview = turn.response.slice(0, 300);
+            console.log(`  🤖 响应：${preview}${turn.response.length > 300 ? '...' : ''}`);
+          } else {
+            console.log('  ⚠️  无响应');
+          }
+          console.log('');
+        },
+      );
+
+      console.log(`共 ${result.userMessageCount} 条用户消息，用时 ${(result.totalDurationMs / 1000).toFixed(1)}s`);
+
+      if (result.totalErrors > 0) {
+        console.log(`💥 总计 ${result.totalErrors}/${result.userMessageCount} 轮出错`);
+      } else {
+        console.log('✅ 全部回放成功，未出现错误');
+      }
+    } catch (err) {
+      console.log(`\n❌ 回放失败：${(err as Error).message}`);
     }
     console.log('');
   }

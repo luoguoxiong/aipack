@@ -26,6 +26,14 @@ program
     await startBot();
   });
 
+program
+  .command('replay')
+  .description('回放历史会话以复现问题')
+  .argument('<sessionKey>', '要回放的会话 key')
+  .action(async (sessionKey: string) => {
+    await replaySession(sessionKey);
+  });
+
 const resetCmd = program
   .command('reset')
   .description('重置 Kobot 数据 - 配置、日志、会话等');
@@ -304,6 +312,64 @@ function doResetMemory(paths: ResolvedPaths): void {
     console.log(`   ✅ 已删除 ${count} 个记忆文件`);
   } else {
     console.log(`   ℹ️  记忆目录不存在，跳过`);
+  }
+}
+
+async function replaySession(sessionKey: string): Promise<void> {
+  console.log('正在启动 Kobot...');
+
+  // 在机器人初始化前禁用 CLI 模式下的控制台日志
+  process.env.KOBOT_LOG_CONSOLE = 'false';
+  createLogger({ console_enabled: false });
+
+  // 从 ~/.kobot/.env 加载持久化的环境变量
+  loadEnvFile();
+
+  // 如果未配置 API Key，运行交互式设置向导
+  let selectedModel: string | undefined;
+  if (!hasAnyApiKey()) {
+    const setupResult = await runSetupWizard();
+    selectedModel = setupResult.model;
+  }
+
+  try {
+    const bot = await Kobot.fromConfig({ model: selectedModel });
+
+    console.log('✅ Kobot 初始化成功');
+    console.log(`   模型: ${bot.config_.agents.defaults.model}\n`);
+
+    console.log(`开始回放会话：${sessionKey}`);
+    console.log('----------------------------------------');
+
+    const result = await bot.replaySession(sessionKey,
+      // 每轮开始前显示进度
+      (current, total, message) => {
+        console.log(`[${current}/${total}] 正在回放：${message.slice(0, 80)}${message.length > 80 ? '...' : ''}`);
+      },
+      // 每轮完成后立即显示结果
+      (current, total, turn) => {
+        if (turn.error) {
+          console.log(`  ❌ 错误：${turn.error}`);
+        } else if (turn.response) {
+          const preview = turn.response.slice(0, 300);
+          console.log(`  🤖 响应：${preview}${turn.response.length > 300 ? '...' : ''}`);
+        } else {
+          console.log('  ⚠️  无响应');
+        }
+        console.log('');
+      },
+    );
+
+    console.log(`共 ${result.userMessageCount} 条用户消息，用时 ${(result.totalDurationMs / 1000).toFixed(1)}s`);
+
+    if (result.totalErrors > 0) {
+      console.log(`💥 总计 ${result.totalErrors}/${result.userMessageCount} 轮出错`);
+    } else {
+      console.log('✅ 全部回放成功，未出现错误');
+    }
+  } catch (err) {
+    console.error(`\n❌ 回放失败：${(err as Error).message}`);
+    process.exit(1);
   }
 }
 

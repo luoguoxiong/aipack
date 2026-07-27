@@ -9,7 +9,7 @@
     "kobot": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsup",
     "dev": "tsx src/cli.ts",
     "start": "node --import tsx dist/cli.js",
     "test": "node --import tsx --test tests/**/*.test.ts",

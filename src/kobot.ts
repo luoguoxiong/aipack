@@ -20,6 +20,7 @@ import { logger, createLogger } from "./utils/logger";
 import { ProgressGuard, DEFAULT_CONFIG as DEFAULT_PG_CONFIG } from "./progress-guard";
 import type { ProgressGuardConfig as PGConfig } from "./progress-guard";
 import { AgentContextRuntime } from "./context-runtime";
+import { ensureToolPairing } from "./context-runtime/compress/pairing";
 
 export const STREAM_EVENT_RUN_STARTED = 'run_started';
 export const STREAM_EVENT_RUN_COMPLETED = 'run_completed';
@@ -466,53 +467,60 @@ export class Kobot {
         const reserveTokens = 4000;
         const keepRecentTokens = 8000;
 
+        let resultMessages: AgentMessage[] = messages;
+
         // 2. 判断是否超过阈值需要压缩
-        if (!shouldCompact(estimate.tokens, contextWindow, {
+        if (shouldCompact(estimate.tokens, contextWindow, {
           enabled: true,
           reserveTokens,
           keepRecentTokens,
         })) {
-          return messages;
-        }
+          // 3. 从尾部往前找切割点
+          let cutIndex = messages.length;
+          let recentTokens = 0;
+          for (let i = messages.length - 1; i >= 0; i--) {
+            recentTokens += estimateTokens(messages[i]);
+            if (recentTokens >= keepRecentTokens) {
+              cutIndex = i;
+              break;
+            }
+          }
+          cutIndex = Math.min(cutIndex, messages.length - 2);
 
-        // 3. 从尾部往前找切割点，保留约 keepRecentTokens 的最近对话
-        let cutIndex = messages.length;
-        let recentTokens = 0;
-        for (let i = messages.length - 1; i >= 0; i--) {
-          recentTokens += estimateTokens(messages[i]);
-          if (recentTokens >= keepRecentTokens) {
-            cutIndex = i;
-            break;
+          if (cutIndex > 0) {
+            // 4. 对旧消息生成摘要
+            const oldMessages = messages.slice(0, cutIndex);
+            const recentMessages = messages.slice(cutIndex);
+
+            const summaryResult = await generateSummary(
+              oldMessages,
+              this.models,
+              model,
+              reserveTokens,
+              signal,
+              '用中文生成简洁的对话历史摘要，保留关键决策和上下文信息。',
+            );
+
+            if (summaryResult.ok) {
+              resultMessages = [
+                { role: 'user', content: `[对话历史摘要]\n${summaryResult.value}`, timestamp: Date.now() },
+                ...recentMessages,
+              ];
+            }
           }
         }
-        cutIndex = Math.min(cutIndex, messages.length - 2);
-        if (cutIndex <= 0) return messages;
 
-        // 4. 对旧消息生成摘要
-        const oldMessages = messages.slice(0, cutIndex);
-        const recentMessages = messages.slice(cutIndex);
+        // 3. 确保工具配对完整性，过滤孤立的 tool_call/toolResult
+        const pairedMessages = ensureToolPairing(resultMessages);
+        if (pairedMessages.length !== resultMessages.length) {
+          const removedCount = resultMessages.length - pairedMessages.length;
+          logger.debug({ removedCount, compressed: resultMessages !== messages }, 'transformContext 已移除孤立的工具调用/结果消息');
+        }
 
-        const result = await generateSummary(
-          oldMessages,
-          this.models,
-          model,
-          reserveTokens,
-          signal,
-          '用中文生成简洁的对话历史摘要，保留关键决策和上下文信息。',
-        );
+        // 4. 回写到 agent state
+        agent.state.messages = pairedMessages;
 
-        if (!result.ok) return messages;
-
-        // 5. 用摘要替换旧消息
-        const compacted: AgentMessage[] = [
-          { role: 'user', content: `[对话历史摘要]\n${result.value}`, timestamp: Date.now() },
-          ...recentMessages,
-        ];
-
-        // 6. 回写到 agent state，后续轮次不再重复压缩
-        agent.state.messages = compacted;
-
-        return compacted;
+        return pairedMessages;
       },
     });
 
@@ -1173,6 +1181,121 @@ export class Kobot {
   /** 获取 ACR runtime 实例（用于调试/监控） */
   getACR(sessionKey: string = 'sdk:default'): AgentContextRuntime | undefined {
     return this.acrRuntimes.get(sessionKey);
+  }
+
+  /**
+   * 回放历史会话，按顺序重新发送用户消息以复现问题
+   * @param sessionKey 要回放的历史会话 key
+   * @param onProgress 可选进度回调，每轮开始前调用 (current, total, message)
+   * @param onTurnResult 可选回合结果回调，每轮完成后立即调用 (current, total, result)
+   * @returns 回放结果，包含每轮的输入/输出/错误信息
+   */
+  async replaySession(
+    sessionKey: string,
+    onProgress?: (current: number, total: number, message: string) => void,
+    onTurnResult?: (current: number, total: number, result: { userMessage: string; response: string; error?: string }) => void,
+  ): Promise<{
+    sessionKey: string;
+    userMessageCount: number;
+    turns: Array<{
+      index: number;
+      userMessage: string;
+      response: string;
+      error?: string;
+    }>;
+    totalErrors: number;
+    totalDurationMs: number;
+  }> {
+    // 1. 加载历史会话
+    const session = await this.sessionManager.loadSession(sessionKey);
+    if (!session) {
+      throw new Error(`会话 "${sessionKey}" 未找到`);
+    }
+
+    // 2. 按顺序提取用户消息
+    const userMessages: string[] = [];
+    for (const entry of session.entries) {
+      if (entry.type !== 'message' || entry.message.role !== 'user') continue;
+      const msg = entry.message as unknown as Record<string, unknown>;
+      if ('content' in msg) {
+        const content = msg.content;
+        if (typeof content === 'string') {
+          userMessages.push(content);
+        } else if (Array.isArray(content)) {
+          const text = content
+            .filter((c: unknown): c is { type: string; text?: string } =>
+              typeof c === 'object' && c !== null && (c as Record<string, unknown>).type === 'text')
+            .map((c: { text?: string }) => c.text || '')
+            .join('\n');
+          if (text) userMessages.push(text);
+        }
+      }
+    }
+
+    if (userMessages.length === 0) {
+      throw new Error(`会话 "${sessionKey}" 中没有用户消息`);
+    }
+
+    logger.info({ sessionKey, userMessageCount: userMessages.length }, '[REPLAY] 开始回放会话');
+
+    // 3. 创建新的回放 agent（清理之前的回放状态）
+    const replayKey = `replay_${sessionKey}`;
+    this.agents.delete(replayKey);
+    this.acrRuntimes.delete(replayKey);
+    const agent = await this.getOrCreateAgent(replayKey);
+
+    // 4. 逐条回放用户消息
+    const turns: Array<{
+      index: number;
+      userMessage: string;
+      response: string;
+      error?: string;
+    }> = [];
+    let totalErrors = 0;
+    const startTime = Date.now();
+
+    for (let i = 0; i < userMessages.length; i++) {
+      const userMsg = userMessages[i];
+      let response = '';
+      let error: string | undefined;
+
+      logger.info({ sessionKey, turnIndex: i, message: userMsg.substring(0, 80) },
+        `[REPLAY] 第 ${i + 1}/${userMessages.length} 轮回放`);
+
+      onProgress?.(i + 1, userMessages.length, userMsg.substring(0, 120));
+
+      const unsubscribe = agent.subscribe((event) => {
+        if (event.type === 'message_end' && event.message.role === 'assistant') {
+          const msg = event.message as AssistantMessage;
+          response = extractTextContent(msg.content);
+        }
+      });
+
+      try {
+        await agent.prompt(userMsg);
+      } catch (err) {
+        error = (err as Error).message;
+        totalErrors++;
+        logger.error({ sessionKey, turnIndex: i, error }, '[REPLAY] 回放出错');
+      } finally {
+        unsubscribe();
+      }
+
+      turns.push({ index: i, userMessage: userMsg, response, error });
+      onTurnResult?.(i + 1, userMessages.length, { userMessage: userMsg, response, error });
+    }
+
+    const duration = Date.now() - startTime;
+    logger.info({ sessionKey, totalTurns: userMessages.length, totalErrors, durationMs: duration },
+      '[REPLAY] 回放完成');
+
+    return {
+      sessionKey,
+      userMessageCount: userMessages.length,
+      turns,
+      totalErrors,
+      totalDurationMs: duration,
+    };
   }
 
   /** 检查指定会话是否正在处理请求 */
