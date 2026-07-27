@@ -38,6 +38,71 @@ const resetCmd = program
   .command('reset')
   .description('重置 Kobot 数据 - 配置、日志、会话等');
 
+const skillsCmd = program
+  .command('skills')
+  .description('管理 Skill 系统');
+
+skillsCmd
+  .command('list')
+  .description('列出所有已注册的 Skill')
+  .action(async () => {
+    await runWithBot(async (bot) => {
+      const sm = bot.skillManager_;
+      if (!sm) {
+        console.log('没有已注册的 Skill');
+        return;
+      }
+      const skills = sm.listSkills();
+      if (skills.length === 0) {
+        console.log('没有已注册的 Skill');
+        return;
+      }
+      for (const s of skills) {
+        console.log(`  ${s.manifest.name} v${s.manifest.version} [${s.manifest.type}] - ${s.manifest.description}`);
+      }
+      console.log(`\n共 ${skills.length} 个 Skill`);
+    });
+  });
+
+skillsCmd
+  .command('reload')
+  .description('重新加载所有 Skill')
+  .action(async () => {
+    await runWithBot(async (bot) => {
+      const sm = bot.skillManager_;
+      if (!sm) {
+        console.log('Skill 系统未初始化');
+        return;
+      }
+      const count = sm.reload();
+      console.log(`已重新加载 ${count} 个 Skill`);
+    });
+  });
+
+skillsCmd
+  .command('traces')
+  .description('查看最近 Skill 执行记录')
+  .option('-n, --number <count>', '显示条数', '10')
+  .action(async (options) => {
+    await runWithBot(async (bot) => {
+      const sm = bot.skillManager_;
+      if (!sm) {
+        console.log('Skill 系统未初始化');
+        return;
+      }
+      const traces = sm.getTraces(parseInt(options.number, 10));
+      if (traces.length === 0) {
+        console.log('暂无执行记录');
+        return;
+      }
+      for (const t of traces) {
+        const statusIcon = t.status === 'success' ? '✅' : t.status === 'timeout' ? '⏰' : '❌';
+        console.log(`  ${statusIcon} [${t.status}] ${t.skillName} - ${t.durationMs}ms, ${t.tokensUsed} tokens`);
+        if (t.error) console.log(`     Error: ${t.error}`);
+      }
+    });
+  });
+
 resetCmd
   .command('all')
   .description('重置所有数据（配置、日志、会话、记忆）')
@@ -312,6 +377,29 @@ function doResetMemory(paths: ResolvedPaths): void {
     console.log(`   ✅ 已删除 ${count} 个记忆文件`);
   } else {
     console.log(`   ℹ️  记忆目录不存在，跳过`);
+  }
+}
+
+/**
+ * 初始化 Kobot 并执行回调（供 CLI 命令复用）
+ */
+async function runWithBot(fn: (bot: Kobot) => Promise<void>): Promise<void> {
+  process.env.KOBOT_LOG_CONSOLE = 'false';
+  createLogger({ console_enabled: false });
+  loadEnvFile();
+
+  if (!hasAnyApiKey()) {
+    console.log('错误: 未配置 API Key。请先运行 "kobot start" 进行配置');
+    process.exit(1);
+  }
+
+  try {
+    const bot = await Kobot.fromConfig();
+    await fn(bot);
+    await bot.close();
+  } catch (err) {
+    console.error((err as Error).message);
+    process.exit(1);
   }
 }
 

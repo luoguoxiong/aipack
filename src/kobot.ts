@@ -21,6 +21,7 @@ import { ProgressGuard, DEFAULT_CONFIG as DEFAULT_PG_CONFIG } from "./progress-g
 import type { ProgressGuardConfig as PGConfig } from "./progress-guard";
 import { AgentContextRuntime } from "./context-runtime";
 import { ensureToolPairing } from "./context-runtime/compress/pairing";
+import { SkillManager } from "./skill";
 
 export const STREAM_EVENT_RUN_STARTED = 'run_started';
 export const STREAM_EVENT_RUN_COMPLETED = 'run_completed';
@@ -163,6 +164,7 @@ export class Kobot {
   private sessionManager: SessionManager;
   private progressGuard: ProgressGuard;
   private requestQueues: Map<string, Promise<void>> = new Map();
+  private skillManager: SkillManager | null = null;
 
   private constructor(config: Config, toolRegistry: ToolRegistry, models: any) {
     this.config = config;
@@ -252,7 +254,25 @@ export class Kobot {
     const models = builtinModels();
     logger.info({ modelCount: models.getModels().length }, '已加载模型');
 
-    return new Kobot(config, toolRegistry, models);
+    const kobot = new Kobot(config, toolRegistry, models);
+
+    // 初始化 SkillManager
+    const workspace = config.agents.defaults.workspace || process.cwd();
+    const skillsDir = config.agents.defaults.workspace 
+      ? path.resolve(config.agents.defaults.workspace, 'skills') 
+      : undefined;
+    const skillManager = new SkillManager(toolRegistry, {
+      skillsDir,
+      workspace,
+      disabledSkills: config.agents.defaults.disabled_skills,
+    });
+    const skillCount = skillManager.initialize();
+    if (skillCount > 0) {
+      kobot['skillManager'] = skillManager;
+      logger.info({ skillCount }, 'Skill 系统已就绪');
+    }
+
+    return kobot;
   }
 
   private resolveModel(modelName?: string, modelPreset?: string): Model<any> {
@@ -720,7 +740,9 @@ export class Kobot {
     });
 
     try {
-      await agent.prompt(message);
+      // 预处理：Skill 匹配与执行
+      const skillInjectedMessage = await this.prepareSkillInput(message, agent);
+      await agent.prompt(skillInjectedMessage);
     } catch (err) {
       error = (err as Error).message;
       stopReason = 'error';
@@ -1031,7 +1053,9 @@ export class Kobot {
     });
 
     try {
-      const runPromise = agent.prompt(message);
+      // 预处理：Skill 匹配与执行
+      const skillInjectedMessage = await this.prepareSkillInput(message, agent);
+      const runPromise = agent.prompt(skillInjectedMessage);
 
       while (true) {
         if (eventQueue.length > 0) {
@@ -1181,6 +1205,49 @@ export class Kobot {
   /** 获取 ACR runtime 实例（用于调试/监控） */
   getACR(sessionKey: string = 'sdk:default'): AgentContextRuntime | undefined {
     return this.acrRuntimes.get(sessionKey);
+  }
+
+  /** 获取 SkillManager 实例 */
+  get skillManager_(): SkillManager | null {
+    return this.skillManager;
+  }
+
+  /**
+   * 预处理输入：检查 Skill 匹配，若匹配则注入编译后的 Skill 完整 prompt
+   */
+  private async prepareSkillInput(message: string, agent: Agent): Promise<string> {
+    const sm = this.skillManager;
+    if (!sm || !sm.registry.count()) return message;
+
+    const match = sm.match(message, {
+      currentFile: undefined, // Phase 2: 从 IDE/CLI 获取当前文件
+    });
+
+    if (!match.match || !match.matchedSkill) return message;
+
+    logger.info({
+      skillName: match.matchedSkill.manifest.name,
+      level: match.match.level,
+    }, '[SKILL] 匹配到 Skill，注入编译后的上下文');
+
+    try {
+      // 使用 Runtime 的 ContextManager + PromptCompiler 编译完整 prompt
+      const { compiled } = await sm.compileSkillPrompt(match.matchedSkill, {
+        userInput: message,
+      });
+
+      if (compiled) {
+        agent.state.messages.push({
+          role: 'system',
+          content: compiled,
+          timestamp: Date.now(),
+        } as any);
+      }
+    } catch (err) {
+      logger.error({ error: (err as Error).message }, '[SKILL] Prompt 编译失败，跳过注入');
+    }
+
+    return message;
   }
 
   /**

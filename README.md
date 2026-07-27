@@ -110,15 +110,15 @@ kobot>
 
 内置命令：
 
-| 命令               | 说明                           |
-| ------------------ | ------------------------------ |
-| `help`             | 显示帮助信息                   |
-| `tools`            | 列出所有可用工具               |
-| `sessions`         | 列出所有会话                   |
-| `session <key>`    | 查看会话详细信息               |
-| `use <key>`        | 切换到指定会话（恢复历史记录） |
-| `replay <key>`     | 回放历史会话以复现问题         |
-| `exit` / `quit`    | 退出                           |
+| 命令            | 说明                           |
+| --------------- | ------------------------------ |
+| `help`          | 显示帮助信息                   |
+| `tools`         | 列出所有可用工具               |
+| `sessions`      | 列出所有会话                   |
+| `session <key>` | 查看会话详细信息               |
+| `use <key>`     | 切换到指定会话（恢复历史记录） |
+| `replay <key>`  | 回放历史会话以复现问题         |
+| `exit` / `quit` | 退出                           |
 
 ### 示例会话
 
@@ -193,23 +193,23 @@ workspace: ~/.kobot
 
 agents:
   defaults:
-    workspace: workspace            # 默认工作空间
-    model: deepseek-v4-flash        # 默认模型
-    provider: auto                  # 模型提供商（auto 为自动选择）
+    workspace: workspace # 默认工作空间
+    model: deepseek-v4-flash # 默认模型
+    provider: auto # 模型提供商（auto 为自动选择）
     max_tokens: 8192
     context_window_tokens: 200000
-    context_block_limit: ~          # 上下文块限制
+    context_block_limit: ~ # 上下文块限制
     temperature: 0.1
-    max_tool_iterations: 200        # 单次任务最大工具调用次数
-    max_concurrent_subagents: 1     # 最大并发子 agent 数
-    fail_on_tool_error: true        # 工具错误是否终止任务
-    max_tool_result_chars: 16000    # 工具结果最大字符数
-    provider_retry_mode: standard   # 提供商重试模式（standard/persistent）
+    max_tool_iterations: 200 # 单次任务最大工具调用次数
+    max_concurrent_subagents: 1 # 最大并发子 agent 数
+    fail_on_tool_error: true # 工具错误是否终止任务
+    max_tool_result_chars: 16000 # 工具结果最大字符数
+    provider_retry_mode: standard # 提供商重试模式（standard/persistent）
     timezone: Asia/Shanghai
     bot_name: kobot
     bot_icon: image/logo.png
-    unified_session: false          # 是否使用统一会话
-    disabled_skills: []             # 禁用的技能列表
+    unified_session: false # 是否使用统一会话
+    disabled_skills: [] # 禁用的技能列表
 
   model_presets:
     fast:
@@ -225,7 +225,7 @@ agents:
       max_tokens: 8192
       temperature: 0.1
 
-  instances: {}                     # 按实例的配置覆盖
+  instances: {} # 按实例的配置覆盖
 
 providers:
   defaults: {}
@@ -237,24 +237,24 @@ providers:
       base_url: https://your-api.com/v1
       api_key: '${CUSTOM_API_KEY}'
       default_model: your-model
-      extra_headers: {}             # 额外请求头
-      extra_query: {}               # 额外查询参数
+      extra_headers: {} # 额外请求头
+      extra_query: {} # 额外查询参数
 
 tools:
   filesystem:
     enabled: true
-    workspace_only: true            # 限制文件操作在工作空间内
+    workspace_only: true # 限制文件操作在工作空间内
     max_file_size_mb: 10
-    allowed_patterns: []            # 允许的文件模式
-    denied_patterns: []             # 禁止的文件模式
+    allowed_patterns: [] # 允许的文件模式
+    denied_patterns: [] # 禁止的文件模式
   shell:
     enabled: true
     workspace_only: true
     timeout_sec: 120
-    sandbox_backend: none           # 沙箱后端（none/docker）
+    sandbox_backend: none # 沙箱后端（none/docker）
   web:
     enabled: true
-    search_provider: ddg            # 搜索引擎（ddg = DuckDuckGo）
+    search_provider: ddg # 搜索引擎（ddg = DuckDuckGo）
     fetch_timeout_sec: 30
     max_search_results: 5
   image_generation:
@@ -265,64 +265,64 @@ tools:
     quality: standard
   mcp:
     enabled: true
-    servers: {}                     # MCP 服务器配置
+    servers: {} # MCP 服务器配置
   cli_apps:
     enabled: true
-    apps: {}                        # CLI 应用配置
+    apps: {} # CLI 应用配置
 
 memory:
   enabled: true
   base_dir: memory
   dream:
     enabled: true
-    interval_h: 2                   # 记忆整理间隔（小时）
+    interval_h: 2 # 记忆整理间隔（小时）
     max_batch_size: 20
     max_iterations: 15
 
 sessions:
-  storage: file                     # 会话持久化方式（memory 或 file）
+  storage: file # 会话持久化方式（memory 或 file）
   storage_path: sessions
 
 logging:
-  level: info                       # trace / debug / info / warn / error / fatal
+  level: info # trace / debug / info / warn / error / fatal
   file_path: logs/kobot.log
   console_enabled: true
   rotation:
-    enabled: true                   # 是否启用日志轮转
-    max_size: 10M                   # 单个日志文件最大大小
-    max_files: 30                   # 保留日志文件最大数量
-    compress: true                  # 是否压缩旧日志文件
-  separate_error_log: true          # 是否单独记录错误日志
+    enabled: true # 是否启用日志轮转
+    max_size: 10M # 单个日志文件最大大小
+    max_files: 30 # 保留日志文件最大数量
+    compress: true # 是否压缩旧日志文件
+  separate_error_log: true # 是否单独记录错误日志
 
 progress_guard:
   enabled: true
-  profile: assistant                # 预设：coding / research / assistant / workflow
-  window_size: 20                   # 检测窗口大小
-  min_turns_before_detect: 3        # 最少多少轮后才开始检测
-  suspicious_threshold: 0.4         # 可疑阈值
-  stuck_threshold: 0.7              # 卡住阈值
-  failed_threshold: 0.9             # 失败阈值
-  confirmation_turns: 2             # 确认升级所需连续轮数
-  downgrade_turns: 3                # 降级所需连续轮数
+  profile: assistant # 预设：coding / research / assistant / workflow
+  window_size: 20 # 检测窗口大小
+  min_turns_before_detect: 3 # 最少多少轮后才开始检测
+  suspicious_threshold: 0.4 # 可疑阈值
+  stuck_threshold: 0.7 # 卡住阈值
+  failed_threshold: 0.9 # 失败阈值
+  confirmation_turns: 2 # 确认升级所需连续轮数
+  downgrade_turns: 3 # 降级所需连续轮数
   debug: false
 
 context_runtime:
   enabled: true
-  profile: coding                   # 预设：coding / research / assistant
-  context_limit: 128000             # 上下文限制 token 数
+  profile: coding # 预设：coding / research / assistant
+  context_limit: 128000 # 上下文限制 token 数
   debug: false
 
 security:
-  workspace_access: allow           # 工作空间访问策略（allow/deny/ask）
+  workspace_access: allow # 工作空间访问策略（allow/deny/ask）
   network_access: true
-  pth_guard: true                   # 路径穿越防护
+  pth_guard: true # 路径穿越防护
 
 cron:
   enabled: true
   timezone: UTC
 
 gateway:
-  enabled: false                    # API 网关
+  enabled: false # API 网关
   host: 127.0.0.1
   port: 8765
   cors_origins:
@@ -331,7 +331,7 @@ gateway:
   webui_path: ~
 
 api:
-  enabled: false                    # REST API 服务
+  enabled: false # REST API 服务
   host: 127.0.0.1
   port: 8000
   api_keys: []
@@ -355,6 +355,16 @@ kobot/
 │   │   ├── context.ts      # 系统提示词构建
 │   │   ├── hook.ts         # 事件钩子系统
 │   │   └── types.ts        # 钩子类型定义
+│   ├── skill/               # Skill 系统（Phase 1）
+│   │   ├── types.ts        # 类型定义（SkillManifest, SkillMatch 等）
+│   │   ├── registry.ts     # Skill 注册中心（CRUD + 禁用管理）
+│   │   ├── loader.ts       # Skill 加载器（目录扫描 + YAML/MD 解析）
+│   │   ├── router.ts       # 四级路由（显式/关键词/文件/LLM）
+│   │   ├── runtime.ts      # 执行引擎（Hook 链 + 超时 + 熔断 + Trace）
+│   │   ├── context-manager.ts  # 上下文管理器（文件读取 + Token 预算）
+│   │   ├── prompt-compiler.ts  # Prompt 编译器（Frontmatter + Context + Tool 注入）
+│   │   ├── manager.ts      # Skill 管理器（统一入口 + CLI）
+│   │   └── index.ts        # 导出
 │   ├── channels/           # 交互渠道
 │   │   ├── cli.ts          # 命令行界面
 │   │   ├── webhook.ts      # Webhook HTTP 服务
@@ -438,6 +448,11 @@ kobot/
 │   └── types.ts            # 全局类型
 ├── tests/
 │   └── kobot.test.ts       # 测试
+├── skills/                  # 内置 Skill 包
+│   └── code-review/         # 代码审查 Skill
+│       ├── skill.yaml       # Manifest 定义
+│       ├── SKILL.md         # Prompt 指令
+│       └── handler.ts       # 执行处理器
 ├── docs/                   # 详细文档
 │   ├── configuration.md    # 配置参考
 │   ├── context-compression.md  # 上下文压缩策略设计文档
@@ -491,13 +506,13 @@ await bot.close();
 
 `stream()` 方法通过 AsyncGenerator 产生以下事件：
 
-| 事件类型                                         | 说明         |
-| ------------------------------------------------ | ------------ |
-| `run_started` / `run_completed` / `run_failed`   | 运行生命周期 |
-| `text_delta` / `text_completed`                  | 文本流式输出 |
-| `reasoning_delta` / `reasoning_completed`        | 推理过程输出 |
-| `tool_started` / `tool_completed` / `tool_failed`| 工具执行事件 |
-| `file_edit`                                      | 文件编辑事件（含 start/end/error） |
+| 事件类型                                          | 说明                               |
+| ------------------------------------------------- | ---------------------------------- |
+| `run_started` / `run_completed` / `run_failed`    | 运行生命周期                       |
+| `text_delta` / `text_completed`                   | 文本流式输出                       |
+| `reasoning_delta` / `reasoning_completed`         | 推理过程输出                       |
+| `tool_started` / `tool_completed` / `tool_failed` | 工具执行事件                       |
+| `file_edit`                                       | 文件编辑事件（含 start/end/error） |
 
 流式事件可配合 Webhook、飞书等渠道实现实时响应。
 
@@ -553,20 +568,21 @@ bot.progressGuard_.on((event) => {
 ACR 是 Agent 上下文运行时操作系统，管理完整的上下文生命周期：
 
 **核心流程**：
+
 ```
 观察（Observe）→ 理解（Understand）→ 压缩（Compress）
 → 记忆（Remember）→ 重建（Rebuild）→ 继续（Continue）
 ```
 
 **压缩级别**：
-| 级别 | 策略               | 类型   | 压缩比 | 说明                     |
+| 级别 | 策略 | 类型 | 压缩比 | 说明 |
 | ---- | ------------------ | ------ | ------ | ------------------------ |
-| L0   | 无压缩             | -      | 0%     | 正常运行                 |
-| L1   | 去重 + 清理        | 无损   | 10-20% | 移除重复和无效内容       |
-| L2   | 滑窗 + 关键锚点    | 半无损 | 30-50% | 保留近期和关键消息       |
-| L3   | 中间步骤总结       | 有损   | 50-70% | 折叠失败尝试，合并重复读 |
-| L4   | 语义聚类 + 摘要    | 有损   | 70-85% | 会话分段，分层摘要       |
-| L5   | 激进重写           | 有损   | 85-95% | 仅保留最核心信息         |
+| L0 | 无压缩 | - | 0% | 正常运行 |
+| L1 | 去重 + 清理 | 无损 | 10-20% | 移除重复和无效内容 |
+| L2 | 滑窗 + 关键锚点 | 半无损 | 30-50% | 保留近期和关键消息 |
+| L3 | 中间步骤总结 | 有损 | 50-70% | 折叠失败尝试，合并重复读 |
+| L4 | 语义聚类 + 摘要 | 有损 | 70-85% | 会话分段，分层摘要 |
+| L5 | 激进重写 | 有损 | 85-95% | 仅保留最核心信息 |
 
 - 多触发器：Token 阈值、停滞检测（与 Progress Guard 联动）、错误风暴、阶段完成、用户主动触发
 - 三场景预设配置：`coding` / `research` / `assistant`
@@ -574,43 +590,147 @@ ACR 是 Agent 上下文运行时操作系统，管理完整的上下文生命周
 - 压缩后平滑过渡（注入过渡消息避免模型困惑）
 - 与记忆系统协同（压缩前自动提取重要信息）
 
+#### Skills
+
+Skills 是 Kobot 的可插拔能力包，允许你通过简单的 YAML + Markdown 定义为 Agent 注入特定领域的指令和行为。
+
+**核心流程**：
+
+```
+Agent 输入 → SkillRouter（四级匹配）→ ContextManager → PromptCompiler → SkillRuntime → 注入 Agent
+```
+
+**四种 Skill 类型**：
+
+| 类型        | 说明                        | 适用场景               |
+| ----------- | --------------------------- | ---------------------- |
+| `action`    | 带 handler 的自定义执行逻辑 | 需要特定处理流程的任务 |
+| `knowledge` | 纯知识/指令注入，无执行逻辑 | 规范引导、角色设定     |
+| `workflow`  | 多步骤编排                  | 代码审查、问题复现     |
+| `agent`     | 子 Agent 托管               | 需要独立会话的任务     |
+
+**四级路由**：
+
+1. **Level 0 — 显式调用**：输入以 `/skillName` 开头时直接触发
+2. **Level 1 — 关键词匹配**：匹配 `trigger.keywords` 中的关键词，匹配数越多 confidence 越高
+3. **Level 2 — 文件匹配**：匹配 `trigger.file_patterns`，按当前文件扩展名过滤
+4. **Level 3 — LLM Router**（Phase 2+）：Level 0-2 未命中时，由 LLM 从候选列表中智能选择
+
+**Manifest 完整字段**：
+
+```yaml
+name: my-skill # 必填。唯一标识，也是显式调用名（/my-skill）
+version: 1.0.0 # 必填。语义化版本
+type: action # 必填。action | knowledge | workflow | agent
+description: 做某件事 # 必填。简要说明（Level 3 Router 使用）
+
+trigger: # 选填。触发条件
+  keywords: # Level 1 关键词
+    - 触发词
+  file_patterns: [] # Level 2 文件模式（如 *.vue, *.ts）
+  priority: 5 # 同 Level 时优先级（默认 0）
+
+context: # 选填。上下文需求
+  include: # 必读文件（自动映射为 required）
+    - path/to/file
+  required: [] # 必读文件（与 include 等效）
+  optional: [] # 预算充足时读入
+  exclude: [] # 排除文件
+  max_tokens: 8000 # Token 预算
+
+runtime: # 选填。运行时配置
+  timeout: 30000 # 超时（ms）
+  retry: 1 # 重试次数
+
+tools: # 选填。Agent 可用工具限制
+  allowed: # 白名单
+    - read_file
+    - grep
+
+permission: # 选填。权限声明
+  scopes: []
+```
+
+**快速创建自定义 Skill**：
+
+创建一个目录，放两个文件：
+
+```yaml
+# skills/my-skill/skill.yaml
+name: my-skill
+version: 1.0.0
+type: knowledge
+description: 做某件事
+trigger:
+  keywords:
+    - 触发词
+context:
+  include:
+    - path/to/reference.md
+```
+
+```markdown
+# skills/my-skill/SKILL.md
+
+你是一个 My Skill，请严格按照以下规则执行...
+
+## Rules
+
+1. Rule one
+2. Rule two
+
+## Output Format
+
+...
+```
+
+**CLI 管理命令**：
+
+```bash
+kobot skills list           # 列出所有已注册的 Skill
+kobot skills reload         # 重新加载 Skill 目录
+kobot skills traces         # 查看最近执行记录
+```
+
+**配置禁用 Skill**：在 `config.yaml` 中设置 `agents.defaults.disabled_skills` 列表即可禁用特定 Skill。`kobot skills list` 列出所有 Skill 名称供参考。
+
 ## 可用工具
 
 Kobot 内置 25+ 工具，覆盖文件操作、命令执行、网络访问、记忆管理、定时任务等场景。
 
 ### 文件系统
 
-| 工具名称             | 说明             |
-| -------------------- | ---------------- |
-| `read_file`          | 读取文件内容     |
-| `write_file`         | 写入/追加文件    |
-| `edit_file`          | 编辑文件         |
-| `delete_file`        | 删除文件         |
-| `rename_file`        | 重命名/移动文件  |
-| `create_directory`   | 创建目录         |
-| `delete_directory`   | 删除目录         |
-| `list_directory`     | 列出目录内容     |
-| `apply_patch`        | 应用代码补丁     |
+| 工具名称           | 说明            |
+| ------------------ | --------------- |
+| `read_file`        | 读取文件内容    |
+| `write_file`       | 写入/追加文件   |
+| `edit_file`        | 编辑文件        |
+| `delete_file`      | 删除文件        |
+| `rename_file`      | 重命名/移动文件 |
+| `create_directory` | 创建目录        |
+| `delete_directory` | 删除目录        |
+| `list_directory`   | 列出目录内容    |
+| `apply_patch`      | 应用代码补丁    |
 
 ### Shell
 
-| 工具名称 | 说明                     |
-| -------- | ------------------------ |
-| `shell`  | 执行 Shell 命令          |
+| 工具名称 | 说明            |
+| -------- | --------------- |
+| `shell`  | 执行 Shell 命令 |
 
 ### 网络
 
-| 工具名称      | 说明                  |
-| ------------- | --------------------- |
-| `web_search`  | 搜索引擎查询          |
-| `web_fetch`   | 抓取网页内容          |
+| 工具名称     | 说明         |
+| ------------ | ------------ |
+| `web_search` | 搜索引擎查询 |
+| `web_fetch`  | 抓取网页内容 |
 
 ### 搜索
 
-| 工具名称      | 说明                  |
-| ------------- | --------------------- |
-| `grep`        | 在文件中搜索文本      |
-| `find_files`  | 按 Glob 模式匹配文件  |
+| 工具名称     | 说明                 |
+| ------------ | -------------------- |
+| `grep`       | 在文件中搜索文本     |
+| `find_files` | 按 Glob 模式匹配文件 |
 
 ### 记忆管理
 
@@ -623,30 +743,30 @@ Kobot 内置 25+ 工具，覆盖文件操作、命令执行、网络访问、记
 
 ### 定时任务
 
-| 工具名称        | 说明               |
-| --------------- | ------------------ |
-| `cron_add`      | 添加定时 cron 任务 |
-| `cron_remove`   | 移除定时任务       |
-| `cron_list`     | 列出所有定时任务   |
-| `cron_enable`   | 启用/禁用任务      |
+| 工具名称      | 说明               |
+| ------------- | ------------------ |
+| `cron_add`    | 添加定时 cron 任务 |
+| `cron_remove` | 移除定时任务       |
+| `cron_list`   | 列出所有定时任务   |
+| `cron_enable` | 启用/禁用任务      |
 
 ### 通用工具
 
-| 工具名称         | 说明             |
-| ---------------- | ---------------- |
-| `echo`           | 回显文本         |
-| `get_time`       | 获取当前时间     |
-| `calculate`      | 执行数学计算     |
-| `encode_base64`  | Base64 编码      |
-| `decode_base64`  | Base64 解码      |
+| 工具名称        | 说明         |
+| --------------- | ------------ |
+| `echo`          | 回显文本     |
+| `get_time`      | 获取当前时间 |
+| `calculate`     | 执行数学计算 |
+| `encode_base64` | Base64 编码  |
+| `decode_base64` | Base64 解码  |
 
 ### 其他
 
-| 工具名称       | 分类     | 说明             |
-| -------------- | -------- | ---------------- |
-| `scheduler`    | 调度     | 任务调度         |
-| `self`         | 自省     | 运行时自省       |
-| `message`      | 推送     | 消息推送         |
+| 工具名称    | 分类 | 说明       |
+| ----------- | ---- | ---------- |
+| `scheduler` | 调度 | 任务调度   |
+| `self`      | 自省 | 运行时自省 |
+| `message`   | 推送 | 消息推送   |
 
 ## 使用 SDK
 
@@ -700,18 +820,19 @@ tail -f ~/.kobot/logs/kobot.log | npx pino-pretty
 
 ```yaml
 logging:
-  level: info                     # trace / debug / info / warn / error / fatal
+  level: info # trace / debug / info / warn / error / fatal
   file_path: logs/kobot.log
-  console_enabled: true           # 是否输出到控制台
+  console_enabled: true # 是否输出到控制台
   rotation:
-    enabled: true                 # 是否启用日志轮转（生产环境必备）
-    max_size: 10M                 # 单个日志文件最大大小（支持 K/M/G 单位）
-    max_files: 30                 # 保留日志文件最大数量
-    compress: true                # 是否压缩旧日志文件（.gz 格式）
-  separate_error_log: true        # 是否单独记录错误日志到 kobot-error.log
+    enabled: true # 是否启用日志轮转（生产环境必备）
+    max_size: 10M # 单个日志文件最大大小（支持 K/M/G 单位）
+    max_files: 30 # 保留日志文件最大数量
+    compress: true # 是否压缩旧日志文件（.gz 格式）
+  separate_error_log: true # 是否单独记录错误日志到 kobot-error.log
 ```
 
 生产环境日志最佳实践：
+
 - 始终启用 `rotation.enabled` 和 `separate_error_log`
 - 建议设置 `max_size` 为 10-20M，`max_files` 根据需求保留 7-30 天
 - 生产环境可将 `console_enabled` 设为 false，减少 I/O 开销
