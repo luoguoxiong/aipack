@@ -341,11 +341,8 @@ export class Kobot {
     return model!;
   }
 
-  private getOrCreateACR(sessionKey: string, workspacePath?: string): AgentContextRuntime | null {
+  private getOrCreateACR(sessionKey: string, workspacePath?: string): AgentContextRuntime {
     const acrConfig = this.config.context_runtime;
-    if (!acrConfig?.enabled) {
-      return null;
-    }
 
     if (this.acrRuntimes.has(sessionKey)) {
       return this.acrRuntimes.get(sessionKey)!;
@@ -449,97 +446,46 @@ export class Kobot {
         return this.models.streamSimple(model, context, options);
       },
       transformContext: async (messages, signal) => {
-        // 如果启用了 ACR 则使用
-        if (acr) {
-          try {
-            const check = await acr.checkBeforeModelCall(messages);
-            if (check.shouldCompact && check.level) {
-              const trigger = check.reasons.length > 0 ? check.reasons[0] : 'manual';
-              logger.info({
-                level: check.level,
-                trigger: check.reasons,
-                messagesBefore: messages.length,
-              }, 'ACR：已触发上下文压缩');
-              
-              const compressionResult = await acr.compressAndGetResult(check.level, trigger);
-              
-              logger.info({
-                level: check.level,
-                messagesBefore: compressionResult.messagesBefore,
-                messagesAfter: compressionResult.messagesAfter,
-                tokensSaved: compressionResult.tokensSaved,
-                duration: compressionResult.durationMs,
-              }, 'ACR：已应用上下文压缩');
-              
-              // 同步回 agent 状态
-              agent.state.messages = compressionResult.messages;
-              return compressionResult.messages;
+        try {
+          const check = await acr.checkBeforeModelCall(messages);
+          if (check.shouldCompact && check.level) {
+            const trigger = check.reasons.length > 0 ? check.reasons[0] : 'manual';
+            logger.info({
+              level: check.level,
+              trigger: check.reasons,
+              messagesBefore: messages.length,
+            }, 'ACR：已触发上下文压缩');
+
+            const compressionResult = await acr.compressAndGetResult(check.level, trigger);
+
+            logger.info({
+              level: check.level,
+              messagesBefore: compressionResult.messagesBefore,
+              messagesAfter: compressionResult.messagesAfter,
+              tokensSaved: compressionResult.tokensSaved,
+              duration: compressionResult.durationMs,
+            }, 'ACR：已应用上下文压缩');
+
+            agent.state.messages = compressionResult.messages;
+
+            // 确保工具配对完整性
+            const paired = ensureToolPairing(compressionResult.messages);
+            if (paired.length !== compressionResult.messages.length) {
+              logger.debug({ removedCount: compressionResult.messages.length - paired.length }, 'transformContext 已移除孤立的工具调用/结果消息');
             }
-          } catch (err) {
-            logger.warn({ err: (err as Error).message }, 'ACR 压缩失败，使用默认回退方案');
+            agent.state.messages = paired;
+            return paired;
           }
+        } catch (err) {
+          logger.warn({ err: (err as Error).message }, 'ACR 压缩失败，跳过压缩');
         }
 
-        // 回退到原始的简单压缩（或不压缩）
-        // 1. 估算当前上下文 token
-        const estimate = estimateContextTokens(messages);
-        const contextWindow = this.config.agents.defaults.context_window_tokens || 200000;
-        const reserveTokens = 4000;
-        const keepRecentTokens = 8000;
-
-        let resultMessages: AgentMessage[] = messages;
-
-        // 2. 判断是否超过阈值需要压缩
-        if (shouldCompact(estimate.tokens, contextWindow, {
-          enabled: true,
-          reserveTokens,
-          keepRecentTokens,
-        })) {
-          // 3. 从尾部往前找切割点
-          let cutIndex = messages.length;
-          let recentTokens = 0;
-          for (let i = messages.length - 1; i >= 0; i--) {
-            recentTokens += estimateTokens(messages[i]);
-            if (recentTokens >= keepRecentTokens) {
-              cutIndex = i;
-              break;
-            }
-          }
-          cutIndex = Math.min(cutIndex, messages.length - 2);
-
-          if (cutIndex > 0) {
-            // 4. 对旧消息生成摘要
-            const oldMessages = messages.slice(0, cutIndex);
-            const recentMessages = messages.slice(cutIndex);
-
-            const summaryResult = await generateSummary(
-              oldMessages,
-              this.models,
-              model,
-              reserveTokens,
-              signal,
-              '用中文生成简洁的对话历史摘要，保留关键决策和上下文信息。',
-            );
-
-            if (summaryResult.ok) {
-              resultMessages = [
-                { role: 'user', content: `[对话历史摘要]\n${summaryResult.value}`, timestamp: Date.now() },
-                ...recentMessages,
-              ];
-            }
-          }
+        // ACR 未触发或失败时仅做工具配对
+        const pairedMessages = ensureToolPairing(messages);
+        if (pairedMessages.length !== messages.length) {
+          logger.debug({ removedCount: messages.length - pairedMessages.length }, 'transformContext 已移除孤立的工具调用/结果消息');
         }
-
-        // 3. 确保工具配对完整性，过滤孤立的 tool_call/toolResult
-        const pairedMessages = ensureToolPairing(resultMessages);
-        if (pairedMessages.length !== resultMessages.length) {
-          const removedCount = resultMessages.length - pairedMessages.length;
-          logger.debug({ removedCount, compressed: resultMessages !== messages }, 'transformContext 已移除孤立的工具调用/结果消息');
-        }
-
-        // 4. 回写到 agent state
         agent.state.messages = pairedMessages;
-
         return pairedMessages;
       },
     });
