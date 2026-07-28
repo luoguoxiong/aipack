@@ -18,6 +18,7 @@ import type {
   HealthSnapshot,
   ACREvent,
   ToolDigest,
+  ContextEntropy,
 } from './types';
 import { DEFAULT_CONFIG, getProfileConfig, mergeConfig } from './config/defaults';
 import { TokenMonitor, DensityMonitor } from './monitor';
@@ -25,7 +26,7 @@ import { WorkspaceObserver } from './observer';
 import { StateExtractor, type ToolResultInfo, createInitialState, formatStateSnapshot } from './state';
 import { SnapshotBuilder } from './state/snapshot-builder';
 import { ToolDigestor } from './tool';
-import { runL1Clean, runL2Window, ensureToolPairing, countOrphanedPairs, createTransitionMessage } from './compress';
+import { runL1Clean, runL2Window, runL3Collapse, runL4Snapshot, runL5Emergency, ensureToolPairing, countOrphanedPairs, createTransitionMessage } from './compress';
 import { SessionMemoryStore } from './memory';
 import { Metrics } from './observability';
 import {
@@ -35,6 +36,8 @@ import {
   removeStateSnapshots,
   removeToolDigests,
   setMessageContent,
+  estimateMessageTokens,
+  isStateSnapshot,
 } from './state/message-adapter';
 
 /** AgentContextRuntime 构造函数选项 */
@@ -166,21 +169,149 @@ export class AgentContextRuntime implements AgentHook {
     const density = this.densityMonitor.check(this.currentMessages, tokens);
     const state = this.stateExtractor.getState();
 
+    // 真实计算熵值
+    const entropy = this.computeEntropy();
+
+    // 综合健康等级：取最差的那个
+    let overall: HealthLevel = tokenHealth.level;
+    if (this.levelFromHealth(density.density < 0.4 ? 'warning' : 'ok') > this.levelFromHealth(overall)) {
+      overall = density.density < 0.3 ? 'critical' : density.density < 0.4 ? 'warning' : overall;
+    }
+    if (entropy.isInLowValueExploration && this.levelFromHealth('warning') > this.levelFromHealth(overall)) {
+      overall = 'warning';
+    }
+
     return {
       token: tokenHealth,
       density,
-      entropy: {
-        toolCallsInWindow: 0,
-        stateChangesInWindow: 0,
-        newErrorsInWindow: 0,
-        uniqueResourcesTouched: 0,
-        repeatedResourceReads: 0,
-        isInLowValueExploration: false,
-        explorationEfficiency: 1.0,
-      },
+      entropy,
       phase: state.task.phase,
-      overall: tokenHealth.level,
+      overall,
     };
+  }
+
+  /**
+   * 计算上下文熵（真实值）
+   * 基于最近的消息统计各种指标
+   */
+  private computeEntropy(): ContextEntropy {
+    const window = this.currentMessages.slice(-30);
+    let toolCallsInWindow = 0;
+    let stateChangesInWindow = 0;
+    let newErrorsInWindow = 0;
+    const touchedResources = new Set<string>();
+    let repeatedResourceReads = 0;
+    const resourceReadCount = new Map<string, number>();
+
+    for (const msg of window) {
+      // 统计工具调用
+      if (msg.role === 'assistant') {
+        const toolCalls = this.extractToolCallsFromAssistant(msg);
+        toolCallsInWindow += toolCalls.length;
+      }
+
+      // 统计工具结果
+      if (msg.role === 'toolResult') {
+        const content = getMessageContent(msg);
+        const toolName = (msg as any).toolName || '';
+
+        // 检测错误
+        if (content.includes('Error') || content.includes('error') || content.includes('FAIL')) {
+          newErrorsInWindow++;
+        }
+
+        // 检测文件变更
+        if (content.includes('created') || content.includes('modified') || content.includes('written')) {
+          stateChangesInWindow++;
+        }
+
+        // 跟踪资源
+        const filePath = (msg as any).filePath || (msg as any).path || '';
+        if (filePath) {
+          touchedResources.add(filePath);
+          const count = (resourceReadCount.get(filePath) || 0) + 1;
+          resourceReadCount.set(filePath, count);
+          if (count > 1) {
+            repeatedResourceReads++;
+          }
+        }
+      }
+
+      // 用户消息中的资源引用
+      if (msg.role === 'user') {
+        const content = getMessageContent(msg);
+        const fileRefs = content.match(/[\w\-./]+\.[a-zA-Z]+/g);
+        if (fileRefs) {
+          for (const ref of fileRefs) {
+            touchedResources.add(ref);
+          }
+        }
+        // 用户提供新信息也算状态变化
+        if (content.length > 20) {
+          stateChangesInWindow++;
+        }
+      }
+    }
+
+    // 探索效率 = 成功状态变化 / 总工具调用
+    const explorationEfficiency = toolCallsInWindow > 0
+      ? Math.min(1, stateChangesInWindow / toolCallsInWindow)
+      : 1.0;
+
+    // 低价值探索：很多工具调用但很少状态变化
+    const isInLowValueExploration = toolCallsInWindow >= 8 &&
+      stateChangesInWindow < Math.max(1, toolCallsInWindow * 0.15);
+
+    return {
+      toolCallsInWindow,
+      stateChangesInWindow,
+      newErrorsInWindow,
+      uniqueResourcesTouched: touchedResources.size,
+      repeatedResourceReads,
+      isInLowValueExploration,
+      explorationEfficiency,
+    };
+  }
+
+  /**
+   * 将健康级别字符串转为数值用于比较
+   */
+  private levelFromHealth(level: string): number {
+    const levels: Record<string, number> = {
+      ok: 0,
+      attention: 1,
+      warning: 2,
+      critical: 3,
+      emergency: 4,
+      fatal: 5,
+    };
+    return levels[level] ?? 0;
+  }
+
+  /**
+   * 从助手消息中提取工具调用列表
+   */
+  private extractToolCallsFromAssistant(msg: AgentMessage): Array<{ id: string; name?: string }> {
+    const calls: Array<{ id: string; name?: string }> = [];
+
+    if ('content' in msg && Array.isArray((msg as any).content)) {
+      for (const block of (msg as any).content) {
+        if (block.type === 'toolCall' && block.id) {
+          calls.push({ id: block.id, name: block.name });
+        }
+      }
+    }
+
+    const toolCalls = (msg as any).toolCalls || (msg as any).tool_calls;
+    if (toolCalls && Array.isArray(toolCalls)) {
+      for (const tc of toolCalls) {
+        if (tc.id) {
+          calls.push({ id: tc.id, name: tc.name || tc.function?.name });
+        }
+      }
+    }
+
+    return calls;
   }
 
   /**
@@ -485,19 +616,145 @@ export class AgentContextRuntime implements AgentHook {
       // 先移除旧的状态快照
       compressed = removeStateSnapshots(compressed);
 
-      // 始终先执行 L1 清理
-      const l1Result = runL1Clean(compressed, this.config.compression.strategies.l1_clean, this.toolDigestor);
-      compressed = l1Result.messages;
-      this.toolDigests.push(...l1Result.digests);
-      toolDigestsCreated = l1Result.digestedCount;
-      strategiesRun.push('l1_clean');
+      // ─── L1: 清理（始终执行） ───
+      let l1Digests: ToolDigest[] = [];
+      try {
+        const l1Result = runL1Clean(compressed, this.config.compression.strategies.l1_clean, this.toolDigestor);
+        compressed = l1Result.messages;
+        l1Digests = l1Result.digests;
+        this.toolDigests.push(...l1Result.digests);
+        toolDigestsCreated = l1Result.digestedCount;
+        strategiesRun.push('l1_clean');
+      } catch (err) {
+        logger.warn({ err }, '[ACR] L1 清理失败，跳过');
+      }
 
-      // L2 及以上级别根据请求的级别执行
-      if (level !== 'clean') {
-        const beforeCount = compressed.length;
-        const l2Result = runL2Window(compressed, this.config.compression.strategies.l2_window);
-        compressed = l2Result.messages;
-        strategiesRun.push('l2_window');
+      // ─── L2: 窗口 ───
+      if (level === 'window' || level === 'collapse') {
+        try {
+          const l2Result = runL2Window(compressed, this.config.compression.strategies.l2_window);
+          compressed = l2Result.messages;
+          strategiesRun.push('l2_window');
+        } catch (err) {
+          logger.warn({ err }, '[ACR] L2 窗口化失败，跳过');
+        }
+      }
+
+      // ─── L3: 折叠 ───
+      if (level === 'collapse') {
+        try {
+          const l3Result = runL3Collapse(compressed, this.config.compression.strategies.l3_collapse);
+          compressed = l3Result.messages;
+          strategiesRun.push('l3_collapse');
+        } catch (err) {
+          logger.warn({ err }, '[ACR] L3 折叠失败，跳过');
+        }
+      }
+
+      // ─── L4: 快照重写 ───
+      if (level === 'snapshot') {
+        // L4 是独立策略，不经过 L2/L3
+        try {
+          const l4Result = runL4Snapshot(
+            compressed,
+            this.stateExtractor.getState(),
+            this.config.compression.strategies.l4_snapshot_rewrite,
+            this.toolDigests,
+            this.systemPrompt,
+          );
+          compressed = l4Result.messages;
+          strategiesRun.push('l4_snapshot_rewrite');
+        } catch (err) {
+          logger.warn({ err }, '[ACR] L4 快照重建失败，回退到 L2');
+          // 降级到 L2
+          try {
+            const l2Result = runL2Window(compressed, this.config.compression.strategies.l2_window);
+            compressed = l2Result.messages;
+            strategiesRun.push('l2_window_fallback');
+          } catch (l2Err) {
+            logger.warn({ err: l2Err }, '[ACR] L2 降级也失败');
+          }
+        }
+      }
+
+      // ─── L5: 紧急压缩 ───
+      if (level === 'emergency') {
+        try {
+          const l5Result = runL5Emergency(
+            compressed,
+            this.stateExtractor.getState(),
+            this.config.compression.strategies.l5_emergency,
+            this.systemPrompt,
+          );
+          compressed = l5Result.messages;
+          strategiesRun.push('l5_emergency');
+        } catch (err) {
+          logger.warn({ err }, '[ACR] L5 紧急压缩失败，回退到 L2');
+          // 降级到 L2（至少做窗口化）
+          try {
+            // 先做 L1 清理（确保已清理）
+            const l1Fallback = runL1Clean(compressed, this.config.compression.strategies.l1_clean, this.toolDigestor);
+            compressed = l1Fallback.messages;
+            this.toolDigests.push(...l1Fallback.digests);
+            strategiesRun.push('l1_fallback');
+            // 再做 L2 窗口
+            const l2Fallback = runL2Window(compressed, this.config.compression.strategies.l2_window);
+            compressed = l2Fallback.messages;
+            strategiesRun.push('l2_window_fallback');
+          } catch (fallbackErr) {
+            logger.warn({ err: fallbackErr }, '[ACR] 所有降级策略均失败');
+          }
+        }
+      }
+
+      // 压缩后自检：如果压缩后 token 仍然超过致命阈值，自动升级压缩级别
+      if (this.config.compression.cooldown.postCompressionCheck) {
+        const postTokens = this.tokenMonitor.estimateTokens(compressed);
+        const postCheck = this.tokenMonitor.check(postTokens);
+        if (postCheck.level === 'fatal' || postCheck.level === 'emergency') {
+          const escalate: Record<string, CompressionLevel> = {
+            clean: 'window',
+            window: 'collapse',
+            collapse: 'snapshot',
+            snapshot: 'emergency',
+          };
+          const nextLevel = escalate[level];
+          if (nextLevel) {
+            logger.warn({ from: level, to: nextLevel, postTokens }, '[ACR] 压缩后 token 仍然过高，自动升级到 %s', nextLevel);
+            try {
+              if (nextLevel === 'window') {
+                const l2Post = runL2Window(compressed, this.config.compression.strategies.l2_window);
+                compressed = l2Post.messages;
+                strategiesRun.push('l2_window_post_check');
+              } else if (nextLevel === 'collapse') {
+                const l3Post = runL3Collapse(compressed, this.config.compression.strategies.l3_collapse);
+                compressed = l3Post.messages;
+                strategiesRun.push('l3_collapse_post_check');
+              } else if (nextLevel === 'snapshot') {
+                const l4Post = runL4Snapshot(
+                  compressed,
+                  this.stateExtractor.getState(),
+                  this.config.compression.strategies.l4_snapshot_rewrite,
+                  this.toolDigests,
+                  this.systemPrompt,
+                );
+                compressed = l4Post.messages;
+                strategiesRun.push('l4_snapshot_post_check');
+              } else if (nextLevel === 'emergency') {
+                const l5Post = runL5Emergency(
+                  compressed,
+                  this.stateExtractor.getState(),
+                  this.config.compression.strategies.l5_emergency,
+                  this.systemPrompt,
+                );
+                compressed = l5Post.messages;
+                strategiesRun.push('l5_emergency_post_check');
+              }
+            } catch (e) {
+              logger.warn({ err: e }, '[ACR] 升级压缩失败');
+            }
+          }
+        }
       }
 
       // 确保工具配对完整性
@@ -531,6 +788,10 @@ export class AgentContextRuntime implements AgentHook {
         compressed.push(transitionMsg);
       }
 
+      // 应用 layerBudget：在添加完所有消息后执行预算控制
+      // 如有需要会从非关键消息中继续截断
+      this.enforceLayerBudget(compressed);
+
       // 6. 最终验证 - 再次确保工具配对
       compressed = ensureToolPairing(compressed);
 
@@ -544,7 +805,7 @@ export class AgentContextRuntime implements AgentHook {
       // 更新会话记忆
       this.sessionMemory.updateState(this.stateExtractor.getState());
       this.sessionMemory.updateRecentContext(compressed.slice(-this.config.compression.strategies.l2_window.recent_messages_to_keep));
-      this.sessionMemory.addToolDigests(l1Result.digests);
+      this.sessionMemory.addToolDigests(l1Digests);
 
       // 计算结果
       const tokensAfter = this.tokenMonitor.estimateTokens(compressed);
@@ -663,6 +924,82 @@ export class AgentContextRuntime implements AgentHook {
     }
 
     return turnsSinceAny < 2;
+  }
+
+  /**
+   * 执行 layerBudget 预算控制
+   * 根据配置的层级比例，在 token 预算超标时截断最近消息区
+   * @returns 是否执行了预算截断
+   */
+  private enforceLayerBudget(messages: AgentMessage[]): boolean {
+    const budget = this.config.layerBudget;
+    const recentRatio = budget.recent; // 最近消息允许的比例
+    const safetyMargin = budget.safetyMargin; // 安全余量
+
+    // 只对超过一定规模的消息列表执行预算控制
+    if (messages.length < 10) return false;
+
+    // 估算总 token 和目标上限（含安全余量）
+    const totalTokens = this.tokenMonitor.estimateTokens(messages);
+    const targetMax = this.config.contextLimit * (1 - safetyMargin);
+
+    if (totalTokens <= targetMax) return false; // 没超预算
+
+    // 计算需要释放的 token
+    const tokensToFree = totalTokens - targetMax;
+    let freed = 0;
+
+    // 策略：从非关键消息中截断
+    // 优先移除旧的压缩摘要和自定义消息
+    const toRemove: number[] = [];
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (msg.role === 'compactionSummary' || 
+          (msg.role === 'custom' && (msg as any).display === false)) {
+        toRemove.push(i);
+        freed += estimateMessageTokens(messages[i]) + 10; // + 消息开销
+        if (freed >= tokensToFree) break;
+      }
+    }
+
+    // 如果还不够，移除旧的状态快照
+    if (freed < tokensToFree) {
+      for (let i = 0; i < messages.length; i++) {
+        if (isStateSnapshot(messages[i])) {
+          if (!toRemove.includes(i)) {
+            toRemove.push(i);
+            freed += estimateMessageTokens(messages[i]) + 10;
+            if (freed >= tokensToFree) break;
+          }
+        }
+      }
+    }
+
+    // 如果还不够，从最近消息之前的历史消息中截断
+    if (freed < tokensToFree) {
+      const recentStart = Math.max(0, messages.length - Math.ceil(messages.length * recentRatio));
+      for (let i = recentStart - 1; i >= 0; i--) {
+        if (!toRemove.includes(i) && (messages[i].role as string) !== 'system') {
+          toRemove.push(i);
+          freed += estimateMessageTokens(messages[i]) + 10;
+          if (freed >= tokensToFree) break;
+        }
+      }
+    }
+
+    if (toRemove.length > 0) {
+      // 原地修改：移除标记的消息
+      // 使用 splice 从后往前删除
+      const sorted = [...toRemove].sort((a, b) => b - a);
+      for (const idx of sorted) {
+        messages.splice(idx, 1);
+      }
+      logger.debug({ removed: sorted.length, freed }, '[ACR] layerBudget 已执行预算控制');
+      return true;
+    }
+
+    return false;
   }
 
   /**

@@ -139,13 +139,34 @@ export function isCompactionSummary(message: AgentMessage): boolean {
 
 /**
  * 安全估算消息的 token 数（适用于所有消息类型）
- * 使用简单启发式：字符数除以 3 作为平均值
+ * 使用启发式方法区分中英文：
+ * - 中文字符按 ~1.5 字符/token
+ * - 英文字符按 ~4 字符/token
+ * - 数字/空格/标点按 ~3 字符/token
  */
 export function estimateMessageTokens(message: AgentMessage): number {
   const content = getMessageContent(message);
-  // 粗略估算：英文约 4 字符/token，中文约 1.5 字符/token
-  // 用简单启发式：字符数除以 3 作为平均值
-  return Math.ceil(content.length / 3);
+  if (!content) return 0;
+
+  let chineseChars = 0;
+  let otherChars = 0;
+
+  for (let i = 0; i < content.length; i++) {
+    const code = content.charCodeAt(i);
+    // CJK 统一表意文字范围
+    if ((code >= 0x4E00 && code <= 0x9FFF) ||
+        (code >= 0x3400 && code <= 0x4DBF) ||
+        (code >= 0xF900 && code <= 0xFAFF) ||
+        (code >= 0x2E80 && code <= 0x2EFF)) {
+      chineseChars++;
+    } else {
+      otherChars++;
+    }
+  }
+
+  // 中文 ~1.5 字符/token, 英文/其他 ~4 字符/token
+  const estimated = Math.ceil(chineseChars / 1.5) + Math.ceil(otherChars / 4);
+  return Math.max(1, estimated);
 }
 
 /**

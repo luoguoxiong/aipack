@@ -74,7 +74,7 @@ export class TokenMonitor {
    * - warning  → clean (L1 无损清理)
    * - critical → window (L2 窗口化)
    * - emergency → collapse (L3 折叠)
-   * - fatal → emergency (L5 紧急压缩)
+   * - fatal → snapshot (L4 快照重写，如不够会由 postCheck 升到 L5)
    */
   getRequiredCompressionLevel(health: TokenHealth): 'clean' | 'window' | 'collapse' | 'snapshot' | 'emergency' | null {
     switch (health.level) {
@@ -85,7 +85,7 @@ export class TokenMonitor {
       case 'emergency':
         return 'collapse';
       case 'fatal':
-        return 'emergency';
+        return 'snapshot';
       default:
         return null;
     }
