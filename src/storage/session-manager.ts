@@ -3,8 +3,8 @@ import { homedir } from 'os';
 import type { StorageAdapter, SessionData, SessionTreeEntry, SessionMetadata, SessionStorage, SessionContext, MessageEntry } from './types';
 import { createMemoryStorage, createMemorySessionStorage } from './memory';
 import { createFileStorage } from './file';
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Usage } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "../pi/agent";
+import type { Usage } from "../pi/ai";
 
 function resolveStoragePath(storagePath: string): string {
   if (storagePath.startsWith('~')) {
@@ -30,7 +30,7 @@ function deriveSessionContextState(pathEntries: readonly SessionTreeEntry[]): Om
     if (entry.type === "model_change") {
       model = { provider: entry.provider, modelId: entry.modelId };
     } else if (entry.type === "message" && entry.message.role === "assistant") {
-      model = { provider: entry.message.provider, modelId: entry.message.model };
+      model = { provider: entry.message.provider as string, modelId: entry.message.model as string };
     }
   }
 

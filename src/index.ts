@@ -48,6 +48,6 @@ export { WebhookChannel, createWebhookChannel } from './channels/webhook';
 export { FeishuChannel, createFeishuChannel } from './channels/feishu';
 export type { Channel, ChannelConfig, ChannelMessage, ChannelResponse, CLIConfig, WebhookConfig, FeishuConfig } from './channels/types';
 
-export { Agent, AgentHarness } from '@earendil-works/pi-agent-core';
-export type { AgentEvent, AgentContext, AgentMessage, AgentTool, AgentState } from '@earendil-works/pi-agent-core';
-export type { Models } from '@earendil-works/pi-ai';
+export { Agent, AgentHarness } from './pi/agent';
+export type { AgentEvent, AgentContext, AgentMessage, AgentTool, AgentState } from './pi/agent';
+export type { Models } from './pi/ai';

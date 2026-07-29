@@ -1,5 +1,5 @@
-import { Type, Static, TSchema } from "@earendil-works/pi-ai";
-import type { TextContent, ImageContent, Usage } from "@earendil-works/pi-ai";
+import { Type, Static, TSchema } from "../pi/ai";
+import type { TextContent, ImageContent, Usage } from "../pi/ai";
 
 export interface ToolContext {
   session_key: string;

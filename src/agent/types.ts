@@ -6,8 +6,8 @@ import type {
   AgentState,
   ThinkingLevel,
   QueueMode,
-} from "@earendil-works/pi-agent-core";
-import type { Model, ImageContent } from "@earendil-works/pi-ai";
+} from "../pi/agent";
+import type { Model, ImageContent } from "../pi/ai";
 import type { Config } from "../config/schema";
 
 export type {
