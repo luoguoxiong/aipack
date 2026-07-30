@@ -1,5 +1,5 @@
-import { Type, Static, TSchema } from "../pi/ai";
-import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "../pi/agent";
+import { Type, Static, TSchema } from "../ai";
+import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "../agent";
 import { createToolResult, createToolError, isToolErrorResult } from "./types";
 import { logger } from "../utils/logger";
 

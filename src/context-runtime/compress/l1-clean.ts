@@ -9,7 +9,7 @@
  * 这是最基础的压缩级别，不会丢失任何有价值的信息。
  */
 
-import type { AgentMessage } from '../../agent/types';
+import type { AgentMessage } from '../../agent';
 import type { L1CleanConfig, ToolDigest } from '../types';
 import { ToolDigestor } from '../tool';
 import { getMessageContent, isToolDigest, isStateSnapshot } from '../state/message-adapter';

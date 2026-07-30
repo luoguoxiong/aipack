@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { AgentContextRuntime } from './src/context-runtime';
-import type { AgentMessage } from './src/agent/types';
+import type { AgentMessage } from './src/agent';
 import {
   getMessageContent,
   isStateSnapshot,

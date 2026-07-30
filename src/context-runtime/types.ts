@@ -3,7 +3,7 @@
  * Agent 上下文操作系统 - 核心类型定义
  */
 
-import type { AgentMessage } from '../agent/types';
+import type { AgentMessage } from '../agent';
 
 // ─── 枚举与字面量类型 ───
 

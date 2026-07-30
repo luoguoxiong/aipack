@@ -5,7 +5,7 @@
  * 帮助模型理解上下文的变化，避免困惑。
  */
 
-import type { AgentMessage } from '../../agent/types';
+import type { AgentMessage } from '../../agent';
 import type { CompressionLevel, TransitionMessagesConfig } from '../types';
 import { createCompactionMessage } from '../state/message-adapter';
 

@@ -34,9 +34,9 @@ export type { ToolContext, ToolResult, ToolDefinition } from './tools/base';
 export { ToolRegistry, createDefaultToolRegistry } from './tools/registry';
 export type { ToolExecutionRecord } from './tools/registry';
 
-export { AgentHook, SDKCaptureHook, StreamingHook } from './agent/hook';
-export type { AgentHookContext, AgentRunHookContext, AgentToolHookContext, StreamingEmitter } from './agent/hook';
-export { ContextBuilder, createContextBuilder } from './agent/context';
+export { AgentHookManager, SDKCaptureHook, StreamingHook } from './agent';
+export type { AgentHook, AgentHookContext, AgentRunHookContext, AgentToolHookContext, StreamingEmitter } from './agent';
+export { ContextBuilder, createContextBuilder } from './agent';
 
 export { FileStorage, createFileStorage } from './storage/file';
 export { MemoryStorageAdapter, createMemoryStorage } from './storage/memory';
@@ -48,6 +48,6 @@ export { WebhookChannel, createWebhookChannel } from './channels/webhook';
 export { FeishuChannel, createFeishuChannel } from './channels/feishu';
 export type { Channel, ChannelConfig, ChannelMessage, ChannelResponse, CLIConfig, WebhookConfig, FeishuConfig } from './channels/types';
 
-export { Agent, AgentHarness } from './pi/agent';
-export type { AgentEvent, AgentContext, AgentMessage, AgentTool, AgentState } from './pi/agent';
-export type { Models } from './pi/ai';
+export { Agent, AgentHarness } from './agent';
+export type { AgentEvent, AgentContext, AgentMessage, AgentTool, AgentState } from './agent';
+export type { Models } from './ai';

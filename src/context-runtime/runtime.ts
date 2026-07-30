@@ -7,8 +7,7 @@
  */
 
 import { logger } from '../utils/logger';
-import type { AgentHook, AgentHookContext, AgentRunHookContext, AgentToolHookContext } from '../agent/types';
-import type { AgentMessage } from '../agent/types';
+import type { AgentHook, AgentHookContext, AgentRunHookContext, AgentToolHookContext, AgentMessage } from '../agent';
 import type {
   ACRConfig,
   CompactOptions,

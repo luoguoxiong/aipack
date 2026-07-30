@@ -9,7 +9,7 @@
  * 这是第一个有损压缩级别，会丢失部分细节。
  */
 
-import type { AgentMessage } from '../../agent/types';
+import type { AgentMessage } from '../../agent';
 import type { L3CollapseConfig, ToolDigest } from '../types';
 import { getMessageContent, isStateSnapshot, isCustomMessage, isCompactionSummary } from '../state/message-adapter';
 

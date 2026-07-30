@@ -10,7 +10,7 @@
  * 这是最后一道防线，确保模型不会丢失全部上下文。
  */
 
-import type { AgentMessage } from '../../agent/types';
+import type { AgentMessage } from '../../agent';
 import type { AgentState, L5EmergencyConfig } from '../types';
 import { SnapshotBuilder } from '../state/snapshot-builder';
 import { isStateSnapshot, isCustomMessage } from '../state/message-adapter';

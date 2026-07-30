@@ -3,8 +3,8 @@ import { homedir } from 'os';
 import type { StorageAdapter, SessionData, SessionTreeEntry, SessionMetadata, SessionStorage, SessionContext, MessageEntry } from './types';
 import { createMemoryStorage, createMemorySessionStorage } from './memory';
 import { createFileStorage } from './file';
-import type { AgentMessage } from "../pi/agent";
-import type { Usage } from "../pi/ai";
+import type { AgentMessage } from "../agent";
+import type { Usage } from "../ai";
 
 function resolveStoragePath(storagePath: string): string {
   if (storagePath.startsWith('~')) {

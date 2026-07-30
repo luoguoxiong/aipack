@@ -1,3 +1,3 @@
 export * from './config/schema';
-export * from './agent/types';
+export * from './agent';
 export * from './tools/types';
