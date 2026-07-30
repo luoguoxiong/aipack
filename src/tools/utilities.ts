@@ -1,4 +1,4 @@
-import { Type } from "../pi/ai";
+import { Type } from "../ai";
 import { BaseTool, createToolResult, createToolError } from './base';
 
 export class EchoTool extends BaseTool<typeof EchoTool.parameters> {

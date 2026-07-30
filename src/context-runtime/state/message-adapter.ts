@@ -5,7 +5,7 @@
  * 统一处理消息内容的读取和写入。
  */
 
-import type { AgentMessage } from '../../agent/types';
+import type { AgentMessage } from '../../agent';
 
 /**
  * 从任意 AgentMessage 获取文本内容

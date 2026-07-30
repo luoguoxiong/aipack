@@ -7,7 +7,7 @@
  * 锚点消息包括：目标、约束、关键决策、当前错误等高价值消息。
  */
 
-import type { AgentMessage } from '../../agent/types';
+import type { AgentMessage } from '../../agent';
 import type { L2WindowConfig, MessageTag } from '../types';
 import { ensureToolPairing } from './pairing';
 import { getMessageContent, isStateSnapshot, isCustomMessage } from '../state/message-adapter';

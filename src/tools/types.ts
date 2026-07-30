@@ -1,5 +1,5 @@
-import { Type, Static, TSchema } from "../pi/ai";
-import type { TextContent, ImageContent, Usage } from "../pi/ai";
+import { Type, Static, TSchema } from "../ai";
+import type { TextContent, ImageContent, Usage } from "../ai";
 
 export interface ToolContext {
   session_key: string;

@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentMessage } from "../pi/agent";
+import type { AgentEvent, AgentMessage } from "./types";
 import type { AgentHook as AgentHookInterface, AgentHookContext, AgentRunHookContext, AgentToolHookContext, StreamingEmitter } from "./types";
 
 export type { AgentHookContext, AgentRunHookContext, AgentToolHookContext, StreamingEmitter };

@@ -5,7 +5,7 @@
  * 消息顺序不会被改变，只做过滤。
  */
 
-import type { AgentMessage } from '../../agent/types';
+import type { AgentMessage } from '../../agent';
 
 /** 工具调用信息 */
 interface ToolCallInfo {

@@ -5,7 +5,7 @@
  * 提取和更新 Agent 的心智状态。
  */
 
-import type { AgentMessage } from '../../agent/types';
+import type { AgentMessage } from '../../agent';
 import type { WorkspaceObserver } from '../observer';
 import type { AgentState, WorkspaceObserverState, ToolDigest } from '../types';
 import {

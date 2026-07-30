@@ -1,5 +1,5 @@
-import { AgentTool } from "../pi/agent";
-import type { TSchema } from "../pi/ai";
+import { AgentTool } from "../agent";
+import type { TSchema } from "../ai";
 import { BaseTool, ToolContext, ToolResult, isToolErrorResult } from "./base";
 import { getFilesystemTools } from "./filesystem";
 import { getShellTools } from "./shell";

@@ -1,19 +1,19 @@
 import path from 'path';
-import { Agent, AgentHarness } from "./pi/agent";
-import type { AgentMessage } from "./pi/agent";
+import { Agent, AgentHarness } from "./agent";
+import type { AgentMessage } from "./agent";
 import {
   estimateContextTokens,
   shouldCompact,
   estimateTokens,
   generateSummary,
-} from "./pi/agent";
-import { builtinModels } from "./pi/ai/providers-all";
-import type { Model, AssistantMessage, ImageContent, TextContent, Context, SimpleStreamOptions, Api } from "./pi/ai";
+} from "./agent";
+import { builtinModels } from "./ai/providers-all";
+import type { Model, AssistantMessage, ImageContent, TextContent, Context, SimpleStreamOptions, Api } from "./ai";
 import { loadConfig, getConfigPath } from "./config/loader";
 import { Config, defaultConfig } from "./config/schema";
 import { createDefaultToolRegistry, ToolRegistry } from "./tools/registry";
 import { setMemoryBaseDir } from "./tools/memory";
-import { ContextBuilder } from "./agent/context";
+import { ContextBuilder } from "./agent";
 import { SessionManager, createSessionManager } from "./storage/session-manager";
 import type { MessageEntry, SessionTreeEntry } from "./storage/types";
 import { logger, createLogger } from "./utils/logger";
