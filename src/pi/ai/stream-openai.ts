@@ -89,7 +89,7 @@ interface OpenAIUserContentPart {
  * 2. 为孤立的 toolCall 插入合成 toolResult
  *    （当 user 消息插在 tool_calls 和 tool 响应之间时，满足 API 的配对要求）
  *
- * 此函数来自 @earendil-works/pi-ai 的 transformMessages 适配。
+ * transformMessages 适配函数。
  */
 function transformMessages(messages: Message[]): Message[] {
   const result: Message[] = [];

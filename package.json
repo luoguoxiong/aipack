@@ -1,7 +1,7 @@
 {
-  "name": "kobot-pi",
+  "name": "kobot",
   "version": "0.0.2",
-  "description": "A lightweight personal AI assistant framework (based on pi-agent)",
+  "description": "A lightweight personal AI assistant framework",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
