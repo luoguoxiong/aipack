@@ -1,5 +1,5 @@
-import { Type, Static, TSchema } from "@earendil-works/pi-ai";
-import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
+import { Type, Static, TSchema } from "../pi/ai";
+import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "../pi/agent";
 import { createToolResult, createToolError, isToolErrorResult } from "./types";
 import { logger } from "../utils/logger";
 
@@ -293,7 +293,10 @@ export abstract class BaseTool<TParameters extends TSchema = TSchema> {
       label: this.label,
       description: this.description,
       parameters: this.parameters,
-      execute: (toolCallId, params, signal, onUpdate) => this.safeExecute(toolCallId, params, signal, onUpdate),
+      execute: (toolCallId, params, signal, onUpdate) => {
+        const validated = this.validateArguments(params);
+        return this.safeExecute(toolCallId, validated, signal, onUpdate);
+      },
       prepareArguments: this.prepareArguments?.bind(this),
     };
   }

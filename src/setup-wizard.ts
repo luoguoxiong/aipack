@@ -5,7 +5,7 @@ import readline from 'readline';
 
 const DOTENV_PATH = path.join(os.homedir(), '.kobot', '.env');
 
-// 已知的 API Key 环境变量（来自 pi-ai 的 env-api-keys.js）
+// 已知的 API Key 环境变量
 const ALL_API_KEY_ENV_VARS = [
   'OPENAI_API_KEY',
   'ANTHROPIC_API_KEY',

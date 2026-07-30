@@ -112,7 +112,7 @@ Channel (CLI / Webhook)
 Kobot.stream() ───► Agent.prompt()
   │                       │
   │                       ▼
-  │                  pi-agent 核心
+  │                  Agent 核心
   │                  (消息循环、工具调用)
   │                       │
   │                       ▼
@@ -157,7 +157,7 @@ class Kobot {
 **关键设计点：**
 
 - `fromConfig()` 负责完整初始化流程：加载配置 → 初始化日志 → 注册工具 → 初始化模型
-- `stream()` 使用 pi-agent 的事件订阅机制，将 Agent 内部事件转换为 Kobot 的 `StreamEvent`
+- `stream()` 使用 Agent 的事件订阅机制，将 Agent 内部事件转换为 Kobot 的 `StreamEvent`
 - 会话管理通过 `SessionManager` 委托给具体的 `StorageAdapter`
 
 #### BaseTool（[src/tools/base.ts](../src/tools/base.ts)）
@@ -253,7 +253,7 @@ interface Channel {
 
 ```typescript
 // src/tools/weather.ts
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "../pi/ai";
 import { BaseTool, createToolResult, createToolError } from './base';
 
 export class GetWeatherTool extends BaseTool<typeof GetWeatherTool.parameters> {
@@ -415,7 +415,7 @@ providers:
       default_model: my-model
 ```
 
-支持的提供商会自动通过 `@earendil-works/pi-ai` 的 `builtinModels()` 发现。
+支持的提供商会自动通过内置的 `builtinModels()` 发现。
 
 ### 切换模型运行时
 
@@ -430,7 +430,7 @@ const bot = await Kobot.fromConfig({ modelPreset: 'fast' });
 Kobot 实现了一个多层次的错误处理系统：
 
 1. **工具层** — `BaseTool.safeExecute()` 自动重试和错误分类
-2. **Agent 层** — pi-agent 的事件订阅和错误传递
+2. **Agent 层** — Agent 的事件订阅和错误传递
 3. **渠道层** — CLI/Webhook 对 `STREAM_EVENT_RUN_FAILED` 做出响应
 4. **用户层** — 友好的错误提示和排查建议
 

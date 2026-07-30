@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Usage } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "../pi/agent";
+import type { Usage } from "../pi/ai";
 
 export interface SessionTreeEntryBase {
   type: string;

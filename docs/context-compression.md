@@ -62,7 +62,7 @@ CCS 的设计遵循以下原则：
 ## 3. 总体架构
 
 ```
-                         Agent Runtime (kobot/pi-agent-core)
+                         Agent Runtime
                                    │
                           ┌────────┴────────┐
                           │  Context Window │

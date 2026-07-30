@@ -1,7 +1,7 @@
 import readline from 'readline';
 import type { Channel, CLIConfig, ChannelResponse } from './types';
 import type { Kobot } from '../kobot';
-import { STREAM_EVENT_TEXT_DELTA, STREAM_EVENT_TEXT_COMPLETED, STREAM_EVENT_TOOL_STARTED, STREAM_EVENT_TOOL_COMPLETED, STREAM_EVENT_TOOL_FAILED, STREAM_EVENT_RUN_FAILED } from '../kobot';
+import { STREAM_EVENT_TEXT_DELTA, STREAM_EVENT_TEXT_COMPLETED, STREAM_EVENT_REASONING_DELTA, STREAM_EVENT_TOOL_STARTED, STREAM_EVENT_TOOL_COMPLETED, STREAM_EVENT_TOOL_FAILED, STREAM_EVENT_RUN_FAILED } from '../kobot';
 import { logger } from '../utils/logger';
 
 export class CLIChannel implements Channel {
@@ -12,6 +12,8 @@ export class CLIChannel implements Channel {
   private history: string[] = [];
   private bot: Kobot | null = null;
   private currentSessionKey: string;
+  private _thinkingActive = false;
+  private _hasTextDelta = false;
 
   constructor(config: CLIConfig) {
     this.id = config.id;
@@ -131,12 +133,35 @@ export class CLIChannel implements Channel {
     try {
       for await (const event of this.bot.stream(input, { channel: 'cli', sessionKey: this.currentSessionKey })) {
         switch (event.type) {
+          case STREAM_EVENT_REASONING_DELTA:
+            hasResponse = true;
+            if (event.content) {
+              if (!this._thinkingActive) {
+                this._thinkingActive = true;
+                process.stdout.write('\x1b[90mthink: ');
+              }
+              process.stdout.write(event.content);
+            }
+            break;
           case STREAM_EVENT_TEXT_DELTA:
             hasResponse = true;
+            this._hasTextDelta = true;
+            if (this._thinkingActive) {
+              this._thinkingActive = false;
+              process.stdout.write('\x1b[0m\n');
+            }
             process.stdout.write(event.content || '');
             break;
           case STREAM_EVENT_TEXT_COMPLETED:
             hasResponse = true;
+            if (this._thinkingActive) {
+              this._thinkingActive = false;
+              process.stdout.write('\x1b[0m\n');
+            }
+            // 兜底：如果没有流式 TEXT_DELTA（如仅有 thinking 无 text），在此处写出完整文本
+            if (!this._hasTextDelta && event.content) {
+              process.stdout.write(event.content);
+            }
             process.stdout.write('\n');
             break;
           case STREAM_EVENT_TOOL_STARTED:

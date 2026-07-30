@@ -2,7 +2,7 @@
 
 ## 1. 背景与问题
 
-在 `pi-agent-core` 这类 Harness Agent Runtime 中，Agent 的执行模型是一个持续循环：
+在 Harness Agent Runtime 中，Agent 的执行模型是一个持续循环：
 
 ```
 User Goal → LLM Reasoning → Tool Call → Tool Result → Context Injection → Next Turn
@@ -57,7 +57,7 @@ read_file("a.ts") → read_file("a.ts") → read_file("a.ts")
 ## 3. 总体架构
 
 ```
-                    Agent Runtime (pi-agent-core)
+                    Agent Runtime
                               │
                        Execution Events
                               │
@@ -665,7 +665,7 @@ interface FailureReport {
 
 ---
 
-## 9. 与 pi-agent-core 的集成
+## 9. 与 Agent Runtime 的集成
 
 ### 9.1 P0 集成方式：Hook + 事件订阅
 
@@ -752,7 +752,7 @@ agent.subscribe()
 
 ### 9.4 远期：Middleware 模式（P3）
 
-验证价值后，可考虑在 pi-agent-core 层引入 Middleware 抽象：
+验证价值后，可考虑在 Agent Runtime 层引入 Middleware 抽象：
 
 ```
 Agent → Middleware Chain → Tool Runtime
@@ -1014,4 +1014,4 @@ Agent Progress Guard 不只是一个 Loop Detector，而是 **Agent Runtime 的�
 
 > 让 Agent 不仅能执行任务，还能知道自己是否正在浪费资源。
 
-**推荐作为 `pi-agent-core / kobot` Runtime 层的基础能力实现。
+**推荐作为 `kobot` Runtime 层的基础能力实现。

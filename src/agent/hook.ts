@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentEvent, AgentMessage } from "../pi/agent";
 import type { AgentHook as AgentHookInterface, AgentHookContext, AgentRunHookContext, AgentToolHookContext, StreamingEmitter } from "./types";
 
 export type { AgentHookContext, AgentRunHookContext, AgentToolHookContext, StreamingEmitter };
@@ -43,7 +43,7 @@ export class SDKCaptureHook implements AgentHookInterface {
       type: "tool_execution_end",
       toolCallId: context.toolCallId,
       toolName: context.toolName,
-      result: context.result,
+      result: context.result as any,
       isError: false,
     });
   }
@@ -94,7 +94,7 @@ export class AgentHookManager {
     for (const hook of this.hooks) {
       if (hook.onToolResult) {
         await hook.onToolResult({
-          event: { type: "tool_execution_end", toolCallId, toolName, result, isError: false },
+          event: { type: "tool_execution_end", toolCallId, toolName, result: result as any, isError: false },
           toolName,
           toolCallId,
           args: {},
