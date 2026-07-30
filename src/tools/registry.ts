@@ -1,5 +1,5 @@
-import { AgentTool } from "@earendil-works/pi-agent-core";
-import type { TSchema } from "@earendil-works/pi-ai";
+import { AgentTool } from "../pi/agent";
+import type { TSchema } from "../pi/ai";
 import { BaseTool, ToolContext, ToolResult, isToolErrorResult } from "./base";
 import { getFilesystemTools } from "./filesystem";
 import { getShellTools } from "./shell";

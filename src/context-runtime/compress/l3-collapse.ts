@@ -140,7 +140,7 @@ function findFailedAttemptStart(messages: AgentMessage[], startIndex: number): n
  * 检查助手消息是否包含工具调用
  */
 function hasToolCalls(msg: AgentMessage): boolean {
-  // pi-agent-core 格式
+  // content 数组格式
   if ('content' in msg && Array.isArray((msg as any).content)) {
     for (const block of (msg as any).content) {
       if (block.type === 'toolCall') return true;

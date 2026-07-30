@@ -39,7 +39,7 @@ Agent Context Runtime（ACR）不是简单的 Context Compressor，而是 **Agen
 ## 3. 总体架构
 
 ```
-                         Agent Runtime (kobot/pi-agent-core)
+                         Agent Runtime
                                    │
                        ┌───────────┴───────────┐
                        │    Agent Loop         │

@@ -16,13 +16,13 @@ interface ToolCallInfo {
 
 /**
  * 从助手消息中提取工具调用列表
- * 支持 pi-agent-core 的 content 数组格式（type: "toolCall"）
+ * 支持 content 数组格式（type: "toolCall"）
  * 同时兼容旧格式（toolCalls / functionCall 字段）
  */
 function extractToolCallsFromAssistant(msg: AgentMessage): Array<{ id: string; name?: string }> {
   const calls: Array<{ id: string; name?: string }> = [];
 
-  // pi-agent-core 格式：工具调用在 content 数组中，type 为 "toolCall"
+  // content 数组格式：工具调用在 content 数组中，type 为 "toolCall"
   if ('content' in msg && Array.isArray((msg as any).content)) {
     for (const block of (msg as any).content) {
       if (block.type === 'toolCall' && block.id) {

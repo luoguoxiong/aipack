@@ -1,7 +1,7 @@
 {
-  "name": "kobot-pi",
+  "name": "kobot",
   "version": "0.0.2",
-  "description": "A lightweight personal AI assistant framework (based on pi-agent)",
+  "description": "A lightweight personal AI assistant framework",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -25,8 +25,6 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.81.1",
-    "@earendil-works/pi-ai": "^0.81.1",
     "@types/express": "^5.0.6",
     "axios": "^1.7.0",
     "commander": "^12.1.0",
@@ -34,9 +32,11 @@
     "express": "^5.2.1",
     "js-yaml": "^4.1.0",
     "open": "^10.0.0",
+    "partial-json": "^0.1.7",
     "pino": "^9.0.0",
     "pino-pretty": "^11.0.0",
     "pino-roll": "^4.0.0",
+    "@sinclair/typebox": "^0.34.0",
     "ws": "^8.18.0",
     "zod": "^3.23.0"
   },

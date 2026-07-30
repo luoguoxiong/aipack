@@ -1,6 +1,6 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "../pi/ai";
 import { BaseTool, createToolResult, createToolError } from './base';
 
 const execAsync = promisify(exec);

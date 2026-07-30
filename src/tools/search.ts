@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "../pi/ai";
 import { BaseTool, createToolResult, createToolError } from './base';
 import { spawn } from 'child_process';
 

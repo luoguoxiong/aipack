@@ -1,14 +1,14 @@
 import path from 'path';
-import { Agent, AgentHarness } from "@earendil-works/pi-agent-core";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { Agent, AgentHarness } from "./pi/agent";
+import type { AgentMessage } from "./pi/agent";
 import {
   estimateContextTokens,
   shouldCompact,
   estimateTokens,
   generateSummary,
-} from "@earendil-works/pi-agent-core";
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { Model, AssistantMessage, ImageContent, TextContent, Context, SimpleStreamOptions, Api } from "@earendil-works/pi-ai";
+} from "./pi/agent";
+import { builtinModels } from "./pi/ai/providers-all";
+import type { Model, AssistantMessage, ImageContent, TextContent, Context, SimpleStreamOptions, Api } from "./pi/ai";
 import { loadConfig, getConfigPath } from "./config/loader";
 import { Config, defaultConfig } from "./config/schema";
 import { createDefaultToolRegistry, ToolRegistry } from "./tools/registry";
@@ -399,8 +399,8 @@ export class Kobot {
         } else if (lastModelChange.type === 'message' && lastModelChange.message.role === 'assistant') {
           const msg = lastModelChange.message;
           if (msg.provider && msg.model) {
-            restoredProvider = msg.provider;
-            restoredModelId = msg.model;
+            restoredProvider = msg.provider as string;
+            restoredModelId = msg.model as string;
           }
         }
         
@@ -625,9 +625,9 @@ export class Kobot {
             timestamp: new Date().toISOString(),
             toolCallId: event.toolCallId,
             toolName: event.toolName,
-            input: event.args || {},
+            input: (event.args || {}) as Record<string, unknown>,
           });
-          
+
           if (!toolsUsed.includes(event.toolName)) {
             toolsUsed.push(event.toolName);
           }
@@ -639,7 +639,7 @@ export class Kobot {
           logger.info({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId, success: !event.isError }, '[TOOL_END] 工具执行已完成');
 
           // 存储工具结果条目
-          const resultContent = event.result?.content?.filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('') || '';
+          const resultContent = event.result?.content?.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('') || '';
           await sessionStorage.appendEntry({
             type: 'tool_result',
             id: await sessionStorage.createEntryId(),
@@ -834,6 +834,14 @@ export class Kobot {
         case 'message_update':
           logger.debug({ sessionKey }, '[MESSAGE_UPDATE] Message updated');
           if (event.message.role === 'assistant') {
+            const ae = event.assistantMessageEvent;
+
+            // Thinking content: route via stream event delta
+            if (ae?.type === 'thinking_delta' && ae.delta) {
+              pushEvent({ type: STREAM_EVENT_REASONING_DELTA, content: ae.delta });
+            }
+
+            // Text content: extract from shared content array (reliable tracking)
             const msg = event.message as AssistantMessage;
             const textContent = extractTextContent(msg.content);
             const delta = textContent.slice(finalContent.length);
@@ -892,7 +900,7 @@ export class Kobot {
             timestamp: new Date().toISOString(),
             toolCallId: event.toolCallId,
             toolName: event.toolName,
-            input: event.args || {},
+            input: (event.args || {}) as Record<string, unknown>,
           });
           
           if (!toolsUsed.includes(event.toolName)) {
@@ -928,7 +936,7 @@ export class Kobot {
           logger.info({ sessionKey, toolName: event.toolName, toolCallId: event.toolCallId, success: !event.isError }, '[TOOL_END] Tool execution completed');
           
           // 存储工具结果条目
-          const resultContent = event.result?.content?.filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('') || '';
+          const resultContent = event.result?.content?.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('') || '';
           await sessionStorage.appendEntry({
             type: 'tool_result',
             id: await sessionStorage.createEntryId(),
