@@ -10,43 +10,55 @@ import type {
   ToolCallContent,
   ThinkingContent,
   Usage,
+  Message,
 } from './types';
 import { createEmptyUsage, createEmptyAssistantMessage } from './types';
+import { retry, ok, isRetryableHttpStatus } from './retry';
+import { normalizeResponseError } from './error-body';
+import type { ProviderCompat } from './compat';
+import { detectCompat } from './compat';
+import { sanitizeSurrogates } from './sanitize-unicode';
+import { repairJson } from './json-parse';
 
-// ─── 局部 JSON 解析（惰性加载）──────────────────────────────────────
+// ─── 局部同步 JSON 解析（惰性加载）─────────────────────────────────
 
-type PartialParser = (input: string) => unknown;
+type SyncPartialParser = (input: string) => Record<string, unknown>;
 
-let cachedParser: PartialParser | null = null;
-let parserLoaded = false;
+let syncParser: SyncPartialParser | null = null;
+let syncParserLoaded = false;
 
-async function loadPartialParser(): Promise<PartialParser> {
-  if (parserLoaded) return cachedParser!;
-  parserLoaded = true;
+async function getSyncParser(): Promise<SyncPartialParser> {
+  if (syncParserLoaded) return syncParser!;
+  syncParserLoaded = true;
+  let partialParse: ((s: string) => unknown) | null = null;
   try {
     const mod: any = await import('partial-json');
-    const parse = mod.parse || mod.parseJSON || mod.default?.parse;
-    if (typeof parse === 'function') {
-      cachedParser = (s: string) => {
-        try {
-          return parse(s);
-        } catch {
-          return {};
-        }
-      };
-      return cachedParser;
-    }
+    partialParse = mod.parse || mod.parseJSON || mod.default?.parse;
   } catch {
-    // 回退到默认解析
+    // fall through
   }
-  cachedParser = (s: string) => {
+  syncParser = (s: string) => {
+    // 1) JSON.parse
+    try { return JSON.parse(s) as Record<string, unknown>; } catch { /* fall */ }
+    // 2) repair + JSON.parse
     try {
-      return JSON.parse(s);
-    } catch {
-      return {};
+      const repaired = repairJson(s);
+      if (repaired !== s) return JSON.parse(repaired) as Record<string, unknown>;
+    } catch { /* fall */ }
+    // 3) partial-json
+    if (partialParse) {
+      try { return (partialParse(s) ?? {}) as Record<string, unknown>; } catch { /* fall */ }
     }
+    // 4) repair + partial-json
+    if (partialParse) {
+      try {
+        const repaired = repairJson(s);
+        return (partialParse(repaired) ?? {}) as Record<string, unknown>;
+      } catch { /* fall */ }
+    }
+    return {};
   };
-  return cachedParser;
+  return syncParser;
 }
 
 // ─── API 密钥解析 ──────────────────────────────────────────────────
@@ -69,13 +81,109 @@ interface OpenAIUserContentPart {
   image_url?: { url: string };
 }
 
-function toOpenAIMessages(context: Context): unknown[] {
-  const messages: unknown[] = [];
-  if (context.systemPrompt) {
-    messages.push({ role: 'system', content: context.systemPrompt });
+/**
+ * 预处理消息列表，修复可能导致 API 400 的问题：
+ *
+ * 1. 跳过 stopReason === "error" / "aborted" 的 assistant 消息
+ *    （这类消息是失败的 API 响应记录，不应回放到后续请求中）
+ * 2. 为孤立的 toolCall 插入合成 toolResult
+ *    （当 user 消息插在 tool_calls 和 tool 响应之间时，满足 API 的配对要求）
+ *
+ * 此函数来自 @earendil-works/pi-ai 的 transformMessages 适配。
+ */
+function transformMessages(messages: Message[]): Message[] {
+  const result: Message[] = [];
+  let pendingToolCalls: Array<{ id: string; name?: string }> = [];
+  let existingToolResultIds = new Set<string>();
+
+  const flushPendingToolCalls = () => {
+    if (pendingToolCalls.length === 0) return;
+    for (const tc of pendingToolCalls) {
+      if (!existingToolResultIds.has(tc.id)) {
+        result.push({
+          role: 'toolResult',
+          toolCallId: tc.id,
+          toolName: tc.name ?? '',
+          content: [{ type: 'text', text: '(tool result not available)' }],
+          isError: true,
+          timestamp: Date.now(),
+        } as Message);
+      }
+    }
+    pendingToolCalls = [];
+    existingToolResultIds = new Set();
+  };
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+
+    if (msg.role === 'assistant') {
+      // 在处理新的 assistant 消息之前，先 flush 之前的孤立 tool call
+      flushPendingToolCalls();
+
+      // 跳过报错/中止的 assistant 消息
+      const assistantMsg = msg as AssistantMessage;
+      if (assistantMsg.stopReason === 'error' || assistantMsg.stopReason === 'aborted') {
+        continue;
+      }
+
+      // 记录此 assistant 消息中的 tool calls
+      const toolCalls = msg.content.filter(
+        (b): b is ToolCallContent => b.type === 'toolCall',
+      );
+      if (toolCalls.length > 0) {
+        pendingToolCalls = toolCalls.map((tc) => ({ id: tc.id, name: tc.name }));
+        existingToolResultIds = new Set();
+      }
+
+      result.push(msg);
+    } else if (msg.role === 'toolResult') {
+      existingToolResultIds.add(msg.toolCallId);
+      result.push(msg);
+    } else if (msg.role === 'user') {
+      // user 消息会打断 tool call 流，为之前的孤立调用插入合成结果
+      flushPendingToolCalls();
+      result.push(msg);
+    } else {
+      result.push(msg);
+    }
   }
-  for (const msg of context.messages) {
+
+  // 如果消息以未完成的 tool calls 结尾，合成结果
+  flushPendingToolCalls();
+
+  return result;
+}
+
+function toOpenAIMessages(context: Context, compat?: ProviderCompat): unknown[] {
+  const messages: unknown[] = [];
+  const { supportsDeveloperRole, requiresToolResultName, requiresAssistantAfterToolResult }
+    = compat ?? { supportsDeveloperRole: false, requiresToolResultName: false, requiresAssistantAfterToolResult: false };
+
+  if (context.systemPrompt) {
+    const role = supportsDeveloperRole ? 'developer' : 'system';
+    messages.push({ role, content: context.systemPrompt });
+  }
+
+  // 预处理：修复可能导致 API 400 的消息序列问题
+  const transformed = transformMessages(context.messages);
+
+  // requiresAssistantAfterToolResult: 某些 provider（如 DeepSeek）
+  // 要求在 tool 消息之后（而非 tool_calls 之后立即）跟一个空的 assistant 消息
+  // 作为桥接。如果立即在 tool_calls 之后插入会违反 OpenAI 协议
+  // （tool_calls 后面必须紧跟 tool 消息）。
+  let pendingAssistantAfterToolResult = false;
+  const flushAssistantAfterToolResult = () => {
+    if (pendingAssistantAfterToolResult) {
+      messages.push({ role: 'assistant', content: null });
+      pendingAssistantAfterToolResult = false;
+    }
+  };
+
+  for (const msg of transformed) {
     if (msg.role === 'user') {
+      // user 消息之前如果有待刷新的空 assistant，先刷新
+      flushAssistantAfterToolResult();
       if (typeof msg.content === 'string') {
         messages.push({ role: 'user', content: msg.content });
       } else {
@@ -102,9 +210,20 @@ function toOpenAIMessages(context: Context): unknown[] {
           toolCallParts.push(block);
         }
       }
+
+      // 跳过既没有内容也没有 tool_calls 的 assistant 消息
+      // （例如中止了的响应、空的错误消息等）
+      const hasText = textParts.some((t) => t.trim().length > 0);
+      if (!hasText && toolCallParts.length === 0) {
+        continue;
+      }
+
+      // 新的 assistant 消息到来前，刷新上一轮的 tool 桥接
+      flushAssistantAfterToolResult();
+
       const entry: Record<string, unknown> = {
         role: 'assistant',
-        content: textParts.join('') || null,
+        content: sanitizeSurrogates(textParts.join('')) || null,
       };
       if (toolCallParts.length > 0) {
         entry.tool_calls = toolCallParts.map((tc) => ({
@@ -115,17 +234,38 @@ function toOpenAIMessages(context: Context): unknown[] {
       }
       messages.push(entry);
     } else if (msg.role === 'toolResult') {
+      // 先刷新上轮 tool 的桥接（如果有），再处理本轮的 tool result
+      flushAssistantAfterToolResult();
+
       const text = msg.content
         .filter((b): b is TextContent => b.type === 'text')
         .map((b) => b.text)
         .join('\n');
-      messages.push({ role: 'tool', tool_call_id: msg.toolCallId, content: text });
+      // requiresToolResultName: 某些 provider（如 DeepSeek）要求在 tool result 中带 name
+      const entry: Record<string, unknown> = {
+        role: 'tool',
+        tool_call_id: msg.toolCallId,
+        content: text,
+      };
+      if (requiresToolResultName && msg.toolName) {
+        entry.name = msg.toolName;
+      }
+      messages.push(entry);
+
+      // 当前消息是 tool result，标记本轮 tool 响应结束后需要空 assistant 桥接
+      if (requiresAssistantAfterToolResult) {
+        pendingAssistantAfterToolResult = true;
+      }
     }
   }
+
+  // 如果消息以 tool result 结尾，确保末尾有空 assistant 桥接
+  flushAssistantAfterToolResult();
+
   return messages;
 }
 
-function toOpenAITools(context: Context): unknown[] | undefined {
+function toOpenAITools(context: Context, supportsStrictMode = true): unknown[] | undefined {
   if (!context.tools || context.tools.length === 0) return undefined;
   return context.tools.map((tool) => ({
     type: 'function',
@@ -133,32 +273,71 @@ function toOpenAITools(context: Context): unknown[] | undefined {
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
+      ...(supportsStrictMode ? { strict: false } : {}),
     },
   }));
+}
+
+// ─── 费用计算 ──────────────────────────────────────────────────────
+
+/**
+ * 根据模型费率和用量计算费用。
+ *
+ * 支持分档定价（tiers）：当输入 token 超过某个阈值时使用该档费率。
+ * 支持 Anthropic 1h cache write 双倍计费。
+ */
+export function calculateCost(
+  model: Pick<Model, 'cost'>,
+  usage: Usage,
+): Usage['cost'] {
+  const inputTokens = usage.input + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+  let rates = model.cost;
+  let matchedThreshold = -1;
+  for (const tier of (model.cost as any).tiers ?? []) {
+    if (inputTokens > tier.inputTokensAbove && tier.inputTokensAbove > matchedThreshold) {
+      rates = tier;
+      matchedThreshold = tier.inputTokensAbove;
+    }
+  }
+
+  const perMillion = (n: number) => n / 1_000_000;
+
+  // Anthropic 1h cache writes 按 2x 基础输入费率计费
+  const longWrite = (usage as any).cacheWrite1h ?? 0;
+  const shortWrite = (usage.cacheWrite ?? 0) - longWrite;
+
+  const cost = usage.cost;
+  cost.input = perMillion(usage.input) * rates.input;
+  cost.output = perMillion(usage.output) * rates.output;
+  cost.cacheRead = perMillion(usage.cacheRead ?? 0) * rates.cacheRead;
+  cost.cacheWrite = (perMillion(shortWrite) * rates.cacheWrite)
+    + (perMillion(longWrite) * rates.input * 2);
+  cost.total = cost.input + cost.output + (cost.cacheRead ?? 0) + (cost.cacheWrite ?? 0);
+  return cost;
 }
 
 // ─── 用量统计 ──────────────────────────────────────────────────────
 
 function buildUsage(raw: any, model: Model): Usage {
   const usage = createEmptyUsage();
-  const input = raw?.prompt_tokens ?? 0;
-  const output = raw?.completion_tokens ?? 0;
-  const total = raw?.total_tokens ?? input + output;
-  usage.input = input;
-  usage.output = output;
-  usage.total = total;
-  const cacheRead = raw?.prompt_tokens_details?.cached_tokens;
-  if (typeof cacheRead === 'number') {
-    usage.cacheRead = cacheRead;
-  }
-  // 费用（假设费率是按每百万 token 计算）
-  const perMillion = (n: number) => n / 1_000_000;
-  usage.cost.input = perMillion(input) * (model.cost?.input ?? 0);
-  usage.cost.output = perMillion(output) * (model.cost?.output ?? 0);
-  usage.cost.total = usage.cost.input + usage.cost.output;
-  if (typeof cacheRead === 'number') {
-    usage.cost.cacheRead = perMillion(cacheRead) * (model.cost?.cacheRead ?? 0);
-  }
+
+  const promptTokens = raw?.prompt_tokens ?? 0;
+  const cacheReadTokens = raw?.prompt_tokens_details?.cached_tokens
+    ?? raw?.prompt_cache_hit_tokens
+    ?? 0;
+  const cacheWriteTokens = raw?.prompt_tokens_details?.cache_write_tokens ?? 0;
+
+  // input = prompt_tokens - cacheRead - cacheWrite（跟随 OpenAI/OpenRouter 语义）
+  usage.input = Math.max(0, promptTokens - cacheReadTokens - cacheWriteTokens);
+  usage.output = raw?.completion_tokens ?? 0;
+  usage.cacheRead = cacheReadTokens;
+  usage.cacheWrite = cacheWriteTokens;
+  usage.reasoning = raw?.completion_tokens_details?.reasoning_tokens ?? 0;
+
+  // totalTokens = input + output + cacheRead + cacheWrite（还原原始值）
+  usage.totalTokens = usage.input + usage.output + cacheReadTokens + cacheWriteTokens;
+
+  calculateCost(model, usage);
   return usage;
 }
 
@@ -215,6 +394,8 @@ async function* runStream(
   context: Context,
   options: SimpleStreamOptions,
 ): AsyncGenerator<StreamEvent> {
+  const compat = detectCompat(model);
+
   const apiKey = resolveApiKey(model, options);
   if (!apiKey) {
     const error = createEmptyAssistantMessage();
@@ -228,22 +409,62 @@ async function* runStream(
 
   const baseUrl = (model.baseUrl || '').replace(/\/+$/, '');
   const url = `${baseUrl}/chat/completions`;
-  const messages = toOpenAIMessages(context);
-  const tools = toOpenAITools(context);
+  const messages = toOpenAIMessages(context, compat);
+  const tools = toOpenAITools(context, compat.supportsStrictMode);
 
+  // ── 构建请求 body（根据兼容性配置）────────────────────────────────
   const body: Record<string, unknown> = {
     model: model.id,
     messages,
     stream: true,
     stream_options: { include_usage: true },
-    max_tokens: options.maxTokens ?? model.maxTokens,
+    [compat.maxTokensField]: options.maxTokens ?? model.maxTokens,
   };
   if (tools) body.tools = tools;
   if (options.temperature !== undefined) body.temperature = options.temperature;
+
+  // Thinking/Reasoning 根据 provider 格式
   if (model.reasoning && options.reasoning) {
     const effortMap = model.thinkingLevelMap;
     const effort = effortMap ? effortMap[options.reasoning] : options.reasoning;
-    if (effort) body.reasoning_effort = effort;
+    if (effort) {
+      switch (compat.thinkingFormat) {
+        case 'deepseek':
+          body.thinking = { type: 'enabled' };
+          body.reasoning_effort = effort;
+          break;
+        case 'zai':
+          body.thinking = { type: 'enabled', clear_thinking: false };
+          break;
+        case 'qwen':
+          body.enable_thinking = true;
+          break;
+        case 'qwen-chat-template':
+          body.chat_template_kwargs = { enable_thinking: true };
+          break;
+        case 'openrouter':
+          body.reasoning = { effort };
+          break;
+        case 'ant-ling':
+          body.reasoning = { effort };
+          break;
+        case 'together':
+          body.reasoning = { enabled: true };
+          break;
+        case 'chat-template':
+          body.chat_template_kwargs = {};
+          break;
+        case 'openai':
+          body.reasoning_effort = effort;
+          break;
+        default:
+          // 默认尝试 reasoning_effort
+          if (compat.supportsReasoningEffort) {
+            body.reasoning_effort = effort;
+          }
+          break;
+      }
+    }
   }
 
   const headers: Record<string, string> = {
@@ -253,15 +474,27 @@ async function* runStream(
     ...(options.headers ?? {}),
   };
 
+  // Session affinity headers（OpenRouter 等）
+  if (compat.sendSessionAffinityHeaders && options.sessionId) {
+    headers['x-session-id'] = options.sessionId;
+  }
+
   options.onPayload?.(body);
 
+  // ── 带重试的 HTTP 请求 ──────────────────────────────────────────
   let response: Response;
   try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: options.signal,
+    response = await retry(async (attempt) => {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: options.signal,
+      });
+      if (!res.ok && isRetryableHttpStatus(res.status)) {
+        throw res;
+      }
+      return ok(res);
     });
   } catch (e: any) {
     const aborted = e?.name === 'AbortError' || options.signal?.aborted;
@@ -269,7 +502,22 @@ async function* runStream(
     error.model = model.id;
     error.provider = model.provider;
     error.stopReason = aborted ? 'aborted' : 'error';
-    error.errorMessage = aborted ? 'Request aborted' : String(e?.message ?? e);
+
+    if (aborted) {
+      error.errorMessage = 'Request aborted';
+    } else if (e?.status) {
+      // HTTP 错误（不成功的重试后）
+      const normalized = e?.body
+        ? { status: e.status, message: e.body }
+        : undefined;
+      if (normalized) {
+        error.errorMessage = `API error ${normalized.status}: ${normalized.message}`;
+      } else {
+        error.errorMessage = `API error ${e.status}${e.statusText ? ` ${e.statusText}` : ''}`;
+      }
+    } else {
+      error.errorMessage = String(e?.message ?? e);
+    }
     yield { type: 'error', reason: aborted ? 'aborted' : 'error', error };
     return;
   }
@@ -277,17 +525,12 @@ async function* runStream(
   options.onResponse?.(response);
 
   if (!response.ok) {
-    let errText = '';
-    try {
-      errText = await response.text();
-    } catch {
-      // ignore
-    }
+    const normalized = await normalizeResponseError(response);
     const error = createEmptyAssistantMessage();
     error.model = model.id;
     error.provider = model.provider;
     error.stopReason = 'error';
-    error.errorMessage = `API error ${response.status}${response.statusText ? ` ${response.statusText}` : ''}: ${errText}`;
+    error.errorMessage = `API error ${response.status}: ${normalized.message}`;
     yield { type: 'error', reason: 'error', error };
     return;
   }
@@ -310,7 +553,7 @@ async function* runStream(
 
   yield { type: 'start', partial };
 
-  const parser = await loadPartialParser();
+  const parser = await getSyncParser();
 
   // 流式状态
   let currentTextIndex: number | null = null;

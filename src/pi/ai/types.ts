@@ -48,6 +48,8 @@ export interface Usage {
   totalTokens?: number;
   cacheRead?: number;
   cacheWrite?: number;
+  /** 推理 token 数（completion_tokens 的子集） */
+  reasoning?: number;
   cost: {
     input: number;
     output: number;

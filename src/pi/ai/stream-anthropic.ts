@@ -12,6 +12,8 @@ import type {
   Usage,
 } from './types';
 import { createEmptyUsage, createEmptyAssistantMessage } from './types';
+import { retry, ok, isRetryableHttpStatus } from './retry';
+import { normalizeResponseError } from './error-body';
 
 // ─── API 密钥解析 ──────────────────────────────────────────────────
 
@@ -208,13 +210,20 @@ async function* runStream(
 
   options.onPayload?.(body);
 
+  // ── 带重试的 HTTP 请求 ──────────────────────────────────────────
   let response: Response;
   try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: options.signal,
+    response = await retry(async (attempt) => {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: options.signal,
+      });
+      if (!res.ok && isRetryableHttpStatus(res.status)) {
+        throw res;
+      }
+      return ok(res);
     });
   } catch (e: any) {
     const aborted = e?.name === 'AbortError' || options.signal?.aborted;
@@ -230,17 +239,12 @@ async function* runStream(
   options.onResponse?.(response);
 
   if (!response.ok) {
-    let errText = '';
-    try {
-      errText = await response.text();
-    } catch {
-      // 忽略
-    }
+    const normalized = await normalizeResponseError(response);
     const error = createEmptyAssistantMessage();
     error.model = model.id;
     error.provider = model.provider;
     error.stopReason = 'error';
-    error.errorMessage = `Anthropic API error ${response.status}: ${errText}`;
+    error.errorMessage = `Anthropic API error ${response.status}: ${normalized.message}`;
     yield { type: 'error', reason: 'error', error };
     return;
   }
