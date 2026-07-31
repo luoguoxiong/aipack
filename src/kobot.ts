@@ -1,6 +1,6 @@
 import path from 'path';
 import { Agent } from "./agent";
-import type { AgentMessage } from "./agent";
+import type { AgentMessage, AgentEvent, RunResult, SessionInfo } from "./agent";
 import {
   estimateContextTokens,
   shouldCompact,
@@ -23,32 +23,28 @@ import { AgentContextRuntime } from "./context-runtime";
 import { ensureToolPairing } from "./context-runtime/compress/pairing";
 import { SkillManager } from "./skill";
 
-export const STREAM_EVENT_RUN_STARTED = 'run_started';
-export const STREAM_EVENT_RUN_COMPLETED = 'run_completed';
-export const STREAM_EVENT_RUN_FAILED = 'run_failed';
-export const STREAM_EVENT_TEXT_DELTA = 'text_delta';
-export const STREAM_EVENT_TEXT_COMPLETED = 'text_completed';
-export const STREAM_EVENT_REASONING_DELTA = 'reasoning_delta';
-export const STREAM_EVENT_REASONING_COMPLETED = 'reasoning_completed';
-export const STREAM_EVENT_TOOL_STARTED = 'tool_started';
-export const STREAM_EVENT_TOOL_COMPLETED = 'tool_completed';
-export const STREAM_EVENT_TOOL_FAILED = 'tool_failed';
-export const STREAM_EVENT_FILE_EDIT = 'file_edit';
-export const STREAM_EVENT_TYPES = [
-  STREAM_EVENT_RUN_STARTED,
-  STREAM_EVENT_RUN_COMPLETED,
-  STREAM_EVENT_RUN_FAILED,
-  STREAM_EVENT_TEXT_DELTA,
-  STREAM_EVENT_TEXT_COMPLETED,
-  STREAM_EVENT_REASONING_DELTA,
-  STREAM_EVENT_REASONING_COMPLETED,
-  STREAM_EVENT_TOOL_STARTED,
-  STREAM_EVENT_TOOL_COMPLETED,
-  STREAM_EVENT_TOOL_FAILED,
-  STREAM_EVENT_FILE_EDIT,
-] as const;
+// ─── 业务层事件 ───────────────────────────────────────────────
+// 流事件统一使用 src/agent/types.ts 的 AgentEvent 体系，
+// 此处仅补充 Kobot 层独有的业务事件（运行生命周期与文件编辑）
 
-export type StreamEventType = typeof STREAM_EVENT_TYPES[number];
+export interface RunStartedEvent {
+  type: 'run_started';
+  metadata: Record<string, unknown>;
+}
+
+export interface RunFinishedEvent {
+  type: 'run_finished';
+  content?: string;
+  error?: string;
+  result: RunResult;
+}
+
+export interface RunFailedEvent {
+  type: 'run_failed';
+  content?: string;
+  error: string;
+  result?: RunResult;
+}
 
 export interface FileEditEventData {
   edit_type: 'start' | 'end' | 'error';
@@ -59,33 +55,15 @@ export interface FileEditEventData {
   error?: string;
 }
 
-export interface StreamEvent {
-  type: StreamEventType;
-  content?: string;
-  error?: string;
-  usage?: Record<string, number>;
-  metadata?: Record<string, unknown>;
-  result?: RunResult;
-  tool_name?: string;
-  tool_call_id?: string;
-  file_edit?: FileEditEventData;
+export interface FileEditEvent {
+  type: 'file_edit';
+  file_edit: FileEditEventData;
 }
 
-export interface RunResult {
-  content: string;
-  toolsUsed: string[];
-  usage: Record<string, number>;
-  stopReason: string;
-  metadata: Record<string, unknown>;
-  error?: string;
-}
+export type KobotEvent = AgentEvent | RunStartedEvent | RunFinishedEvent | RunFailedEvent | FileEditEvent;
 
-export interface SessionInfo {
-  key: string;
-  messageCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
+// 统一类型定义，单一来源见 src/agent/types.ts
+export type { RunResult, SessionInfo } from "./agent";
 
 export interface SessionDetail {
   key: string;
@@ -560,26 +538,26 @@ export class Kobot {
 
     const unsubscribe = agent.subscribe(async (event) => {
       switch (event.type) {
-        case 'agent_start':
+        case 'agent_started':
           logger.info({ sessionKey, traceId }, '[AGENT_START] Agent 运行已开始');
           break;
-        case 'agent_end':
+        case 'agent_finished':
           logger.info({ sessionKey, traceId, messageCount: event.messages.length }, '[AGENT_END] Agent 运行已完成');
           break;
-        case 'turn_start':
+        case 'turn_started':
           logger.debug({ sessionKey, traceId }, '[TURN_START] 回合已开始');
           this.progressGuard.startTurn();
           break;
-        case 'turn_end':
+        case 'turn_finished':
           const turnMsg = event.message as AssistantMessage;
           logger.debug({ sessionKey, traceId, stopReason: turnMsg.stopReason, toolResultCount: event.toolResults.length }, '[TURN_END] 回合已完成');
           break;
-        case 'message_start':
+        case 'message_started':
           logger.debug({ sessionKey, traceId, role: event.message.role }, '[MESSAGE_START] 消息已开始');
           break;
-        case 'message_update':
+        case 'message_updated':
           break;
-        case 'message_end':
+        case 'message_finished':
           const msg = event.message as AssistantMessage;
           logger.debug({ sessionKey, traceId, role: event.message.role, stopReason: msg.stopReason }, '[MESSAGE_END] 消息已完成');
           
@@ -614,7 +592,7 @@ export class Kobot {
             }
           }
           break;
-        case 'tool_execution_start':
+        case 'tool_started':
           logger.info({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId, args: event.args }, '[TOOL_START] 工具执行已开始');
           
           // 存储工具调用条目
@@ -632,14 +610,14 @@ export class Kobot {
             toolsUsed.push(event.toolName);
           }
           break;
-        case 'tool_execution_update':
+        case 'tool_progress':
           logger.debug({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId }, '[TOOL_UPDATE] 工具执行中');
           break;
-        case 'tool_execution_end':
+        case 'tool_finished':
           logger.info({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId, success: !event.isError }, '[TOOL_END] 工具执行已完成');
 
           // 存储工具结果条目
-          const resultContent = event.result?.content?.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('') || '';
+          const resultContent = event.result?.content?.filter((c): c is TextContent => c.type === 'text').map((c) => c.text).join('') || '';
           await sessionStorage.appendEntry({
             type: 'tool_result',
             id: await sessionStorage.createEntryId(),
@@ -647,7 +625,7 @@ export class Kobot {
             timestamp: new Date().toISOString(),
             toolCallId: event.toolCallId,
             toolName: event.toolName,
-            input: (event as any).args || {},
+            input: (event.args ?? {}) as Record<string, unknown>,
             content: resultContent,
             isError: event.isError,
             usage: event.result?.usage,
@@ -657,7 +635,7 @@ export class Kobot {
           if (this.progressGuard.isEnabled) {
             const pgIntervention = this.progressGuard.recordToolCall(
               event.toolName,
-              (event as any).args || {},
+              (event.args ?? {}) as Record<string, unknown>,
               {
                 success: !event.isError,
                 output: resultContent,
@@ -673,7 +651,7 @@ export class Kobot {
           if (acr) {
             acr.observeAfterToolCall(
               event.toolName,
-              (event as any).args || {},
+              (event.args ?? {}) as Record<string, unknown>,
               {
                 success: !event.isError,
                 output: resultContent,
@@ -716,7 +694,7 @@ export class Kobot {
   async *stream(
     message: string,
     options: RunOptions = {},
-  ): AsyncGenerator<StreamEvent> {
+  ): AsyncGenerator<KobotEvent> {
     const sessionKey = options.sessionKey || 'sdk:default';
 
     const prevQueue = this.requestQueues.get(sessionKey) ?? Promise.resolve();
@@ -769,7 +747,7 @@ export class Kobot {
     }
 
     yield {
-      type: STREAM_EVENT_RUN_STARTED,
+      type: 'run_started',
       metadata: {
         session_key: sessionKey,
         channel: options.channel || 'cli',
@@ -783,10 +761,10 @@ export class Kobot {
     let stopReason = 'completed';
     let error: string | undefined;
 
-    const eventQueue: StreamEvent[] = [];
-    let resolveNext: ((value: StreamEvent) => void) | null = null;
+    const eventQueue: KobotEvent[] = [];
+    let resolveNext: ((value: KobotEvent) => void) | null = null;
 
-    const pushEvent = (event: StreamEvent): void => {
+    const pushEvent = (event: KobotEvent): void => {
       if (resolveNext) {
         resolveNext(event);
         resolveNext = null;
@@ -797,62 +775,71 @@ export class Kobot {
 
     const unsubscribe = agent.subscribe(async (event) => {
       switch (event.type) {
-        case 'agent_start':
+        case 'agent_started':
           logger.info({ sessionKey }, '[AGENT_START] Agent stream started');
           break;
-        case 'agent_end':
+        case 'agent_finished':
           logger.info({ sessionKey, messageCount: event.messages.length }, '[AGENT_END] Agent stream completed');
-          pushEvent({
-            type: error ? STREAM_EVENT_RUN_FAILED : STREAM_EVENT_RUN_COMPLETED,
-            content: finalContent,
-            error,
-            result: {
+          if (error) {
+            pushEvent({
+              type: 'run_failed',
               content: finalContent,
-              toolsUsed,
-              usage: {},
-              stopReason,
-              metadata: {},
               error,
-            },
-          });
+              result: {
+                content: finalContent,
+                toolsUsed,
+                usage: {},
+                stopReason,
+                metadata: {},
+                error,
+              },
+            });
+          } else {
+            pushEvent({
+              type: 'run_finished',
+              content: finalContent,
+              result: {
+                content: finalContent,
+                toolsUsed,
+                usage: {},
+                stopReason,
+                metadata: {},
+              },
+            });
+          }
           break;
-        case 'turn_start':
+        case 'turn_started':
           logger.debug({ sessionKey }, '[TURN_START] Turn started');
           this.progressGuard.startTurn();
           break;
-        case 'turn_end':
+        case 'turn_finished':
           const turnMsg = event.message as AssistantMessage;
           logger.debug({ sessionKey, stopReason: turnMsg.stopReason, toolResultCount: event.toolResults.length }, '[TURN_END] Turn completed');
           break;
-        case 'message_start':
+        case 'message_started':
           logger.debug({ sessionKey, role: event.message.role }, '[MESSAGE_START] Message started');
           if (event.message.role === 'assistant') {
             finalContent = '';
           }
           break;
 
-        case 'message_update':
+        case 'message_updated':
           logger.debug({ sessionKey }, '[MESSAGE_UPDATE] Message updated');
-          if (event.message.role === 'assistant') {
-            const ae = event.assistantMessageEvent;
-
-            // Thinking content: route via stream event delta
-            if (ae?.type === 'thinking_delta' && ae.delta) {
-              pushEvent({ type: STREAM_EVENT_REASONING_DELTA, content: ae.delta });
-            }
-
-            // Text content: extract from shared content array (reliable tracking)
-            const msg = event.message as AssistantMessage;
-            const textContent = extractTextContent(msg.content);
-            const delta = textContent.slice(finalContent.length);
-            if (delta) {
-              finalContent = textContent;
-              pushEvent({ type: STREAM_EVENT_TEXT_DELTA, content: delta });
-            }
-          }
           break;
 
-        case 'message_end':
+        // 细粒度增量事件：Agent 层已翻译并发出，此处直接透传
+        case 'text_chunk':
+          pushEvent(event);
+          break;
+        case 'text_finished':
+          finalContent = event.content;
+          pushEvent(event);
+          break;
+        case 'thinking_chunk':
+          pushEvent(event);
+          break;
+
+        case 'message_finished':
           logger.debug({ sessionKey, role: event.message.role }, '[MESSAGE_END] Message completed');
 
           // 存储消息条目
@@ -869,7 +856,6 @@ export class Kobot {
             finalContent = extractTextContent(msg.content);
             stopReason = msg.stopReason || 'completed';
             error = msg.errorMessage;
-            pushEvent({ type: STREAM_EVENT_TEXT_COMPLETED, content: finalContent });
 
             // Progress Guard: 记录助手输出
             if (finalContent) {
@@ -889,7 +875,7 @@ export class Kobot {
           }
           break;
 
-        case 'tool_execution_start':
+        case 'tool_started':
           logger.info({ sessionKey, toolName: event.toolName, toolCallId: event.toolCallId }, '[TOOL_START] Tool execution started');
           
           // 存储工具调用条目
@@ -906,17 +892,13 @@ export class Kobot {
           if (!toolsUsed.includes(event.toolName)) {
             toolsUsed.push(event.toolName);
           }
-          pushEvent({
-            type: STREAM_EVENT_TOOL_STARTED,
-            tool_name: event.toolName,
-            tool_call_id: event.toolCallId,
-          });
+          pushEvent(event);
 
           if (FILE_EDIT_TOOLS.has(event.toolName)) {
             const args = event.args as Record<string, unknown>;
             const filePath = args.file_path || args.path || args.file;
             pushEvent({
-              type: STREAM_EVENT_FILE_EDIT,
+              type: 'file_edit',
               file_edit: {
                 edit_type: 'start',
                 call_id: event.toolCallId,
@@ -928,15 +910,15 @@ export class Kobot {
           }
           break;
 
-        case 'tool_execution_update':
+        case 'tool_progress':
           logger.debug({ sessionKey, toolName: event.toolName, toolCallId: event.toolCallId }, '[TOOL_UPDATE] Tool execution in progress');
           break;
 
-        case 'tool_execution_end':
+        case 'tool_finished':
           logger.info({ sessionKey, toolName: event.toolName, toolCallId: event.toolCallId, success: !event.isError }, '[TOOL_END] Tool execution completed');
           
           // 存储工具结果条目
-          const resultContent = event.result?.content?.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('') || '';
+          const resultContent = event.result?.content?.filter((c): c is TextContent => c.type === 'text').map((c) => c.text).join('') || '';
           await sessionStorage.appendEntry({
             type: 'tool_result',
             id: await sessionStorage.createEntryId(),
@@ -944,25 +926,20 @@ export class Kobot {
             timestamp: new Date().toISOString(),
             toolCallId: event.toolCallId,
             toolName: event.toolName,
-            input: (event as any).args || {},
+            input: (event.args ?? {}) as Record<string, unknown>,
             content: resultContent,
             isError: event.isError,
             usage: event.result?.usage,
           });
           
-          pushEvent({
-            type: event.isError ? STREAM_EVENT_TOOL_FAILED : STREAM_EVENT_TOOL_COMPLETED,
-            tool_name: event.toolName,
-            tool_call_id: event.toolCallId,
-            content: event.result?.content?.filter((c: { type: string }): c is TextContent => c.type === 'text').map((c: TextContent) => c.text).join(''),
-          });
+          pushEvent(event);
 
           if (FILE_EDIT_TOOLS.has(event.toolName)) {
-            const storedArgs = (event as any).args;
+            const storedArgs = event.args ?? {};
             const args = storedArgs as Record<string, unknown>;
             const filePath = args?.file_path || args?.path;
             pushEvent({
-              type: STREAM_EVENT_FILE_EDIT,
+              type: 'file_edit',
               file_edit: {
                 edit_type: event.isError ? 'error' : 'end',
                 call_id: event.toolCallId,
@@ -978,7 +955,7 @@ export class Kobot {
           if (this.progressGuard.isEnabled) {
             const pgIntervention = this.progressGuard.recordToolCall(
               event.toolName,
-              (event as any).args || {},
+              (event.args ?? {}) as Record<string, unknown>,
               {
                 success: !event.isError,
                 output: resultContent,
@@ -994,7 +971,7 @@ export class Kobot {
           if (acr) {
             acr.observeAfterToolCall(
               event.toolName,
-              (event as any).args || {},
+              (event.args ?? {}) as Record<string, unknown>,
               {
                 success: !event.isError,
                 output: resultContent,
@@ -1015,15 +992,15 @@ export class Kobot {
         if (eventQueue.length > 0) {
           const event = eventQueue.shift()!;
           yield event;
-          if (event.type === STREAM_EVENT_RUN_COMPLETED || event.type === STREAM_EVENT_RUN_FAILED) {
+          if (event.type === 'run_finished' || event.type === 'run_failed') {
             break;
           }
         } else {
-          const event = await new Promise<StreamEvent>((resolve) => {
+          const event = await new Promise<KobotEvent>((resolve) => {
             resolveNext = resolve;
           });
           yield event;
-          if (event.type === STREAM_EVENT_RUN_COMPLETED || event.type === STREAM_EVENT_RUN_FAILED) {
+          if (event.type === 'run_finished' || event.type === 'run_failed') {
             break;
           }
         }
@@ -1039,7 +1016,7 @@ export class Kobot {
       stopReason = 'error';
       
       pushEvent({
-        type: STREAM_EVENT_RUN_FAILED,
+        type: 'run_failed',
         content: finalContent,
         error,
         result: {
@@ -1195,7 +1172,7 @@ export class Kobot {
           role: 'system',
           content: compiled,
           timestamp: Date.now(),
-        } as any);
+        });
       }
     } catch (err) {
       logger.error({ error: (err as Error).message }, '[SKILL] Prompt 编译失败，跳过注入');
@@ -1286,7 +1263,7 @@ export class Kobot {
       onProgress?.(i + 1, userMessages.length, userMsg.substring(0, 120));
 
       const unsubscribe = agent.subscribe((event) => {
-        if (event.type === 'message_end' && event.message.role === 'assistant') {
+        if (event.type === 'message_finished' && event.message.role === 'assistant') {
           const msg = event.message as AssistantMessage;
           response = extractTextContent(msg.content);
         }
