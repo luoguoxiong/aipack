@@ -1,12 +1,6 @@
 import path from 'path';
 import { Agent } from "./agent";
 import type { AgentMessage, AgentEvent, RunResult, SessionInfo } from "./agent";
-import {
-  estimateContextTokens,
-  shouldCompact,
-  estimateTokens,
-  generateSummary,
-} from "./agent";
 import { builtinModels } from "./ai/providers-all";
 import type { Model, AssistantMessage, ImageContent, TextContent, Context, SimpleStreamOptions, Api } from "./ai";
 import { loadConfig, getConfigPath } from "./config/loader";
