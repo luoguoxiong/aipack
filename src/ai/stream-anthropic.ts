@@ -12,8 +12,9 @@ import type {
   Usage,
 } from './types';
 import { createEmptyUsage, createEmptyAssistantMessage } from './types';
-import { retry, ok, isRetryableHttpStatus } from './retry';
+import { retry, ok, isRetryableHttpStatus } from '../utils/retry';
 import { normalizeResponseError } from './error-body';
+import { parseSSEEvents } from './sse-parser';
 
 // ─── API 密钥解析 ──────────────────────────────────────────────────
 
@@ -111,44 +112,7 @@ function buildUsage(inputTokens: number, outputTokens: number, model: Model, cac
   return usage;
 }
 
-// ─── Anthropic 的 SSE 解析 ─────────────────────────────────────────
-
-interface AnthropicSSEEvent {
-  event: string;
-  data: any;
-}
-
-function parseSSEEventsResult(buffer: string): { events: AnthropicSSEEvent[]; remaining: string } {
-  const events: AnthropicSSEEvent[] = [];
-  let remaining = buffer;
-  while (true) {
-    const dblNl = remaining.indexOf('\n\n');
-    if (dblNl === -1) break;
-    const block = remaining.slice(0, dblNl);
-    remaining = remaining.slice(dblNl + 2);
-
-    let eventType = 'message';
-    let dataStr = '';
-    for (const line of block.split('\n')) {
-      const trimmed = line.replace(/\r$/, '');
-      if (trimmed.startsWith('event:')) {
-        eventType = trimmed.slice(6).trim();
-      } else if (trimmed.startsWith('data:')) {
-        dataStr += trimmed.slice(5).trimStart();
-      }
-    }
-    if (dataStr) {
-      try {
-        events.push({ event: eventType, data: JSON.parse(dataStr) });
-      } catch {
-        // skip malformed
-      }
-    }
-  }
-  return { events, remaining };
-}
-
-// ─── 主流式运行器 ───────────────────────────────────────────────────
+// ─── Anthropic 的流式运行器 ─────────────────────────────────────────
 
 async function* runStream(
   model: Model,
@@ -290,11 +254,13 @@ async function* runStream(
       buffer += decoder.decode(value, { stream: true });
 
       // 解析完整的 SSE 块，将不完整的尾部保留在 buffer 中
-      const { events, remaining } = parseSSEEventsResult(buffer);
+      const { events, remaining } = parseSSEEvents(buffer);
       buffer = remaining;
 
       for (const evt of events) {
-        const { event: eventType, data } = evt;
+        let data: any;
+        try { data = JSON.parse(evt.data ?? ''); } catch { continue; }
+        const eventType = evt.event ?? 'message';
 
         switch (eventType) {
           case 'message_start': {

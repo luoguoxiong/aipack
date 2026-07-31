@@ -48,6 +48,6 @@ export { WebhookChannel, createWebhookChannel } from './channels/webhook';
 export { FeishuChannel, createFeishuChannel } from './channels/feishu';
 export type { Channel, ChannelConfig, ChannelMessage, ChannelResponse, CLIConfig, WebhookConfig, FeishuConfig } from './channels/types';
 
-export { Agent, AgentHarness } from './agent';
+export { Agent } from './agent';
 export type { AgentEvent, AgentContext, AgentMessage, AgentTool, AgentState } from './agent';
 export type { Models } from './ai';

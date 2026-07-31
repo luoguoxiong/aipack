@@ -2,7 +2,7 @@ import cronParser from 'cron-parser';
 import { Type } from "../ai";
 import { BaseTool, createToolResult, createToolError } from './base';
 
-interface ScheduledTask {
+export interface ScheduledTask {
   id: string;
   cron: string;
   command: string;
@@ -11,7 +11,19 @@ interface ScheduledTask {
   nextRun?: number;
 }
 
-const tasks: Map<string, ScheduledTask> = new Map();
+/**
+ * CronScheduler — 持有定时任务列表，支持多实例隔离
+ * 每个 getCronTools() 调用会创建独立的调度器实例
+ */
+export class CronScheduler {
+  readonly tasks: Map<string, ScheduledTask> = new Map();
+
+  getTasks(): ScheduledTask[] {
+    return Array.from(this.tasks.values());
+  }
+}
+
+// ─── Cron 工具（每个工具引用一个 scheduler 实例）─────────────────────
 
 export class CronAddTool extends BaseTool<typeof CronAddTool.parameters> {
   name = 'cron_add';
@@ -24,11 +36,18 @@ export class CronAddTool extends BaseTool<typeof CronAddTool.parameters> {
   });
   parameters = CronAddTool.parameters;
 
+  private scheduler: CronScheduler;
+
+  constructor(scheduler: CronScheduler) {
+    super();
+    this.scheduler = scheduler;
+  }
+
   async execute(toolCallId: string, params: { id: string; cron: string; command: string }) {
     try {
       cronParser.parseExpression(params.cron);
       const nextRun = cronParser.parseExpression(params.cron).next().getTime();
-      tasks.set(params.id, {
+      this.scheduler.tasks.set(params.id, {
         id: params.id,
         cron: params.cron,
         command: params.command,
@@ -49,11 +68,19 @@ export class CronListTool extends BaseTool<typeof CronListTool.parameters> {
   static parameters = Type.Object({});
   parameters = CronListTool.parameters;
 
+  private scheduler: CronScheduler;
+
+  constructor(scheduler: CronScheduler) {
+    super();
+    this.scheduler = scheduler;
+  }
+
   async execute(toolCallId: string) {
-    if (tasks.size === 0) {
+    const tasks = this.scheduler.getTasks();
+    if (tasks.length === 0) {
       return createToolResult('无定时任务');
     }
-    const result = Array.from(tasks.values()).map(task => 
+    const result = tasks.map(task =>
       `${task.id}: ${task.cron} -> ${task.command} (${task.enabled ? 'enabled' : 'disabled'})`
     ).join('\n');
     return createToolResult(result);
@@ -69,11 +96,18 @@ export class CronRemoveTool extends BaseTool<typeof CronRemoveTool.parameters> {
   });
   parameters = CronRemoveTool.parameters;
 
+  private scheduler: CronScheduler;
+
+  constructor(scheduler: CronScheduler) {
+    super();
+    this.scheduler = scheduler;
+  }
+
   async execute(toolCallId: string, params: { id: string }) {
-    if (!tasks.has(params.id)) {
+    if (!this.scheduler.tasks.has(params.id)) {
       return createToolError(`任务未找到: ${params.id}`);
     }
-    tasks.delete(params.id);
+    this.scheduler.tasks.delete(params.id);
     return createToolResult(`任务已移除: ${params.id}`);
   }
 }
@@ -88,8 +122,15 @@ export class CronEnableTool extends BaseTool<typeof CronEnableTool.parameters> {
   });
   parameters = CronEnableTool.parameters;
 
+  private scheduler: CronScheduler;
+
+  constructor(scheduler: CronScheduler) {
+    super();
+    this.scheduler = scheduler;
+  }
+
   async execute(toolCallId: string, params: { id: string; enabled: boolean }) {
-    const task = tasks.get(params.id);
+    const task = this.scheduler.tasks.get(params.id);
     if (!task) {
       return createToolError(`任务未找到: ${params.id}`);
     }
@@ -98,15 +139,12 @@ export class CronEnableTool extends BaseTool<typeof CronEnableTool.parameters> {
   }
 }
 
-export function getCronTools(): BaseTool[] {
+export function getCronTools(scheduler?: CronScheduler): BaseTool[] {
+  const s = scheduler ?? new CronScheduler();
   return [
-    new CronAddTool(),
-    new CronListTool(),
-    new CronRemoveTool(),
-    new CronEnableTool(),
+    new CronAddTool(s),
+    new CronListTool(s),
+    new CronRemoveTool(s),
+    new CronEnableTool(s),
   ];
-}
-
-export function getCronTasks(): ScheduledTask[] {
-  return Array.from(tasks.values());
 }

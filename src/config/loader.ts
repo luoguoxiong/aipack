@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { Value } from '@sinclair/typebox/value';
 import { ConfigSchema, Config, defaultConfig } from './schema';
 import { getConfigPath, resolveWorkspace, resolveSubPath, resolveHomePath } from './paths';
 
@@ -29,7 +30,7 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     try {
       const content = await fs.promises.readFile(resolvedPath, 'utf-8');
       const raw = yaml.load(content) as unknown;
-      config = ConfigSchema.parse(raw);
+      config = Value.Decode(ConfigSchema, raw) as Config;
     } catch (err) {
       console.warn(`从 ${resolvedPath} 加载配置失败，使用默认配置：`, (err as Error).message);
       config = defaultConfig();

@@ -12,7 +12,7 @@
     "build": "tsup",
     "dev": "tsx src/cli.ts",
     "start": "node --import tsx dist/cli.js",
-    "test": "node --import tsx --test tests/**/*.test.ts",
+    "test": "node --import tsx --test tests/*.test.ts",
     "lint": "tsc --noEmit"
   },
   "keywords": [
@@ -37,8 +37,7 @@
     "pino-pretty": "^11.0.0",
     "pino-roll": "^4.0.0",
     "@sinclair/typebox": "^0.34.0",
-    "ws": "^8.18.0",
-    "zod": "^3.23.0"
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

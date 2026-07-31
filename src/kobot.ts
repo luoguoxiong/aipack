@@ -1,5 +1,5 @@
 import path from 'path';
-import { Agent, AgentHarness } from "./agent";
+import { Agent } from "./agent";
 import type { AgentMessage } from "./agent";
 import {
   estimateContextTokens,
@@ -1343,5 +1343,5 @@ export class Kobot {
   }
 }
 
-export { Agent, AgentHarness };
+export { Agent };
 export { builtinModels };
