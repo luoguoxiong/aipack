@@ -501,7 +501,7 @@ const result = await bot.run('你好！');
 
 // 流式处理消息
 for await (const event of bot.stream('写一个 Hello World')) {
-  if (event.type === 'text_delta') {
+  if (event.type === 'text_chunk') {
     process.stdout.write(event.content || '');
   }
 }
@@ -524,13 +524,13 @@ await bot.close();
 
 `stream()` 方法通过 AsyncGenerator 产生以下事件：
 
-| 事件类型                                              | 说明                        |
-| ------------------------------------------------- | ------------------------- |
-| `run_started` / `run_completed` / `run_failed`    | 运行生命周期                    |
-| `text_delta` / `text_completed`                   | 文本流式输出                    |
-| `reasoning_delta` / `reasoning_completed`         | 推理过程输出                    |
-| `tool_started` / `tool_completed` / `tool_failed` | 工具执行事件                    |
-| `file_edit`                                       | 文件编辑事件（含 start/end/error） |
+| 事件类型                                 | 说明                          |
+| ------------------------------------ | --------------------------- |
+| `run_started` / `run_finished` / `run_failed` | 运行生命周期                    |
+| `text_chunk` / `text_finished`       | 文本流式输出                    |
+| `thinking_chunk`                     | 思考过程输出                    |
+| `tool_started` / `tool_finished`     | 工具执行事件（`isError` 区分失败）  |
+| `file_edit`                          | 文件编辑事件（含 start/end/error） |
 
 流式事件可配合 Webhook、飞书等渠道实现实时响应。
 
@@ -805,7 +805,7 @@ console.log(result.content);
 
 // 流式处理
 for await (const event of bot.stream('写一个 Hello World')) {
-  if (event.type === 'text_delta') {
+  if (event.type === 'text_chunk') {
     process.stdout.write(event.content || '');
   }
 }

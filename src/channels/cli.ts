@@ -1,7 +1,6 @@
 import readline from 'readline';
 import type { Channel, CLIConfig, ChannelResponse } from './types';
 import type { Kobot } from '../kobot';
-import { STREAM_EVENT_TEXT_DELTA, STREAM_EVENT_TEXT_COMPLETED, STREAM_EVENT_REASONING_DELTA, STREAM_EVENT_TOOL_STARTED, STREAM_EVENT_TOOL_COMPLETED, STREAM_EVENT_TOOL_FAILED, STREAM_EVENT_RUN_FAILED } from '../kobot';
 import { logger } from '../utils/logger';
 
 export class CLIChannel implements Channel {
@@ -13,7 +12,7 @@ export class CLIChannel implements Channel {
   private bot: Kobot | null = null;
   private currentSessionKey: string;
   private _thinkingActive = false;
-  private _hasTextDelta = false;
+  private _hasTextChunk = false;
 
   constructor(config: CLIConfig) {
     this.id = config.id;
@@ -133,7 +132,7 @@ export class CLIChannel implements Channel {
     try {
       for await (const event of this.bot.stream(input, { channel: 'cli', sessionKey: this.currentSessionKey })) {
         switch (event.type) {
-          case STREAM_EVENT_REASONING_DELTA:
+          case 'thinking_chunk':
             hasResponse = true;
             if (event.content) {
               if (!this._thinkingActive) {
@@ -143,39 +142,44 @@ export class CLIChannel implements Channel {
               process.stdout.write(event.content);
             }
             break;
-          case STREAM_EVENT_TEXT_DELTA:
+          case 'text_chunk':
             hasResponse = true;
-            this._hasTextDelta = true;
+            this._hasTextChunk = true;
             if (this._thinkingActive) {
               this._thinkingActive = false;
               process.stdout.write('\x1b[0m\n');
             }
             process.stdout.write(event.content || '');
             break;
-          case STREAM_EVENT_TEXT_COMPLETED:
+          case 'text_finished':
             hasResponse = true;
             if (this._thinkingActive) {
               this._thinkingActive = false;
               process.stdout.write('\x1b[0m\n');
             }
-            // 兜底：如果没有流式 TEXT_DELTA（如仅有 thinking 无 text），在此处写出完整文本
-            if (!this._hasTextDelta && event.content) {
+            // 兜底：如果没有流式 text_chunk（如仅有 thinking 无 text），在此处写出完整文本
+            if (!this._hasTextChunk && event.content) {
               process.stdout.write(event.content);
             }
             process.stdout.write('\n');
             break;
-          case STREAM_EVENT_TOOL_STARTED:
-            console.log(`\n🔧 正在运行：${event.tool_name}`);
+          case 'tool_started':
+            console.log(`\n🔧 正在运行：${event.toolName}`);
             break;
-          case STREAM_EVENT_TOOL_COMPLETED:
-            console.log(`✅ ${event.tool_name} 完成`);
+          case 'tool_finished':
+            if (event.isError) {
+              const errText = (event.result?.content ?? [])
+                .filter((c) => c.type === 'text')
+                .map((c) => (c as { text: string }).text)
+                .join('');
+              console.log(`\n❌ ${event.toolName} 失败：`);
+              console.log(`   ${errText || '未知错误'}`);
+              console.log(`   💡 提示：请检查输入参数并重试`);
+            } else {
+              console.log(`✅ ${event.toolName} 完成`);
+            }
             break;
-          case STREAM_EVENT_TOOL_FAILED:
-            console.log(`\n❌ ${event.tool_name} 失败：`);
-            console.log(`   ${event.content || event.error || '未知错误'}`);
-            console.log(`   💡 提示：请检查输入参数并重试`);
-            break;
-          case STREAM_EVENT_RUN_FAILED:
+          case 'run_failed':
             console.log(`\n❌ 发生错误：`);
             console.log(`   ${event.error || '未知错误'}`);
             console.log('');

@@ -6,7 +6,6 @@ import type {
   AssistantMessage,
   UserMessage,
   ToolResultMessage,
-  StreamEvent,
   SimpleStreamOptions,
   StreamResult,
   ToolCallContent,
@@ -25,8 +24,6 @@ import type {
   AgentToolResult,
   AgentEventListener,
   ThinkingLevel,
-  ToolExecutionStartEvent,
-  ToolExecutionEndEvent,
 } from './types';
 
 // ─── 默认的 convertToLlm ───────────────────────────────────────────
@@ -39,6 +36,13 @@ function stripThinkingBlocks(msg: Message): Message {
     };
   }
   return msg;
+}
+
+function extractTextContent(content: AssistantMessage['content']): string {
+  return content
+    .filter((c): c is TextContent => c.type === 'text')
+    .map(c => c.text)
+    .join('');
 }
 
 function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
@@ -232,19 +236,19 @@ export class Agent {
     this.abortController = new AbortController();
 
     try {
-      await this.emit({ type: 'agent_start' });
+      await this.emit({ type: 'agent_started' });
 
       // 发出用户消息事件（针对 prompt()，不是 continue()）
       if (addUserMessageEvents && this._messages.length > 0) {
         const lastMsg = this._messages[this._messages.length - 1];
-        await this.emit({ type: 'message_start', message: lastMsg });
-        await this.emit({ type: 'message_end', message: lastMsg });
+        await this.emit({ type: 'message_started', message: lastMsg });
+        await this.emit({ type: 'message_finished', message: lastMsg });
       }
 
       // 对话循环
       let maxTurns = 200; // 安全限制
       while (maxTurns-- > 0) {
-        await this.emit({ type: 'turn_start' });
+        await this.emit({ type: 'turn_started' });
 
         // 按需转换上下文
         let currentMessages = this._messages;
@@ -273,7 +277,7 @@ export class Agent {
         if (toolCalls.length === 0) {
           // 没有工具调用——本轮结束
           await this.emit({
-            type: 'turn_end',
+            type: 'turn_finished',
             message: assistantMessage,
             toolResults: [],
           });
@@ -296,13 +300,13 @@ export class Agent {
           this._messages.push(toolResultMessage);
 
           // 发出 toolResult 消息事件
-          await this.emit({ type: 'message_start', message: toolResultMessage });
-          await this.emit({ type: 'message_end', message: toolResultMessage });
+          await this.emit({ type: 'message_started', message: toolResultMessage });
+          await this.emit({ type: 'message_finished', message: toolResultMessage });
         }
 
         // 本轮结束，附带工具结果
         await this.emit({
-          type: 'turn_end',
+          type: 'turn_finished',
           message: assistantMessage,
           toolResults: toolResults.map((r) => r.result),
         });
@@ -314,11 +318,11 @@ export class Agent {
         }
       }
 
-      await this.emit({ type: 'agent_end', messages: this._messages });
+      await this.emit({ type: 'agent_finished', messages: this._messages });
     } catch (e) {
       this._errorMessage = (e as Error).message;
-      // 即使出错也发出 agent_end 事件
-      await this.emit({ type: 'agent_end', messages: this._messages });
+      // 即使出错也发出 agent_finished 事件
+      await this.emit({ type: 'agent_finished', messages: this._messages });
     } finally {
       this._isStreaming = false;
       this._streamingMessage = undefined;
@@ -345,23 +349,34 @@ export class Agent {
 
     this._streamingMessage = assistantMessage;
 
-    // 发出 message_start 事件
-    await this.emit({ type: 'message_start', message: assistantMessage });
+    // 发出 message_started 事件
+    await this.emit({ type: 'message_started', message: assistantMessage });
 
-    // 遍历流事件
+    let lastTextLength = 0;
+
+    // 遍历流事件：将低层级流事件翻译为细粒度 AgentEvent 后发出，
+    // 低层级事件不再跨出 Agent 层（此前通过 message_updated 嵌套传递）
     for await (const event of stream) {
       // 与流的局部消息共享 content 数组引用
-      // 以便 message_update 事件携带实际正在构建的内容
       if (event.type === 'start') {
         assistantMessage.content = event.partial.content;
       }
 
-      // 为每个流事件发出 message_update 事件
-      await this.emit({
-        type: 'message_update',
-        message: assistantMessage,
-        assistantMessageEvent: event,
-      });
+      // 思考增量
+      if (event.type === 'thinking_delta' && event.delta) {
+        await this.emit({ type: 'thinking_chunk', content: event.delta });
+      }
+
+      // 文本增量：基于共享 content 数组做差值（比依赖低层级 text_delta 更可靠）
+      const textContent = extractTextContent(assistantMessage.content);
+      const delta = textContent.slice(lastTextLength);
+      if (delta) {
+        lastTextLength = textContent.length;
+        await this.emit({ type: 'text_chunk', content: delta });
+      }
+
+      // 发出 message_updated 事件（仅携带消息状态，增量已通过细粒度事件发出）
+      await this.emit({ type: 'message_updated', message: assistantMessage });
 
       if (event.type === 'done') {
         assistantMessage = event.message;
@@ -370,8 +385,11 @@ export class Agent {
       }
     }
 
-    // 发出 message_end 事件
-    await this.emit({ type: 'message_end', message: assistantMessage });
+    // 发出 message_finished 事件
+    await this.emit({ type: 'message_finished', message: assistantMessage });
+
+    // 发出文本完成事件
+    await this.emit({ type: 'text_finished', content: extractTextContent(assistantMessage.content) });
 
     // 添加到消息列表
     this._messages.push(assistantMessage);
@@ -390,9 +408,9 @@ export class Agent {
     for (const toolCall of toolCalls) {
       this._pendingToolCalls.add(toolCall.id);
 
-      // 发出 tool_execution_start 事件
+      // 发出 tool_started 事件
       await this.emit({
-        type: 'tool_execution_start',
+        type: 'tool_started',
         toolCallId: toolCall.id,
         toolName: toolCall.name,
         args: toolCall.arguments,
@@ -481,9 +499,9 @@ export class Agent {
 
       this._pendingToolCalls.delete(toolCall.id);
 
-      // 发出 tool_execution_end 事件
+      // 发出 tool_finished 事件
       await this.emit({
-        type: 'tool_execution_end',
+        type: 'tool_finished',
         toolCallId: toolCall.id,
         toolName: toolCall.name,
         result,

@@ -4,7 +4,6 @@ import type {
   Context,
   Message,
   AssistantMessage,
-  StreamEvent,
   SimpleStreamOptions,
   StreamResult,
   TextContent,
@@ -172,57 +171,73 @@ export interface AgentContext {
 
 // ─── Agent 事件 ───────────────────────────────────────────────────
 
-export interface AgentStartEvent {
-  type: 'agent_start';
+export interface AgentStartedEvent {
+  type: 'agent_started';
 }
 
-export interface AgentEndEvent {
-  type: 'agent_end';
+export interface AgentFinishedEvent {
+  type: 'agent_finished';
   messages: AgentMessage[];
 }
 
-export interface TurnStartEvent {
-  type: 'turn_start';
+export interface TurnStartedEvent {
+  type: 'turn_started';
 }
 
-export interface TurnEndEvent {
-  type: 'turn_end';
+export interface TurnFinishedEvent {
+  type: 'turn_finished';
   message: AssistantMessage;
   toolResults: AgentToolResult[];
 }
 
-export interface MessageStartEvent {
-  type: 'message_start';
+export interface MessageStartedEvent {
+  type: 'message_started';
   message: AgentMessage;
 }
 
-export interface MessageUpdateEvent {
-  type: 'message_update';
-  message: AgentMessage;
-  assistantMessageEvent: StreamEvent;
-}
-
-export interface MessageEndEvent {
-  type: 'message_end';
+export interface MessageUpdatedEvent {
+  type: 'message_updated';
   message: AgentMessage;
 }
 
-export interface ToolExecutionStartEvent {
-  type: 'tool_execution_start';
+export interface MessageFinishedEvent {
+  type: 'message_finished';
+  message: AgentMessage;
+}
+
+// ─── 细粒度增量事件（由 Agent 层将低层级流事件翻译而来）────────────
+
+export interface TextChunkEvent {
+  type: 'text_chunk';
+  content: string;
+}
+
+export interface TextFinishedEvent {
+  type: 'text_finished';
+  content: string;
+}
+
+export interface ThinkingChunkEvent {
+  type: 'thinking_chunk';
+  content: string;
+}
+
+export interface ToolStartedEvent {
+  type: 'tool_started';
   toolCallId: string;
   toolName: string;
   args: unknown;
 }
 
-export interface ToolExecutionUpdateEvent {
-  type: 'tool_execution_update';
+export interface ToolProgressEvent {
+  type: 'tool_progress';
   toolCallId: string;
   toolName: string;
   partialResult?: unknown;
 }
 
-export interface ToolExecutionEndEvent {
-  type: 'tool_execution_end';
+export interface ToolFinishedEvent {
+  type: 'tool_finished';
   toolCallId: string;
   toolName: string;
   result?: AgentToolResult;
@@ -231,16 +246,19 @@ export interface ToolExecutionEndEvent {
 }
 
 export type AgentEvent =
-  | AgentStartEvent
-  | AgentEndEvent
-  | TurnStartEvent
-  | TurnEndEvent
-  | MessageStartEvent
-  | MessageUpdateEvent
-  | MessageEndEvent
-  | ToolExecutionStartEvent
-  | ToolExecutionUpdateEvent
-  | ToolExecutionEndEvent;
+  | AgentStartedEvent
+  | AgentFinishedEvent
+  | TurnStartedEvent
+  | TurnFinishedEvent
+  | MessageStartedEvent
+  | MessageUpdatedEvent
+  | MessageFinishedEvent
+  | TextChunkEvent
+  | TextFinishedEvent
+  | ThinkingChunkEvent
+  | ToolStartedEvent
+  | ToolProgressEvent
+  | ToolFinishedEvent;
 
 // ─── 事件监听器 ────────────────────────────────────────────────────
 

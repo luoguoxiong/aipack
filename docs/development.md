@@ -458,7 +458,7 @@ Kobot 实现了一个多层次的错误处理系统：
 
 1. **工具层** — `BaseTool.safeExecute()` 自动重试和错误分类
 2. **Agent 层** — Agent 的事件订阅和错误传递
-3. **渠道层** — CLI/Webhook 对 `STREAM_EVENT_RUN_FAILED` 做出响应
+3. **渠道层** — CLI/Webhook 对 `run_failed` 事件（`KobotEvent` 业务事件）做出响应
 4. **用户层** — 友好的错误提示和排查建议
 
 ### 错误分类
