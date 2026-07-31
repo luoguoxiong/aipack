@@ -384,11 +384,11 @@ export type Config = {
 };
 
 export function defaultConfig(): Config {
-  return Value.Decode(ConfigSchema, {
+  return Value.Decode(ConfigSchema, Value.Default(ConfigSchema, {
     agents: {
       defaults: {},
       model_presets: {},
       instances: {},
     },
-  }) as Config;
+  })) as Config;
 }
