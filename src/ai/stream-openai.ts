@@ -13,7 +13,7 @@ import type {
   Message,
 } from './types';
 import { createEmptyUsage, createEmptyAssistantMessage } from './types';
-import { retry, ok, isRetryableHttpStatus } from './retry';
+import { retry, ok, isRetryableHttpStatus } from '../utils/retry';
 import { normalizeResponseError } from './error-body';
 import type { ProviderCompat } from './compat';
 import { detectCompat } from './compat';
@@ -359,22 +359,7 @@ function mapFinishReason(reason: string | undefined | null): string {
   }
 }
 
-// ─── SSE 行解析 ───────────────────────────────────────────────────
-
-function extractDataLines(buffer: string): { lines: string[]; rest: string } {
-  const lines: string[] = [];
-  let rest = buffer;
-  let nl: number;
-  while ((nl = rest.indexOf('\n')) !== -1) {
-    const line = rest.slice(0, nl).replace(/\r$/, '');
-    rest = rest.slice(nl + 1);
-    if (line.startsWith('data:')) {
-      lines.push(line.slice(5).trimStart());
-    }
-    // 忽略 : 注释行和 event: 行
-  }
-  return { lines, rest };
-}
+import { extractDataLines, tryParseJSON } from './sse-parser';
 
 // ─── 工具调用累加器 ─────────────────────────────────────────────────
 

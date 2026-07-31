@@ -1,6 +1,6 @@
 // ─── Agent 导出 ───────────────────────────────────────────────────
 
-export { Agent, AgentHarness } from './agent';
+export { Agent } from './agent';
 export type {
   AgentMessage,
   AgentUserMessage,

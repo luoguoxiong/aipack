@@ -15,6 +15,6 @@ export { getFilesystemTools } from './filesystem';
 export { getShellTools } from './shell';
 export { getWebTools } from './web';
 export { getMemoryTools, setMemoryBaseDir } from './memory';
-export { getCronTools, getCronTasks } from './cron';
+export { getCronTools, CronScheduler } from './cron';
 export { getUtilityTools } from './utilities';
 export { getSearchTools, FindFilesTool, GrepTool } from './search';
