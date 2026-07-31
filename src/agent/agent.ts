@@ -285,6 +285,12 @@ export class Agent {
         }
 
         // 执行工具调用
+        // 先记录执行前的消息数：工具执行期间可能被外部注入消息
+        // （例如 Progress Guard 的 steer 干预）。注入点若落在
+        // tool_calls 与 toolResult 之间，会破坏 API 协议要求的
+        // "assistant(tool_calls) → tool 结果" 紧邻配对，导致下一轮
+        // 请求报错（如 "tool must be a response to a preceding tool_calls"）。
+        const preToolExecutionMsgCount = this._messages.length;
         const toolResults = await this.executeTools(toolCalls);
 
         // 将 toolResult 消息添加到状态
@@ -302,6 +308,15 @@ export class Agent {
           // 发出 toolResult 消息事件
           await this.emit({ type: 'message_started', message: toolResultMessage });
           await this.emit({ type: 'message_finished', message: toolResultMessage });
+        }
+
+        // 重新安置工具执行期间被注入的消息（如 PG 反思等）：
+        // 把它们从 toolResult 之前移到之后，恢复 "assistant → tool 结果"
+        // 的紧邻配对，避免孤儿 tool 消息进入下一轮请求。
+        const injectedMsgCount = this._messages.length - preToolExecutionMsgCount - toolResults.length;
+        if (injectedMsgCount > 0) {
+          const injected = this._messages.splice(preToolExecutionMsgCount, injectedMsgCount);
+          this._messages.push(...injected);
         }
 
         // 本轮结束，附带工具结果
