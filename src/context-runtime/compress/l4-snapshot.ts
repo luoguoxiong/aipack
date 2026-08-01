@@ -7,7 +7,7 @@
  * 适用于上下文严重膨胀时的深度压缩。
  */
 
-import type { AgentMessage } from '../../agent/types';
+import type { AgentMessage } from '../../agent';
 import type { AgentState, L4SnapshotConfig, ToolDigest } from '../types';
 import { SnapshotBuilder } from '../state/snapshot-builder';
 import {

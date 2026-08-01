@@ -8,7 +8,7 @@
  * - 提供滞回判断，避免频繁压缩
  */
 
-import type { AgentMessage } from '../../agent/types';
+import type { AgentMessage } from '../../agent';
 import type { TokenHealth, TokenMonitorConfig, HealthLevel } from '../types';
 import { estimateMessageTokens } from '../state/message-adapter';
 

@@ -351,10 +351,28 @@ export KOBOT_CONFIG_DIR="/path/to/config"
 ```
 kobot/
 ├── src/
-│   ├── agent/              # Agent 生命周期管理
+│   ├── agent/              # Agent 引擎（核心循环 + 钩子系统 + 上下文构建）
+│   │   ├── agent.ts        # Agent 类（消息循环、工具执行、流式通信）
 │   │   ├── context.ts      # 系统提示词构建
 │   │   ├── hook.ts         # 事件钩子系统
-│   │   └── types.ts        # 钩子类型定义
+│   │   ├── types.ts        # Agent 类型定义
+│   │   └── index.ts        # 模块导出
+│   ├── ai/                 # AI 基础设施（流式协议、模型管理、提供商适配）
+│   │   ├── types.ts        # 核心类型（消息、模型、流事件）
+│   │   ├── models.ts       # Models 类（提供商管理、流式路由）
+│   │   ├── catalog.ts      # 内置模型目录（28 个模型）
+│   │   ├── providers-all.ts # 内置提供商工厂
+│   │   ├── stream-openai.ts # OpenAI SSE 流式解析
+│   │   ├── stream-anthropic.ts # Anthropic 流式解析
+│   │   ├── images.ts       # 图片生成
+│   │   ├── compat.ts       # 提供商兼容性检测
+│   │   ├── overflow.ts     # 上下文溢出检测
+│   │   ├── diagnostics.ts  # 诊断工具
+│   │   ├── error-body.ts   # 统一错误格式化
+│   │   ├── retry.ts        # 指数退避重试
+│   │   ├── json-parse.ts   # JSON 修复与流式解析
+│   │   ├── sanitize-unicode.ts # Unicode 清理
+│   │   └── index.ts        # 模块导出
 │   ├── skill/               # Skill 系统（Phase 1）
 │   │   ├── types.ts        # 类型定义（SkillManifest, SkillMatch 等）
 │   │   ├── registry.ts     # Skill 注册中心（CRUD + 禁用管理）
@@ -483,7 +501,7 @@ const result = await bot.run('你好！');
 
 // 流式处理消息
 for await (const event of bot.stream('写一个 Hello World')) {
-  if (event.type === 'text_delta') {
+  if (event.type === 'text_chunk') {
     process.stdout.write(event.content || '');
   }
 }
@@ -506,13 +524,13 @@ await bot.close();
 
 `stream()` 方法通过 AsyncGenerator 产生以下事件：
 
-| 事件类型                                              | 说明                        |
-| ------------------------------------------------- | ------------------------- |
-| `run_started` / `run_completed` / `run_failed`    | 运行生命周期                    |
-| `text_delta` / `text_completed`                   | 文本流式输出                    |
-| `reasoning_delta` / `reasoning_completed`         | 推理过程输出                    |
-| `tool_started` / `tool_completed` / `tool_failed` | 工具执行事件                    |
-| `file_edit`                                       | 文件编辑事件（含 start/end/error） |
+| 事件类型                                 | 说明                          |
+| ------------------------------------ | --------------------------- |
+| `run_started` / `run_finished` / `run_failed` | 运行生命周期                    |
+| `text_chunk` / `text_finished`       | 文本流式输出                    |
+| `thinking_chunk`                     | 思考过程输出                    |
+| `tool_started` / `tool_finished`     | 工具执行事件（`isError` 区分失败）  |
+| `file_edit`                          | 文件编辑事件（含 start/end/error） |
 
 流式事件可配合 Webhook、飞书等渠道实现实时响应。
 
@@ -787,7 +805,7 @@ console.log(result.content);
 
 // 流式处理
 for await (const event of bot.stream('写一个 Hello World')) {
-  if (event.type === 'text_delta') {
+  if (event.type === 'text_chunk') {
     process.stdout.write(event.content || '');
   }
 }

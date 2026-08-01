@@ -11,7 +11,7 @@
  * 保持上下文的信息浓度。
  */
 
-import type { AgentMessage } from '../../agent/types';
+import type { AgentMessage } from '../../agent';
 import type { ValueDensity, ValueDensityConfig } from '../types';
 import { getMessageContent, estimateMessageTokens, isCustomMessage } from '../state/message-adapter';
 

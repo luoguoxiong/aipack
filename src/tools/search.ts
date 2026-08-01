@@ -1,4 +1,4 @@
-import { Type } from "../pi/ai";
+import { Type } from "../ai";
 import { BaseTool, createToolResult, createToolError } from './base';
 import { spawn } from 'child_process';
 

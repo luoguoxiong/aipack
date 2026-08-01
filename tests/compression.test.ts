@@ -15,7 +15,7 @@ import { ensureToolPairing, countOrphanedPairs } from '../src/context-runtime/co
 import { createTransitionMessage } from '../src/context-runtime/compress/transition';
 import { estimateMessageTokens, isStateSnapshot, removeStateSnapshots, createStateSnapshotMessage } from '../src/context-runtime/state/message-adapter';
 import { formatStateSnapshot } from '../src/context-runtime/state/agent-state';
-import type { AgentMessage } from '../src/agent/types';
+import type { AgentMessage } from '../src/agent';
 import type { AgentState, ToolDigest } from '../src/context-runtime/types';
 
 // ─── 测试辅助函数 ───
