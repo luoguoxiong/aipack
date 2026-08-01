@@ -38,6 +38,7 @@ export { CLIChannel, createCLIChannel } from './channels/cli';
 export { WebhookChannel, createWebhookChannel } from './channels/webhook';
 export { FeishuChannel, createFeishuChannel } from './channels/feishu';
 export type { Channel, ChannelConfig, ChannelMessage, ChannelResponse, CLIConfig, WebhookConfig, FeishuConfig } from './channels/types';
+export { ChannelManager } from './kobot/channels';
 
 export { Agent } from './agent';
 export type { AgentEvent, AgentContext, AgentMessage, AgentTool, AgentState } from './agent';

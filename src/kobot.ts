@@ -1,63 +1,42 @@
 import path from 'path';
 import { Agent } from "./agent";
-import type { AgentMessage, AgentEvent, RunResult, SessionInfo } from "./agent";
+import type { AgentMessage, RunResult, SessionInfo } from "./agent";
 import { builtinModels } from "./ai/providers-all";
-import type { Model, AssistantMessage, ImageContent, TextContent, Context, SimpleStreamOptions, Api } from "./ai";
+import type { Model, AssistantMessage, Context, SimpleStreamOptions, Api } from "./ai";
 import { loadConfig, getConfigPath } from "./config/loader";
-import { Config, defaultConfig } from "./config/schema";
+import { Config } from "./config/schema";
 import { createDefaultToolRegistry, ToolRegistry } from "./tools/registry";
 import { setMemoryBaseDir } from "./tools/memory";
 import { ContextBuilder } from "./agent";
 import { SessionManager, createSessionManager } from "./storage/session-manager";
 import type { MessageEntry, SessionTreeEntry } from "./storage/types";
 import { logger, createLogger } from "./utils/logger";
-import { ProgressGuard, DEFAULT_CONFIG as DEFAULT_PG_CONFIG } from "./progress-guard";
-import type { ProgressGuardConfig as PGConfig } from "./progress-guard";
+import { ProgressGuard } from "./progress-guard";
 import { AgentContextRuntime } from "./context-runtime";
 import { ensureToolPairing } from "./context-runtime/compress/pairing";
 import { SkillManager } from "./skill";
 
-// ─── 业务层事件 ───────────────────────────────────────────────
-// 流事件统一使用 src/agent/types.ts 的 AgentEvent 体系，
-// 此处仅补充 Kobot 层独有的业务事件（运行生命周期与文件编辑）
+// 从拆分模块导入
+import type { KobotEvent } from "./kobot/event-bus";
+import { extractTextContent } from "./kobot/event-bus";
+import { RequestQueue } from "./kobot/request-queue";
+import { RunLoop } from "./kobot/run-loop";
+import type { RunState } from "./kobot/run-loop";
 
-export interface RunStartedEvent {
-  type: 'run_started';
-  metadata: Record<string, unknown>;
-}
+// ─── 类型重新导出（保持公开 API 不变）────────────────────────────────
 
-export interface RunFinishedEvent {
-  type: 'run_finished';
-  content?: string;
-  error?: string;
-  result: RunResult;
-}
+export type {
+  KobotEvent,
+  RunStartedEvent,
+  RunFinishedEvent,
+  RunFailedEvent,
+  FileEditEvent,
+  FileEditEventData,
+} from "./kobot/event-bus";
 
-export interface RunFailedEvent {
-  type: 'run_failed';
-  content?: string;
-  error: string;
-  result?: RunResult;
-}
-
-export interface FileEditEventData {
-  edit_type: 'start' | 'end' | 'error';
-  call_id: string;
-  tool_name: string;
-  file_path?: string;
-  action?: string;
-  error?: string;
-}
-
-export interface FileEditEvent {
-  type: 'file_edit';
-  file_edit: FileEditEventData;
-}
-
-export type KobotEvent = AgentEvent | RunStartedEvent | RunFinishedEvent | RunFailedEvent | FileEditEvent;
-
-// 统一类型定义，单一来源见 src/agent/types.ts
 export type { RunResult, SessionInfo } from "./agent";
+
+// ─── 类型定义 ──────────────────────────────────────────────────────
 
 export interface SessionDetail {
   key: string;
@@ -109,33 +88,15 @@ export interface KobotOptions {
   modelPreset?: string;
 }
 
-const FILE_EDIT_TOOLS = new Set([
-  'write_file',
-  'edit_file',
-  'apply_patch',
-  'delete_file',
-  'rename_file',
-  'create_directory',
-  'remove_directory',
-]);
-
-function extractTextContent(content: AssistantMessage['content']): string {
-  return content
-    .filter((c): c is TextContent => c.type === 'text')
-    .map(c => c.text)
-    .join('');
-}
-
 export class Kobot {
   private config: Config;
   private toolRegistry: ToolRegistry;
-  private agent: Agent | null = null;
   private agents: Map<string, Agent> = new Map();
   private acrRuntimes: Map<string, AgentContextRuntime> = new Map();
   private models: any;
   private sessionManager: SessionManager;
   private progressGuard: ProgressGuard;
-  private requestQueues: Map<string, Promise<void>> = new Map();
+  private requestQueue = new RequestQueue();
   private skillManager: SkillManager | null = null;
 
   private constructor(config: Config, toolRegistry: ToolRegistry, models: any) {
@@ -186,12 +147,12 @@ export class Kobot {
 
   static async fromConfig(options: KobotOptions = {}): Promise<Kobot> {
     logger.info({ options }, '正在从配置初始化 Kobot');
-    
+
     let config: Config;
     if (options.config) {
       config = options.config;
     } else {
-      const configPath = options.configPath 
+      const configPath = options.configPath
         ? path.resolve(options.configPath.replace('~', process.env.HOME || ''))
         : getConfigPath();
       logger.debug({ configPath }, '正在加载配置');
@@ -217,7 +178,7 @@ export class Kobot {
     }
 
     logger.debug({ model: config.agents.defaults.model, provider: config.agents.defaults.provider }, '模型配置');
-    
+
     const toolRegistry = createDefaultToolRegistry();
     if (config.memory.base_dir) {
       setMemoryBaseDir(config.memory.base_dir);
@@ -230,8 +191,8 @@ export class Kobot {
 
     // 初始化 SkillManager
     const workspace = config.agents.defaults.workspace || process.cwd();
-    const skillsDir = config.agents.defaults.workspace 
-      ? path.resolve(config.agents.defaults.workspace, 'skills') 
+    const skillsDir = config.agents.defaults.workspace
+      ? path.resolve(config.agents.defaults.workspace, 'skills')
       : undefined;
     const skillManager = new SkillManager(toolRegistry, {
       skillsDir,
@@ -251,26 +212,26 @@ export class Kobot {
     const defaults = this.config.agents.defaults;
     const resolvedModelName = modelName || defaults.model;
     const resolvedProvider = defaults.provider || 'auto';
-    
+
     let model: Model<any> | undefined;
     try {
       const allModels: Model<any>[] = this.models.getModels();
-      
+
       // 先尝试在配置的提供商中精确匹配
       if (resolvedProvider !== 'auto') {
         model = allModels.find((m: Model<any>) => m.id === resolvedModelName && m.provider === resolvedProvider);
       }
-      
+
       // 如果未匹配到配置的提供商，尝试在 openai 提供商中精确匹配（最常见）
       if (!model) {
         model = allModels.find((m: Model<any>) => m.id === resolvedModelName && m.provider === 'openai');
       }
-      
+
       // 如果仍未匹配，查找任意提供商中 ID 匹配的模型
       if (!model) {
         model = allModels.find((m: Model<any>) => m.id === resolvedModelName);
       }
-      
+
       // 如果未精确匹配，尝试从配置的提供商中获取模型
       if (!model && resolvedProvider !== 'auto') {
         const providerModels = allModels.filter((m: Model<any>) => m.provider === resolvedProvider);
@@ -278,7 +239,7 @@ export class Kobot {
           model = providerModels[0];
         }
       }
-      
+
       // 如果仍未匹配，尝试查找任意 openai 模型
       if (!model) {
         const openaiModels = allModels.filter((m: Model<any>) => m.provider === 'openai');
@@ -286,12 +247,12 @@ export class Kobot {
           model = openaiModels[0];
         }
       }
-      
+
       // 如果仍未匹配，使用第一个模型作为回退
       if (!model && allModels.length > 0) {
         model = allModels[0];
       }
-      
+
       if (!model) {
         throw new Error('没有可用的模型');
       }
@@ -321,7 +282,7 @@ export class Kobot {
     }
 
     const workspace = workspacePath || this.config.agents.defaults.workspace || process.cwd();
-    
+
     const acr = new AgentContextRuntime({
       workspacePath: workspace,
       config: {
@@ -358,13 +319,13 @@ export class Kobot {
       // 恢复上次使用的模型
       const lastModelChange = [...savedSession.entries]
         .reverse()
-        .find(entry => entry.type === 'model_change' || 
+        .find(entry => entry.type === 'model_change' ||
                       (entry.type === 'message' && entry.message.role === 'assistant' && entry.message.provider));
-      
+
       if (lastModelChange) {
         let restoredProvider: string | undefined;
         let restoredModelId: string | undefined;
-        
+
         if (lastModelChange.type === 'model_change') {
           restoredProvider = lastModelChange.provider;
           restoredModelId = lastModelChange.modelId;
@@ -375,7 +336,7 @@ export class Kobot {
             restoredModelId = msg.model as string;
           }
         }
-        
+
         if (restoredProvider && restoredModelId) {
           try {
             const restoredModel = this.models.getModel(restoredModelId, restoredProvider);
@@ -466,240 +427,65 @@ export class Kobot {
     return agent;
   }
 
+  // ─── run() ──────────────────────────────────────────────────────────
+
   async run(message: string, options: RunOptions = {}): Promise<RunResult> {
     const sessionKey = options.sessionKey || 'sdk:default';
+    return this.requestQueue.enqueue(sessionKey, () => this._run(message, options, sessionKey));
+  }
 
-    const prevQueue = this.requestQueues.get(sessionKey) ?? Promise.resolve();
-    let resolveQueue!: () => void;
-    const currentQueue = new Promise<void>((resolve) => {
-      resolveQueue = resolve;
-    });
-    this.requestQueues.set(sessionKey, prevQueue.then(() => currentQueue));
-
-    try {
-      await prevQueue;
-    } catch {
-      // 前一个请求的错误不影响当前请求
-    }
-
-    try {
+  private async _run(message: string, options: RunOptions, sessionKey: string): Promise<RunResult> {
     const sessionStorage = this.sessionManager.getSessionStorage(sessionKey);
-    
+
     const traceId = await sessionStorage.createEntryId();
     const parentId = await sessionStorage.getLeafId();
-    
+
     logger.info({ sessionKey, traceId, parentId, message: message.substring(0, 50) }, '正在运行消息');
 
     const agent = await this.getOrCreateAgent(sessionKey);
-    const model = agent.state.model;
     const acr = this.getOrCreateACR(sessionKey);
 
-    // 挂载 Progress Guard 到当前 Agent
-    if (this.progressGuard.isEnabled) {
-      this.progressGuard.reset();
-      this.progressGuard.attach({
-        steer: (msg: string) => {
-          // 注入消息到 agent state
-          agent.state.messages.push({
-            role: 'user',
-            content: msg,
-            timestamp: Date.now(),
-          });
-        },
-        abort: (reason: string) => {
-          logger.error({ reason }, '[PG] Agent 被 Progress Guard 中止');
-          throw new Error(`Progress Guard: ${reason}`);
-        },
-      });
-    }
-
-    const toolsUsed: string[] = [];
-    let finalContent = '';
-    let stopReason = 'completed';
-    let error: string | undefined;
-
-    // 存储模型信息
-    if (model) {
-      await sessionStorage.appendEntry({
-        type: 'model_change',
-        id: await sessionStorage.createEntryId(),
-        parentId,
-        timestamp: new Date().toISOString(),
-        provider: model.provider,
-        modelId: model.id,
-      });
-    }
-
-    const unsubscribe = agent.subscribe(async (event) => {
-      switch (event.type) {
-        case 'agent_started':
-          logger.info({ sessionKey, traceId }, '[AGENT_START] Agent 运行已开始');
-          break;
-        case 'agent_finished':
-          logger.info({ sessionKey, traceId, messageCount: event.messages.length }, '[AGENT_END] Agent 运行已完成');
-          break;
-        case 'turn_started':
-          logger.debug({ sessionKey, traceId }, '[TURN_START] 回合已开始');
-          this.progressGuard.startTurn();
-          break;
-        case 'turn_finished':
-          const turnMsg = event.message as AssistantMessage;
-          logger.debug({ sessionKey, traceId, stopReason: turnMsg.stopReason, toolResultCount: event.toolResults.length }, '[TURN_END] 回合已完成');
-          break;
-        case 'message_started':
-          logger.debug({ sessionKey, traceId, role: event.message.role }, '[MESSAGE_START] 消息已开始');
-          break;
-        case 'message_updated':
-          break;
-        case 'message_finished':
-          const msg = event.message as AssistantMessage;
-          logger.debug({ sessionKey, traceId, role: event.message.role, stopReason: msg.stopReason }, '[MESSAGE_END] 消息已完成');
-          
-          // 存储消息条目
-          await sessionStorage.appendEntry({
-            type: 'message',
-            id: await sessionStorage.createEntryId(),
-            parentId: await sessionStorage.getLeafId(),
-            timestamp: new Date().toISOString(),
-            message: event.message,
-          });
-          
-          if (event.message.role === 'assistant') {
-            finalContent = extractTextContent(msg.content);
-            stopReason = msg.stopReason || 'completed';
-            error = msg.errorMessage;
-
-            // Progress Guard: 记录助手输出
-            if (finalContent) {
-              this.progressGuard.recordAssistantOutput(finalContent, msg.usage?.totalTokens);
-            }
-            
-            // 存储 token 用量
-            if (msg.usage) {
-              await sessionStorage.appendEntry({
-                type: 'token_usage',
-                id: await sessionStorage.createEntryId(),
-                parentId: await sessionStorage.getLeafId(),
-                timestamp: new Date().toISOString(),
-                usage: msg.usage,
-              });
-            }
-          }
-          break;
-        case 'tool_started':
-          logger.info({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId, args: event.args }, '[TOOL_START] 工具执行已开始');
-          
-          // 存储工具调用条目
-          await sessionStorage.appendEntry({
-            type: 'tool_call',
-            id: await sessionStorage.createEntryId(),
-            parentId: await sessionStorage.getLeafId(),
-            timestamp: new Date().toISOString(),
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            input: (event.args || {}) as Record<string, unknown>,
-          });
-
-          if (!toolsUsed.includes(event.toolName)) {
-            toolsUsed.push(event.toolName);
-          }
-          break;
-        case 'tool_progress':
-          logger.debug({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId }, '[TOOL_UPDATE] 工具执行中');
-          break;
-        case 'tool_finished':
-          logger.info({ sessionKey, traceId, toolName: event.toolName, toolCallId: event.toolCallId, success: !event.isError }, '[TOOL_END] 工具执行已完成');
-
-          // 存储工具结果条目
-          const resultContent = event.result?.content?.filter((c): c is TextContent => c.type === 'text').map((c) => c.text).join('') || '';
-          await sessionStorage.appendEntry({
-            type: 'tool_result',
-            id: await sessionStorage.createEntryId(),
-            parentId: await sessionStorage.getLeafId(),
-            timestamp: new Date().toISOString(),
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            input: (event.args ?? {}) as Record<string, unknown>,
-            content: resultContent,
-            isError: event.isError,
-            usage: event.result?.usage,
-          });
-
-          // Progress Guard: 记录工具调用结果并检测
-          if (this.progressGuard.isEnabled) {
-            const pgIntervention = this.progressGuard.recordToolCall(
-              event.toolName,
-              (event.args ?? {}) as Record<string, unknown>,
-              {
-                success: !event.isError,
-                output: resultContent,
-                error: event.isError ? resultContent : undefined,
-              },
-            );
-            if (pgIntervention === 'terminate') {
-              logger.error({ sessionKey }, '[PG] Agent terminated by Progress Guard');
-            }
-          }
-
-          // ACR: 记录工具调用结果用于状态提取和压缩
-          if (acr) {
-            acr.observeAfterToolCall(
-              event.toolName,
-              (event.args ?? {}) as Record<string, unknown>,
-              {
-                success: !event.isError,
-                output: resultContent,
-                error: event.isError ? resultContent : undefined,
-              },
-            );
-          }
-          break;
-      }
+    const loop = new RunLoop({
+      agent,
+      sessionStorage,
+      acr,
+      progressGuard: this.progressGuard,
+      sessionKey,
+      traceId,
+      parentId,
+      model: agent.state.model,
     });
 
+    loop.attachProgressGuard();
+    await loop.recordModelChange();
+
+    const state: RunState = { toolsUsed: [], finalContent: '', stopReason: 'completed' };
+    const unsubscribe = agent.subscribe(loop.createEventHandler(state));
+
     try {
-      // 预处理：Skill 匹配与执行
       const skillInjectedMessage = await this.prepareSkillInput(message, agent);
       await agent.prompt(skillInjectedMessage);
     } catch (err) {
-      error = (err as Error).message;
-      stopReason = 'error';
+      state.error = (err as Error).message;
+      state.stopReason = 'error';
     } finally {
       unsubscribe();
     }
 
-    return {
-      content: finalContent,
-      toolsUsed,
-      usage: {},
-      stopReason,
-      metadata: {
-        traceId,
-        parentId,
-        model: model ? { provider: model.provider, modelId: model.id } : null,
-      },
-      error,
-    };
-    } finally {
-      resolveQueue();
-    }
+    return loop.buildResult(state);
   }
+
+  // ─── stream() ───────────────────────────────────────────────────────
 
   async *stream(
     message: string,
     options: RunOptions = {},
   ): AsyncGenerator<KobotEvent> {
     const sessionKey = options.sessionKey || 'sdk:default';
-
-    const prevQueue = this.requestQueues.get(sessionKey) ?? Promise.resolve();
-    let resolveQueue!: () => void;
-    const currentQueue = new Promise<void>((resolve) => {
-      resolveQueue = resolve;
-    });
-    this.requestQueues.set(sessionKey, prevQueue.then(() => currentQueue));
+    const { wait, release } = this.requestQueue.acquire(sessionKey);
 
     try {
-      await prevQueue;
+      await wait;
     } catch {
       // 前一个请求的错误不影响当前请求
     }
@@ -710,336 +496,130 @@ export class Kobot {
       const model = agent.state.model;
       const acr = this.getOrCreateACR(sessionKey);
 
-    // 挂载 Progress Guard 到当前 Agent (stream 模式)
-    if (this.progressGuard.isEnabled) {
-      this.progressGuard.reset();
-      this.progressGuard.attach({
-        steer: (msg: string) => {
-          agent.state.messages.push({
-            role: 'user',
-            content: msg,
-            timestamp: Date.now(),
-          });
-        },
-        abort: (reason: string) => {
-          logger.error({ reason }, '[PG] Agent aborted by Progress Guard (stream)');
-          throw new Error(`Progress Guard: ${reason}`);
-        },
+      const loop = new RunLoop({
+        agent,
+        sessionStorage,
+        acr,
+        progressGuard: this.progressGuard,
+        sessionKey,
+        model,
       });
-    }
 
-    // 存储模型信息
-    if (model) {
-      await sessionStorage.appendEntry({
-        type: 'model_change',
-        id: await sessionStorage.createEntryId(),
-        parentId: await sessionStorage.getLeafId(),
-        timestamp: new Date().toISOString(),
-        provider: model.provider,
-        modelId: model.id,
-      });
-    }
+      loop.attachProgressGuard();
+      await loop.recordModelChange();
 
-    yield {
-      type: 'run_started',
-      metadata: {
-        session_key: sessionKey,
-        channel: options.channel || 'cli',
-        chat_id: options.chatId || 'direct',
-        sender_id: options.senderId || 'user',
-      },
-    };
+      yield {
+        type: 'run_started',
+        metadata: {
+          session_key: sessionKey,
+          channel: options.channel || 'cli',
+          chat_id: options.chatId || 'direct',
+          sender_id: options.senderId || 'user',
+        },
+      };
 
-    const toolsUsed: string[] = [];
-    let finalContent = '';
-    let stopReason = 'completed';
-    let error: string | undefined;
+      const state: RunState = { toolsUsed: [], finalContent: '', stopReason: 'completed' };
 
-    const eventQueue: KobotEvent[] = [];
-    let resolveNext: ((value: KobotEvent) => void) | null = null;
+      const eventQueue: KobotEvent[] = [];
+      let resolveNext: ((value: KobotEvent) => void) | null = null;
 
-    const pushEvent = (event: KobotEvent): void => {
-      if (resolveNext) {
-        resolveNext(event);
-        resolveNext = null;
-      } else {
-        eventQueue.push(event);
-      }
-    };
-
-    const unsubscribe = agent.subscribe(async (event) => {
-      switch (event.type) {
-        case 'agent_started':
-          logger.info({ sessionKey }, '[AGENT_START] Agent stream started');
-          break;
-        case 'agent_finished':
-          logger.info({ sessionKey, messageCount: event.messages.length }, '[AGENT_END] Agent stream completed');
-          if (error) {
-            pushEvent({
-              type: 'run_failed',
-              content: finalContent,
-              error,
-              result: {
-                content: finalContent,
-                toolsUsed,
-                usage: {},
-                stopReason,
-                metadata: {},
-                error,
-              },
-            });
-          } else {
-            pushEvent({
-              type: 'run_finished',
-              content: finalContent,
-              result: {
-                content: finalContent,
-                toolsUsed,
-                usage: {},
-                stopReason,
-                metadata: {},
-              },
-            });
-          }
-          break;
-        case 'turn_started':
-          logger.debug({ sessionKey }, '[TURN_START] Turn started');
-          this.progressGuard.startTurn();
-          break;
-        case 'turn_finished':
-          const turnMsg = event.message as AssistantMessage;
-          logger.debug({ sessionKey, stopReason: turnMsg.stopReason, toolResultCount: event.toolResults.length }, '[TURN_END] Turn completed');
-          break;
-        case 'message_started':
-          logger.debug({ sessionKey, role: event.message.role }, '[MESSAGE_START] Message started');
-          if (event.message.role === 'assistant') {
-            finalContent = '';
-          }
-          break;
-
-        case 'message_updated':
-          logger.debug({ sessionKey }, '[MESSAGE_UPDATE] Message updated');
-          break;
-
-        // 细粒度增量事件：Agent 层已翻译并发出，此处直接透传
-        case 'text_chunk':
-          pushEvent(event);
-          break;
-        case 'text_finished':
-          finalContent = event.content;
-          pushEvent(event);
-          break;
-        case 'thinking_chunk':
-          pushEvent(event);
-          break;
-
-        case 'message_finished':
-          logger.debug({ sessionKey, role: event.message.role }, '[MESSAGE_END] Message completed');
-
-          // 存储消息条目
-          await sessionStorage.appendEntry({
-            type: 'message',
-            id: await sessionStorage.createEntryId(),
-            parentId: await sessionStorage.getLeafId(),
-            timestamp: new Date().toISOString(),
-            message: event.message,
-          });
-
-          if (event.message.role === 'assistant') {
-            const msg = event.message as AssistantMessage;
-            finalContent = extractTextContent(msg.content);
-            stopReason = msg.stopReason || 'completed';
-            error = msg.errorMessage;
-
-            // Progress Guard: 记录助手输出
-            if (finalContent) {
-              this.progressGuard.recordAssistantOutput(finalContent, msg.usage?.totalTokens);
-            }
-            
-            // 存储 token 用量
-            if (msg.usage) {
-              await sessionStorage.appendEntry({
-                type: 'token_usage',
-                id: await sessionStorage.createEntryId(),
-                parentId: await sessionStorage.getLeafId(),
-                timestamp: new Date().toISOString(),
-                usage: msg.usage,
-              });
-            }
-          }
-          break;
-
-        case 'tool_started':
-          logger.info({ sessionKey, toolName: event.toolName, toolCallId: event.toolCallId }, '[TOOL_START] Tool execution started');
-          
-          // 存储工具调用条目
-          await sessionStorage.appendEntry({
-            type: 'tool_call',
-            id: await sessionStorage.createEntryId(),
-            parentId: await sessionStorage.getLeafId(),
-            timestamp: new Date().toISOString(),
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            input: (event.args || {}) as Record<string, unknown>,
-          });
-          
-          if (!toolsUsed.includes(event.toolName)) {
-            toolsUsed.push(event.toolName);
-          }
-          pushEvent(event);
-
-          if (FILE_EDIT_TOOLS.has(event.toolName)) {
-            const args = event.args as Record<string, unknown>;
-            const filePath = args.file_path || args.path || args.file;
-            pushEvent({
-              type: 'file_edit',
-              file_edit: {
-                edit_type: 'start',
-                call_id: event.toolCallId,
-                tool_name: event.toolName,
-                file_path: typeof filePath === 'string' ? filePath : undefined,
-                action: event.toolName,
-              },
-            });
-          }
-          break;
-
-        case 'tool_progress':
-          logger.debug({ sessionKey, toolName: event.toolName, toolCallId: event.toolCallId }, '[TOOL_UPDATE] Tool execution in progress');
-          break;
-
-        case 'tool_finished':
-          logger.info({ sessionKey, toolName: event.toolName, toolCallId: event.toolCallId, success: !event.isError }, '[TOOL_END] Tool execution completed');
-          
-          // 存储工具结果条目
-          const resultContent = event.result?.content?.filter((c): c is TextContent => c.type === 'text').map((c) => c.text).join('') || '';
-          await sessionStorage.appendEntry({
-            type: 'tool_result',
-            id: await sessionStorage.createEntryId(),
-            parentId: await sessionStorage.getLeafId(),
-            timestamp: new Date().toISOString(),
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            input: (event.args ?? {}) as Record<string, unknown>,
-            content: resultContent,
-            isError: event.isError,
-            usage: event.result?.usage,
-          });
-          
-          pushEvent(event);
-
-          if (FILE_EDIT_TOOLS.has(event.toolName)) {
-            const storedArgs = event.args ?? {};
-            const args = storedArgs as Record<string, unknown>;
-            const filePath = args?.file_path || args?.path;
-            pushEvent({
-              type: 'file_edit',
-              file_edit: {
-                edit_type: event.isError ? 'error' : 'end',
-                call_id: event.toolCallId,
-                tool_name: event.toolName,
-                file_path: typeof filePath === 'string' ? filePath : undefined,
-                action: event.toolName,
-                error: event.isError ? event.result?.content?.filter((c: { type: string }): c is TextContent => c.type === 'text').map((c: TextContent) => c.text).join('') : undefined,
-              },
-            });
-          }
-
-          // Progress Guard: 记录工具调用结果并检测 (stream)
-          if (this.progressGuard.isEnabled) {
-            const pgIntervention = this.progressGuard.recordToolCall(
-              event.toolName,
-              (event.args ?? {}) as Record<string, unknown>,
-              {
-                success: !event.isError,
-                output: resultContent,
-                error: event.isError ? resultContent : undefined,
-              },
-            );
-            if (pgIntervention === 'terminate') {
-              logger.error({ sessionKey }, '[PG] Agent terminated by Progress Guard (stream)');
-            }
-          }
-
-          // ACR: 记录工具调用结果用于状态提取和压缩 (stream)
-          if (acr) {
-            acr.observeAfterToolCall(
-              event.toolName,
-              (event.args ?? {}) as Record<string, unknown>,
-              {
-                success: !event.isError,
-                output: resultContent,
-                error: event.isError ? resultContent : undefined,
-              },
-            );
-          }
-          break;
-      }
-    });
-
-    try {
-      // 预处理：Skill 匹配与执行
-      const skillInjectedMessage = await this.prepareSkillInput(message, agent);
-      const runPromise = agent.prompt(skillInjectedMessage);
-
-      while (true) {
-        if (eventQueue.length > 0) {
-          const event = eventQueue.shift()!;
-          yield event;
-          if (event.type === 'run_finished' || event.type === 'run_failed') {
-            break;
-          }
+      const pushEvent = (event: KobotEvent): void => {
+        if (resolveNext) {
+          resolveNext(event);
+          resolveNext = null;
         } else {
-          const event = await new Promise<KobotEvent>((resolve) => {
-            resolveNext = resolve;
-          });
-          yield event;
-          if (event.type === 'run_finished' || event.type === 'run_failed') {
-            break;
+          eventQueue.push(event);
+        }
+      };
+
+      const unsubscribe = agent.subscribe(
+        loop.createEventHandler(
+          state,
+          pushEvent,
+          (s) => {
+            // agent_finished -> 推送 run_finished/run_failed
+            const result: RunResult = {
+              content: s.finalContent,
+              toolsUsed: s.toolsUsed,
+              usage: {},
+              stopReason: s.stopReason,
+              metadata: {},
+              error: s.error,
+            };
+            if (s.error) {
+              pushEvent({ type: 'run_failed', content: s.finalContent, error: s.error, result });
+            } else {
+              pushEvent({ type: 'run_finished', content: s.finalContent, result });
+            }
+          },
+        ),
+      );
+
+      try {
+        // 预处理：Skill 匹配与执行
+        const skillInjectedMessage = await this.prepareSkillInput(message, agent);
+        const runPromise = agent.prompt(skillInjectedMessage);
+
+        while (true) {
+          if (eventQueue.length > 0) {
+            const event = eventQueue.shift()!;
+            yield event;
+            if (event.type === 'run_finished' || event.type === 'run_failed') {
+              break;
+            }
+          } else {
+            const event = await new Promise<KobotEvent>((resolve) => {
+              resolveNext = resolve;
+            });
+            yield event;
+            if (event.type === 'run_finished' || event.type === 'run_failed') {
+              break;
+            }
           }
         }
-      }
 
-      await runPromise;
+        await runPromise;
 
-      if (!options.ephemeral) {
-        await this.sessionManager.saveSession(sessionKey, agent.state.messages, {});
-      }
-    } catch (err) {
-      error = (err as Error).message;
-      stopReason = 'error';
-      
-      pushEvent({
-        type: 'run_failed',
-        content: finalContent,
-        error,
-        result: {
-          content: finalContent,
-          toolsUsed,
-          usage: {},
-          stopReason,
-          metadata: {},
-          error,
-        },
-      });
-      
-      if (!options.ephemeral) {
-        await this.sessionManager.saveSession(sessionKey, agent.state.messages, {});
+        if (!options.ephemeral) {
+          await this.sessionManager.saveSession(sessionKey, agent.state.messages, {});
+        }
+      } catch (err) {
+        state.error = (err as Error).message;
+        state.stopReason = 'error';
+
+        pushEvent({
+          type: 'run_failed',
+          content: state.finalContent,
+          error: state.error,
+          result: {
+            content: state.finalContent,
+            toolsUsed: state.toolsUsed,
+            usage: {},
+            stopReason: state.stopReason,
+            metadata: {},
+            error: state.error,
+          },
+        });
+
+        if (!options.ephemeral) {
+          await this.sessionManager.saveSession(sessionKey, agent.state.messages, {});
+        }
+      } finally {
+        unsubscribe();
       }
     } finally {
-      unsubscribe();
-    }
-    } finally {
-      resolveQueue();
+      release();
     }
   }
+
+  // ─── 会话管理 ───────────────────────────────────────────────────────
 
   async getSessionInfo(sessionKey: string): Promise<SessionInfo | null> {
     const storedInfo = await this.sessionManager.getSessionInfo(sessionKey);
     if (storedInfo) {
       return storedInfo;
     }
-    
+
     const agent = this.agents.get(sessionKey);
     if (!agent) return null;
 
@@ -1307,6 +887,7 @@ export class Kobot {
   async close(): Promise<void> {
     this.agents.clear();
     this.acrRuntimes.clear();
+    this.requestQueue.clear();
   }
 
   async [Symbol.asyncDispose](): Promise<void> {

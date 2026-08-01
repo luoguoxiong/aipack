@@ -6,8 +6,7 @@ import path from 'path';
 import os from 'os';
 import readline from 'readline';
 import { Kobot } from './kobot';
-import { CLIChannel } from './channels/cli';
-import { FeishuChannel } from './channels/feishu';
+import { ChannelManager } from './kobot/channels';
 import { createLogger } from './utils/logger';
 import { hasAnyApiKey, loadEnvFile, runSetupWizard } from './setup-wizard';
 import { loadConfig, saveConfig, defaultConfig, getConfigPath } from './config';
@@ -491,30 +490,8 @@ async function startBot(): Promise<void> {
     console.log(`   工具: ${bot.tools.length} 个可用`);
 
     // 如果通过环境变量配置了飞书，则启动飞书渠道
-    const feishuAppId = process.env.FEISHU_APP_ID;
-    const feishuAppSecret = process.env.FEISHU_APP_SECRET;
-    if (feishuAppId && feishuAppSecret) {
-      const feishuChannel = new FeishuChannel({
-        id: 'feishu',
-        name: 'Feishu',
-        enabled: true,
-        appId: feishuAppId,
-        appSecret: feishuAppSecret,
-        port: parseInt(process.env.FEISHU_PORT || '3000', 10),
-        path: process.env.FEISHU_PATH || '/webhook/event',
-      });
-      await feishuChannel.start(bot);
-    }
-    
-    const cliChannel = new CLIChannel({
-      id: 'cli',
-      name: 'CLI',
-      enabled: true,
-      historySize: 100,
-      prompt: 'kobot> ',
-    });
-
-    await cliChannel.start(bot);
+    const channelManager = new ChannelManager();
+    await channelManager.startAll(bot);
   } catch (err) {
     console.error('❌ 启动 kobot 时出错:', (err as Error).message);
     console.log('\n💡 提示:');
