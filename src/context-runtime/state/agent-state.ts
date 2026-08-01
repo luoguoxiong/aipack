@@ -4,7 +4,7 @@
  * 提供 Agent 状态的创建、格式化、提取等功能
  */
 
-import type { AgentMessage } from '../../agent/types';
+import type { AgentMessage } from '../../agent';
 import type {
   AgentState,
   FileState,

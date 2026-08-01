@@ -1,316 +1,394 @@
-import { z } from 'zod';
+import { Type, type Static } from '@sinclair/typebox';
+import { Value } from '@sinclair/typebox/value';
 
-export const ChannelsConfigSchema = z.object({
-  send_progress: z.boolean().default(true),
-  send_tool_hints: z.boolean().default(false),
-  show_reasoning: z.boolean().default(true),
-  extract_document_text: z.boolean().default(true),
-  send_max_retries: z.number().int().min(0).max(10).default(3),
-  transcription_provider: z.string().default('groq'),
-  transcription_language: z.string().regex(/^[a-z]{2,3}$/).optional().nullable(),
-}).passthrough();
+export const ChannelsConfigSchema = Type.Object({
+  send_progress: Type.Boolean({ default: true }),
+  send_tool_hints: Type.Boolean({ default: false }),
+  show_reasoning: Type.Boolean({ default: true }),
+  extract_document_text: Type.Boolean({ default: true }),
+  send_max_retries: Type.Integer({ minimum: 0, maximum: 10, default: 3 }),
+  transcription_provider: Type.String({ default: 'groq' }),
+  transcription_language: Type.Optional(Type.Union([Type.String({ pattern: '^[a-z]{2,3}$' }), Type.Null()])),
+}, { additionalProperties: true });
 
-export type ChannelsConfig = z.infer<typeof ChannelsConfigSchema>;
+export type ChannelsConfig = Static<typeof ChannelsConfigSchema>;
 
-export const TranscriptionConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  provider: z.string().optional().nullable(),
-  model: z.string().optional().nullable(),
-  language: z.string().regex(/^[a-z]{2,3}$/).optional().nullable(),
-  max_duration_sec: z.number().int().min(1).max(600).default(120),
-  max_upload_mb: z.number().int().min(1).max(100).default(25),
+export const TranscriptionConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: true }),
+  provider: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  model: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  language: Type.Optional(Type.Union([Type.String({ pattern: '^[a-z]{2,3}$' }), Type.Null()])),
+  max_duration_sec: Type.Integer({ minimum: 1, maximum: 600, default: 120 }),
+  max_upload_mb: Type.Integer({ minimum: 1, maximum: 100, default: 25 }),
 });
 
-export type TranscriptionConfig = z.infer<typeof TranscriptionConfigSchema>;
+export type TranscriptionConfig = Static<typeof TranscriptionConfigSchema>;
 
-export const DreamConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  interval_h: z.number().int().min(1).default(2),
-  cron: z.string().optional().nullable(),
-  model_override: z.string().optional().nullable(),
-  max_batch_size: z.number().int().min(1).default(20),
-  max_iterations: z.number().int().min(1).default(15),
-  annotate_line_ages: z.boolean().default(true),
+export const DreamConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: true }),
+  interval_h: Type.Integer({ minimum: 1, default: 2 }),
+  cron: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  model_override: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  max_batch_size: Type.Integer({ minimum: 1, default: 20 }),
+  max_iterations: Type.Integer({ minimum: 1, default: 15 }),
+  annotate_line_ages: Type.Boolean({ default: true }),
 });
 
-export type DreamConfig = z.infer<typeof DreamConfigSchema>;
+export type DreamConfig = Static<typeof DreamConfigSchema>;
 
-export const InlineFallbackConfigSchema = z.object({
-  model: z.string(),
-  provider: z.string(),
-  max_tokens: z.number().int().optional().nullable(),
-  context_window_tokens: z.number().int().optional().nullable(),
-  temperature: z.number().optional().nullable(),
-  reasoning_effort: z.string().optional().nullable(),
+export const InlineFallbackConfigSchema = Type.Object({
+  model: Type.String(),
+  provider: Type.String(),
+  max_tokens: Type.Optional(Type.Union([Type.Integer(), Type.Null()])),
+  context_window_tokens: Type.Optional(Type.Union([Type.Integer(), Type.Null()])),
+  temperature: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  reasoning_effort: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
-export type InlineFallbackConfig = z.infer<typeof InlineFallbackConfigSchema>;
+export type InlineFallbackConfig = Static<typeof InlineFallbackConfigSchema>;
 
-export const FallbackCandidateSchema = z.union([
-  z.string(),
+export const FallbackCandidateSchema = Type.Union([
+  Type.String(),
   InlineFallbackConfigSchema,
 ]);
 
-export type FallbackCandidate = z.infer<typeof FallbackCandidateSchema>;
+export type FallbackCandidate = Static<typeof FallbackCandidateSchema>;
 
-export const ModelPresetConfigSchema = z.object({
-  label: z.string().optional().nullable(),
-  model: z.string(),
-  provider: z.string().default('auto'),
-  max_tokens: z.number().int().default(8192),
-  context_window_tokens: z.number().int().default(200000),
-  temperature: z.number().default(0.1),
-  reasoning_effort: z.string().optional().nullable(),
+export const ModelPresetConfigSchema = Type.Object({
+  label: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  model: Type.String(),
+  provider: Type.String({ default: 'auto' }),
+  max_tokens: Type.Integer({ default: 8192 }),
+  context_window_tokens: Type.Integer({ default: 200000 }),
+  temperature: Type.Number({ default: 0.1 }),
+  reasoning_effort: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
-export type ModelPresetConfig = z.infer<typeof ModelPresetConfigSchema>;
+export type ModelPresetConfig = Static<typeof ModelPresetConfigSchema>;
 
-export const AgentDefaultsSchema = z.object({
-  workspace: z.string().default('.'),
-  model_preset: z.string().optional().nullable(),
-  model: z.string().default('deepseek-v4-flash'),
-  provider: z.string().default('auto'),
-  max_tokens: z.number().int().default(8192),
-  context_window_tokens: z.number().int().default(200000),
-  context_block_limit: z.number().int().optional().nullable(),
-  temperature: z.number().default(0.1),
-  fallback_models: z.array(FallbackCandidateSchema).default([]),
-  max_tool_iterations: z.number().int().default(200),
-  max_concurrent_subagents: z.number().int().min(1).default(1),
-  fail_on_tool_error: z.boolean().default(true),
-  max_tool_result_chars: z.number().int().default(16000),
-  provider_retry_mode: z.enum(['standard', 'persistent']).default('standard'),
-  tool_hint_max_length: z.number().int().min(20).max(500).default(40),
-  reasoning_effort: z.string().optional().nullable(),
-  timezone: z.string().default('UTC'),
-  bot_name: z.string().default('kobot'),
-  bot_icon: z.string().default('image/logo.png'),
-  unified_session: z.boolean().default(false),
-  disabled_skills: z.array(z.string()).default([]),
+export const AgentDefaultsSchema = Type.Object({
+  workspace: Type.String({ default: '.' }),
+  model_preset: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  model: Type.String({ default: 'deepseek-v4-flash' }),
+  provider: Type.String({ default: 'auto' }),
+  max_tokens: Type.Integer({ default: 8192 }),
+  context_window_tokens: Type.Integer({ default: 200000 }),
+  context_block_limit: Type.Optional(Type.Union([Type.Integer(), Type.Null()])),
+  temperature: Type.Number({ default: 0.1 }),
+  fallback_models: Type.Array(FallbackCandidateSchema, { default: [] }),
+  max_tool_iterations: Type.Integer({ default: 200 }),
+  max_concurrent_subagents: Type.Integer({ minimum: 1, default: 1 }),
+  fail_on_tool_error: Type.Boolean({ default: true }),
+  max_tool_result_chars: Type.Integer({ default: 16000 }),
+  provider_retry_mode: Type.Union([Type.Literal('standard'), Type.Literal('persistent')], { default: 'standard' }),
+  tool_hint_max_length: Type.Integer({ minimum: 20, maximum: 500, default: 40 }),
+  reasoning_effort: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  timezone: Type.String({ default: 'UTC' }),
+  bot_name: Type.String({ default: 'kobot' }),
+  bot_icon: Type.String({ default: 'image/logo.png' }),
+  unified_session: Type.Boolean({ default: false }),
+  disabled_skills: Type.Array(Type.String(), { default: [] }),
 });
 
-export type AgentDefaults = z.infer<typeof AgentDefaultsSchema>;
+export type AgentDefaults = Static<typeof AgentDefaultsSchema>;
 
-export const AgentsConfigSchema = z.object({
+export const AgentsConfigSchema = Type.Object({
   defaults: AgentDefaultsSchema,
-  model_presets: z.record(z.string(), ModelPresetConfigSchema).default({}),
-  instances: z.record(z.string(), AgentDefaultsSchema.partial()).default({}),
+  model_presets: Type.Record(Type.String(), ModelPresetConfigSchema, { default: {} }),
+  instances: Type.Record(Type.String(), Type.Partial(AgentDefaultsSchema), { default: {} }),
 });
 
-export type AgentsConfig = z.infer<typeof AgentsConfigSchema>;
+export type AgentsConfig = Static<typeof AgentsConfigSchema>;
 
-export const ProviderConfigSchema = z.object({
-  name: z.string(),
-  base_url: z.string().optional().nullable(),
-  api_key: z.string().optional().nullable(),
-  api_base: z.string().optional().nullable(),
-  default_model: z.string().optional().nullable(),
-  extra_headers: z.record(z.string(), z.string()).default({}),
-  extra_query: z.record(z.string(), z.string()).default({}),
-  extra_body: z.record(z.string(), z.unknown()).default({}),
-}).passthrough();
+export const ProviderConfigSchema = Type.Object({
+  name: Type.String(),
+  base_url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  api_key: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  api_base: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  default_model: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  extra_headers: Type.Record(Type.String(), Type.String(), { default: {} }),
+  extra_query: Type.Record(Type.String(), Type.String(), { default: {} }),
+  extra_body: Type.Record(Type.String(), Type.Unknown(), { default: {} }),
+}, { additionalProperties: true });
 
-export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
+export type ProviderConfig = Static<typeof ProviderConfigSchema>;
 
-export const ProvidersConfigSchema = z.object({
-  defaults: z.object({}).passthrough().default({}),
-  items: z.array(ProviderConfigSchema).default([]),
-}).passthrough();
+export const ProvidersConfigSchema = Type.Object({
+  defaults: Type.Object({}, { additionalProperties: true, default: {} }),
+  items: Type.Array(ProviderConfigSchema, { default: [] }),
+}, { additionalProperties: true });
 
-export type ProvidersConfig = z.infer<typeof ProvidersConfigSchema>;
+export type ProvidersConfig = Static<typeof ProvidersConfigSchema>;
 
-export const FileToolsConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  workspace_only: z.boolean().default(true),
-  allowed_patterns: z.array(z.string()).default([]),
-  denied_patterns: z.array(z.string()).default([]),
-  max_file_size_mb: z.number().default(10),
+export const FileToolsConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: true }),
+  workspace_only: Type.Boolean({ default: true }),
+  allowed_patterns: Type.Array(Type.String(), { default: [] }),
+  denied_patterns: Type.Array(Type.String(), { default: [] }),
+  max_file_size_mb: Type.Number({ default: 10 }),
+}, { default: {} });
+
+export type FileToolsConfig = Static<typeof FileToolsConfigSchema>;
+
+export const ExecToolConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: true }),
+  workspace_only: Type.Boolean({ default: true }),
+  allowed_patterns: Type.Array(Type.String(), { default: [] }),
+  denied_patterns: Type.Array(Type.String(), { default: [] }),
+  timeout_sec: Type.Integer({ default: 120 }),
+  shell: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  sandbox_backend: Type.Union([Type.Literal('none'), Type.Literal('docker')], { default: 'none' }),
+}, { default: {} });
+
+export type ExecToolConfig = Static<typeof ExecToolConfigSchema>;
+
+export const WebToolsConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: true }),
+  search_provider: Type.String({ default: 'ddg' }),
+  fetch_timeout_sec: Type.Integer({ default: 30 }),
+  max_search_results: Type.Integer({ default: 5 }),
+  user_agent: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+}, { default: {} });
+
+export type WebToolsConfig = Static<typeof WebToolsConfigSchema>;
+
+export const ImageGenerationToolConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: true }),
+  provider: Type.String({ default: 'auto' }),
+  model: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  size: Type.String({ default: '1024x1024' }),
+  quality: Type.String({ default: 'standard' }),
+}, { default: {} });
+
+export type ImageGenerationToolConfig = Static<typeof ImageGenerationToolConfigSchema>;
+
+export const MCPToolConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: true }),
+  servers: Type.Record(Type.String(), Type.Unknown(), { default: {} }),
+}, { default: {} });
+
+export type MCPToolConfig = Static<typeof MCPToolConfigSchema>;
+
+export const MyToolConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: true }),
+}, { default: {} });
+
+export type MyToolConfig = Static<typeof MyToolConfigSchema>;
+
+export const CliAppsToolConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: true }),
+  apps: Type.Record(Type.String(), Type.Unknown(), { default: {} }),
+}, { default: {} });
+
+export type CliAppsToolConfig = Static<typeof CliAppsToolConfigSchema>;
+
+export const ToolsConfigSchema = Type.Object({
+  filesystem: Type.Optional(FileToolsConfigSchema),
+  shell: Type.Optional(ExecToolConfigSchema),
+  web: Type.Optional(WebToolsConfigSchema),
+  image_generation: Type.Optional(ImageGenerationToolConfigSchema),
+  mcp: Type.Optional(MCPToolConfigSchema),
+  my: Type.Optional(MyToolConfigSchema),
+  cli_apps: Type.Optional(CliAppsToolConfigSchema),
+}, { additionalProperties: true });
+
+export type ToolsConfig = {
+  filesystem: FileToolsConfig;
+  shell: ExecToolConfig;
+  web: WebToolsConfig;
+  image_generation: ImageGenerationToolConfig;
+  mcp: MCPToolConfig;
+  my: MyToolConfig;
+  cli_apps: CliAppsToolConfig;
+  [key: string]: unknown;
+};
+
+export const MemoryConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: true }),
+  base_dir: Type.String({ default: 'memory' }),
+  dream: Type.Optional(DreamConfigSchema),
+}, { default: {} });
+
+export type MemoryConfig = {
+  enabled: boolean;
+  base_dir: string;
+  dream: DreamConfig;
+};
+
+export const CronConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: true }),
+  timezone: Type.String({ default: 'UTC' }),
+}, { default: {} });
+
+export type CronConfig = {
+  enabled: boolean;
+  timezone: string;
+};
+
+export const GatewayConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: true }),
+  host: Type.String({ default: '127.0.0.1' }),
+  port: Type.Integer({ default: 8765 }),
+  cors_origins: Type.Array(Type.String(), { default: ['http://localhost:5173'] }),
+  auth_token: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  webui_path: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+}, { default: {} });
+
+export type GatewayConfig = {
+  enabled: boolean;
+  host: string;
+  port: number;
+  cors_origins: string[];
+  auth_token?: string | null;
+  webui_path?: string | null;
+};
+
+export const ApiConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: false }),
+  host: Type.String({ default: '127.0.0.1' }),
+  port: Type.Integer({ default: 8000 }),
+  api_keys: Type.Array(Type.String(), { default: [] }),
+  cors_origins: Type.Array(Type.String(), { default: [] }),
+}, { default: {} });
+
+export type ApiConfig = {
+  enabled: boolean;
+  host: string;
+  port: number;
+  api_keys: string[];
+  cors_origins: string[];
+};
+
+export const SecurityConfigSchema = Type.Object({
+  workspace_access: Type.Union([Type.Literal('allow'), Type.Literal('deny'), Type.Literal('ask')], { default: 'allow' }),
+  network_access: Type.Boolean({ default: true }),
+  pth_guard: Type.Boolean({ default: true }),
 });
 
-export type FileToolsConfig = z.infer<typeof FileToolsConfigSchema>;
+export type SecurityConfig = Static<typeof SecurityConfigSchema>;
 
-export const ExecToolConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  workspace_only: z.boolean().default(true),
-  allowed_patterns: z.array(z.string()).default([]),
-  denied_patterns: z.array(z.string()).default([]),
-  timeout_sec: z.number().int().default(120),
-  shell: z.string().optional().nullable(),
-  sandbox_backend: z.enum(['none', 'docker']).default('none'),
+export const SessionsConfigSchema = Type.Object({
+  storage: Type.Union([Type.Literal('memory'), Type.Literal('file')], { default: 'memory' }),
+  storage_path: Type.String({ default: 'sessions' }),
 });
 
-export type ExecToolConfig = z.infer<typeof ExecToolConfigSchema>;
+export type SessionsConfig = Static<typeof SessionsConfigSchema>;
 
-export const WebToolsConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  search_provider: z.string().default('ddg'),
-  fetch_timeout_sec: z.number().int().default(30),
-  max_search_results: z.number().int().default(5),
-  user_agent: z.string().optional().nullable(),
-});
+export const LoggingConfigSchema = Type.Object({
+  level: Type.Union([Type.Literal('trace'), Type.Literal('debug'), Type.Literal('info'), Type.Literal('warn'), Type.Literal('error'), Type.Literal('fatal')], { default: 'info' }),
+  file_path: Type.String({ default: 'logs/kobot.log' }),
+  console_enabled: Type.Boolean({ default: true }),
+  rotation: Type.Optional(Type.Object({
+    enabled: Type.Boolean({ default: true }),
+    max_size: Type.String({ default: '10M' }),
+    max_files: Type.Integer({ minimum: 1, default: 30 }),
+    compress: Type.Boolean({ default: true }),
+  })),
+  separate_error_log: Type.Boolean({ default: true }),
+}, { default: {} });
 
-export type WebToolsConfig = z.infer<typeof WebToolsConfigSchema>;
+export type LoggingConfig = {
+  level: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+  file_path: string;
+  console_enabled: boolean;
+  rotation: {
+    enabled: boolean;
+    max_size: string;
+    max_files: number;
+    compress: boolean;
+  };
+  separate_error_log: boolean;
+};
 
-export const ImageGenerationToolConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  provider: z.string().default('auto'),
-  model: z.string().optional().nullable(),
-  size: z.string().default('1024x1024'),
-  quality: z.string().default('standard'),
-});
+export const ProgressGuardConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: true }),
+  profile: Type.Union([Type.Literal('coding'), Type.Literal('research'), Type.Literal('assistant'), Type.Literal('workflow')], { default: 'assistant' }),
+  window_size: Type.Integer({ minimum: 5, maximum: 100, default: 20 }),
+  min_turns_before_detect: Type.Integer({ minimum: 1, default: 3 }),
+  suspicious_threshold: Type.Number({ minimum: 0, maximum: 1, default: 0.4 }),
+  stuck_threshold: Type.Number({ minimum: 0, maximum: 1, default: 0.7 }),
+  failed_threshold: Type.Number({ minimum: 0, maximum: 1, default: 0.9 }),
+  confirmation_turns: Type.Integer({ minimum: 1, default: 2 }),
+  downgrade_turns: Type.Integer({ minimum: 1, default: 3 }),
+  debug: Type.Boolean({ default: false }),
+}, { additionalProperties: true, default: {} });
 
-export type ImageGenerationToolConfig = z.infer<typeof ImageGenerationToolConfigSchema>;
+export type ProgressGuardConfig = {
+  enabled: boolean;
+  profile: 'coding' | 'research' | 'assistant' | 'workflow';
+  window_size: number;
+  min_turns_before_detect: number;
+  suspicious_threshold: number;
+  stuck_threshold: number;
+  failed_threshold: number;
+  confirmation_turns: number;
+  downgrade_turns: number;
+  debug: boolean;
+  [key: string]: unknown;
+};
 
-export const MCPToolConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  servers: z.record(z.string(), z.unknown()).default({}),
-});
+export const ContextRuntimeConfigSchema = Type.Object({
+  enabled: Type.Boolean({ default: true }),
+  profile: Type.Union([Type.Literal('coding'), Type.Literal('research'), Type.Literal('assistant')], { default: 'coding' }),
+  context_limit: Type.Integer({ minimum: 1000, default: 128000 }),
+  debug: Type.Boolean({ default: false }),
+}, { additionalProperties: true, default: {} });
 
-export type MCPToolConfig = z.infer<typeof MCPToolConfigSchema>;
+export type ContextRuntimeConfig = {
+  enabled: boolean;
+  profile: 'coding' | 'research' | 'assistant';
+  context_limit: number;
+  debug: boolean;
+  [key: string]: unknown;
+};
 
-export const MyToolConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-});
-
-export type MyToolConfig = z.infer<typeof MyToolConfigSchema>;
-
-export const CliAppsToolConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  apps: z.record(z.string(), z.unknown()).default({}),
-});
-
-export type CliAppsToolConfig = z.infer<typeof CliAppsToolConfigSchema>;
-
-export const ToolsConfigSchema = z.object({
-  filesystem: FileToolsConfigSchema.default({}),
-  shell: ExecToolConfigSchema.default({}),
-  web: WebToolsConfigSchema.default({}),
-  image_generation: ImageGenerationToolConfigSchema.default({}),
-  mcp: MCPToolConfigSchema.default({}),
-  my: MyToolConfigSchema.default({}),
-  cli_apps: CliAppsToolConfigSchema.default({}),
-}).passthrough();
-
-export type ToolsConfig = z.infer<typeof ToolsConfigSchema>;
-
-export const MemoryConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  base_dir: z.string().default('memory'),
-  dream: DreamConfigSchema.default({}),
-});
-
-export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
-
-export const CronConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  timezone: z.string().default('UTC'),
-});
-
-export type CronConfig = z.infer<typeof CronConfigSchema>;
-
-export const GatewayConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  host: z.string().default('127.0.0.1'),
-  port: z.number().int().default(8765),
-  cors_origins: z.array(z.string()).default(['http://localhost:5173']),
-  auth_token: z.string().optional().nullable(),
-  webui_path: z.string().optional().nullable(),
-});
-
-export type GatewayConfig = z.infer<typeof GatewayConfigSchema>;
-
-export const ApiConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  host: z.string().default('127.0.0.1'),
-  port: z.number().int().default(8000),
-  api_keys: z.array(z.string()).default([]),
-  cors_origins: z.array(z.string()).default([]),
-});
-
-export type ApiConfig = z.infer<typeof ApiConfigSchema>;
-
-export const SecurityConfigSchema = z.object({
-  workspace_access: z.enum(['allow', 'deny', 'ask']).default('allow'),
-  network_access: z.boolean().default(true),
-  pth_guard: z.boolean().default(true),
-});
-
-export type SecurityConfig = z.infer<typeof SecurityConfigSchema>;
-
-export const SessionsConfigSchema = z.object({
-  storage: z.enum(['memory', 'file']).default('memory'),
-  storage_path: z.string().default('sessions'),
-});
-
-export type SessionsConfig = z.infer<typeof SessionsConfigSchema>;
-
-export const LoggingConfigSchema = z.object({
-  level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-  file_path: z.string().default('logs/kobot.log'),
-  console_enabled: z.boolean().default(true),
-  rotation: z.object({
-    enabled: z.boolean().default(true),
-    max_size: z.string().default('10M'),
-    max_files: z.number().int().min(1).default(30),
-    compress: z.boolean().default(true),
-  }).default({}),
-  separate_error_log: z.boolean().default(true),
-});
-
-export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
-
-export const ProgressGuardConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  profile: z.enum(['coding', 'research', 'assistant', 'workflow']).default('assistant'),
-  window_size: z.number().int().min(5).max(100).default(20),
-  min_turns_before_detect: z.number().int().min(1).default(3),
-  suspicious_threshold: z.number().min(0).max(1).default(0.4),
-  stuck_threshold: z.number().min(0).max(1).default(0.7),
-  failed_threshold: z.number().min(0).max(1).default(0.9),
-  confirmation_turns: z.number().int().min(1).default(2),
-  downgrade_turns: z.number().int().min(1).default(3),
-  debug: z.boolean().default(false),
-}).passthrough();
-
-export type ProgressGuardConfig = z.infer<typeof ProgressGuardConfigSchema>;
-
-export const ContextRuntimeConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  profile: z.enum(['coding', 'research', 'assistant']).default('coding'),
-  context_limit: z.number().int().min(1000).default(128000),
-  debug: z.boolean().default(false),
-}).passthrough();
-
-export type ContextRuntimeConfig = z.infer<typeof ContextRuntimeConfigSchema>;
-
-export const ConfigSchema = z.object({
-  schema_version: z.number().int().default(1),
-  workspace: z.string().default('~/.kobot'),
-  workspace_resolved: z.string().optional(),
+export const ConfigSchema = Type.Object({
+  schema_version: Type.Integer({ default: 1 }),
+  workspace: Type.String({ default: '~/.kobot' }),
+  workspace_resolved: Type.Optional(Type.String()),
   agents: AgentsConfigSchema,
-  providers: ProvidersConfigSchema.default({ items: [], defaults: {} }),
-  channels: ChannelsConfigSchema.default({}),
-  tools: ToolsConfigSchema.default({}),
-  memory: MemoryConfigSchema.default({}),
-  transcription: TranscriptionConfigSchema.default({}),
-  cron: CronConfigSchema.default({}),
-  gateway: GatewayConfigSchema.default({}),
-  api: ApiConfigSchema.default({}),
-  security: SecurityConfigSchema.default({}),
-  sessions: SessionsConfigSchema.default({}),
-  logging: LoggingConfigSchema.default({}),
-  progress_guard: ProgressGuardConfigSchema.default({}),
-  context_runtime: ContextRuntimeConfigSchema.default({}),
-}).passthrough();
+  providers: Type.Optional(ProvidersConfigSchema),
+  channels: Type.Optional(ChannelsConfigSchema),
+  tools: Type.Optional(ToolsConfigSchema),
+  memory: Type.Optional(MemoryConfigSchema),
+  transcription: Type.Optional(TranscriptionConfigSchema),
+  cron: Type.Optional(CronConfigSchema),
+  gateway: Type.Optional(GatewayConfigSchema),
+  api: Type.Optional(ApiConfigSchema),
+  security: Type.Optional(SecurityConfigSchema),
+  sessions: Type.Optional(SessionsConfigSchema),
+  logging: Type.Optional(LoggingConfigSchema),
+  progress_guard: Type.Optional(ProgressGuardConfigSchema),
+  context_runtime: Type.Optional(ContextRuntimeConfigSchema),
+}, { additionalProperties: true });
 
-export type Config = z.infer<typeof ConfigSchema>;
+export type Config = {
+  schema_version: number;
+  workspace: string;
+  workspace_resolved?: string;
+  agents: AgentsConfig;
+  providers: ProvidersConfig;
+  channels: ChannelsConfig;
+  tools: ToolsConfig;
+  memory: MemoryConfig;
+  transcription: TranscriptionConfig;
+  cron: CronConfig;
+  gateway: GatewayConfig;
+  api: ApiConfig;
+  security: SecurityConfig;
+  sessions: SessionsConfig;
+  logging: LoggingConfig;
+  progress_guard: ProgressGuardConfig;
+  context_runtime: ContextRuntimeConfig;
+  [key: string]: unknown;
+};
 
 export function defaultConfig(): Config {
-  return ConfigSchema.parse({
+  return Value.Decode(ConfigSchema, Value.Default(ConfigSchema, {
     agents: {
       defaults: {},
       model_presets: {},
       instances: {},
     },
-  });
+  })) as Config;
 }

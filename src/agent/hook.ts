@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentMessage } from "../pi/agent";
+import type { AgentEvent, AgentMessage } from "./types";
 import type { AgentHook as AgentHookInterface, AgentHookContext, AgentRunHookContext, AgentToolHookContext, StreamingEmitter } from "./types";
 
 export type { AgentHookContext, AgentRunHookContext, AgentToolHookContext, StreamingEmitter };
@@ -31,7 +31,7 @@ export class SDKCaptureHook implements AgentHookInterface {
 
   onToolCall(context: AgentToolHookContext): void {
     this.capturedEvents.push({
-      type: "tool_execution_start",
+      type: "tool_started",
       toolCallId: context.toolCallId,
       toolName: context.toolName,
       args: context.args,
@@ -40,7 +40,7 @@ export class SDKCaptureHook implements AgentHookInterface {
 
   onToolResult(context: AgentToolHookContext): void {
     this.capturedEvents.push({
-      type: "tool_execution_end",
+      type: "tool_finished",
       toolCallId: context.toolCallId,
       toolName: context.toolName,
       result: context.result as any,
@@ -63,7 +63,7 @@ export class AgentHookManager {
   async emitStart(messages: AgentMessage[], signal: AbortSignal): Promise<void> {
     for (const hook of this.hooks) {
       if (hook.onStart) {
-        await hook.onStart({ event: { type: "agent_start" }, messages, signal });
+        await hook.onStart({ event: { type: "agent_started" }, messages, signal });
       }
     }
   }
@@ -80,7 +80,7 @@ export class AgentHookManager {
     for (const hook of this.hooks) {
       if (hook.onToolCall) {
         await hook.onToolCall({
-          event: { type: "tool_execution_start", toolCallId, toolName, args },
+          event: { type: "tool_started", toolCallId, toolName, args },
           toolName,
           toolCallId,
           args,
@@ -94,7 +94,7 @@ export class AgentHookManager {
     for (const hook of this.hooks) {
       if (hook.onToolResult) {
         await hook.onToolResult({
-          event: { type: "tool_execution_end", toolCallId, toolName, result: result as any, isError: false },
+          event: { type: "tool_finished", toolCallId, toolName, result: result as any, isError: false },
           toolName,
           toolCallId,
           args: {},
@@ -108,7 +108,7 @@ export class AgentHookManager {
   async emitEnd(messages: AgentMessage[], signal: AbortSignal): Promise<void> {
     for (const hook of this.hooks) {
       if (hook.onEnd) {
-        await hook.onEnd({ event: { type: "agent_end", messages }, messages, signal });
+        await hook.onEnd({ event: { type: "agent_finished", messages }, messages, signal });
       }
     }
   }

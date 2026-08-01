@@ -1,4 +1,4 @@
-import { Type } from "../pi/ai";
+import { Type } from "../ai";
 import { BaseTool, createToolResult, createToolError } from './base';
 
 export class EchoTool extends BaseTool<typeof EchoTool.parameters> {
@@ -40,7 +40,7 @@ export class CalculateTool extends BaseTool<typeof CalculateTool.parameters> {
   async execute(toolCallId: string, params: { expression: string }) {
     try {
       const safeExpr = params.expression.replace(/[^0-9+\-*/().\s]/g, '');
-      const result = eval(safeExpr);
+      const result = new Function(`"use strict"; return (${safeExpr})`)();
       return createToolResult(`${safeExpr} = ${result}`);
     } catch (err) {
       return createToolError(`Error: ${(err as Error).message}`);

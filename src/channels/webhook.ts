@@ -1,7 +1,6 @@
 import http from 'http';
 import type { Channel, WebhookConfig, ChannelMessage, ChannelResponse } from './types';
 import type { Kobot } from '../kobot';
-import { STREAM_EVENT_TEXT_DELTA, STREAM_EVENT_TEXT_COMPLETED, STREAM_EVENT_TOOL_STARTED, STREAM_EVENT_TOOL_COMPLETED, STREAM_EVENT_TOOL_FAILED, STREAM_EVENT_RUN_COMPLETED, STREAM_EVENT_RUN_FAILED } from '../kobot';
 
 export class WebhookChannel implements Channel {
   id: string;
@@ -131,10 +130,10 @@ export class WebhookChannel implements Channel {
         senderId: message.senderId,
       })) {
         switch (event.type) {
-          case STREAM_EVENT_TEXT_DELTA:
+          case 'text_chunk':
             finalContent += event.content || '';
             break;
-          case STREAM_EVENT_TEXT_COMPLETED:
+          case 'text_finished':
             finalContent = event.content || finalContent;
             break;
         }

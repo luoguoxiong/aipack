@@ -1,7 +1,8 @@
-import { Type, Static, TSchema } from "../pi/ai";
-import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "../pi/agent";
+import { Type, Static, TSchema } from "../ai";
+import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "../agent";
 import { createToolResult, createToolError, isToolErrorResult } from "./types";
 import { logger } from "../utils/logger";
+import { calculateDelay, matchesRetryablePattern } from "../utils/retry";
 
 export type { ToolContext, ToolDefinition } from "./types";
 export type ToolResult<T = unknown> = AgentToolResult<T>;
@@ -121,14 +122,15 @@ export class ToolHealthManager {
   }
 }
 
-export const toolHealthManager = new ToolHealthManager();
-
 export abstract class BaseTool<TParameters extends TSchema = TSchema> {
   abstract name: string;
   abstract label: string;
   abstract description: string;
   abstract parameters: TParameters;
-  
+
+  /** 每个 BaseTool 实例拥有独立的健康管理器，支持外部注入实现 session 级共享 */
+  healthManager: ToolHealthManager = new ToolHealthManager();
+
   retryConfig: RetryConfig = {
     maxRetries: 3,
     initialDelay: 1000,
@@ -149,13 +151,11 @@ export abstract class BaseTool<TParameters extends TSchema = TSchema> {
   }
 
   private isRetryableError(errorMessage: string): boolean {
-    const lower = errorMessage.toLowerCase();
-    return RETRYABLE_ERRORS.some(err => lower.includes(err));
+    return matchesRetryablePattern(errorMessage, RETRYABLE_ERRORS);
   }
 
   private isNonRetryableError(errorMessage: string): boolean {
-    const lower = errorMessage.toLowerCase();
-    return NON_RETRYABLE_ERRORS.some(err => lower.includes(err));
+    return matchesRetryablePattern(errorMessage, NON_RETRYABLE_ERRORS);
   }
 
   private async delay(ms: number): Promise<void> {
@@ -175,7 +175,7 @@ export abstract class BaseTool<TParameters extends TSchema = TSchema> {
         const result = await this.execute(toolCallId, params, signal, onUpdate);
         
         // 记录成功
-        toolHealthManager.recordSuccess(this.name);
+        this.healthManager.recordSuccess(this.name);
         
         return result;
       } catch (err) {
@@ -183,7 +183,7 @@ export abstract class BaseTool<TParameters extends TSchema = TSchema> {
         const errorMessage = lastError.message;
         
         // 记录失败
-        toolHealthManager.recordFailure(this.name);
+        this.healthManager.recordFailure(this.name);
         
         // 检查是否需要重试
         if (!this.isRetryableError(errorMessage) || this.isNonRetryableError(errorMessage)) {
@@ -204,8 +204,7 @@ export abstract class BaseTool<TParameters extends TSchema = TSchema> {
         }
         
         // 指数退避
-        const delayMs = this.retryConfig.initialDelay * 
-          Math.pow(this.retryConfig.backoffFactor, attempt);
+        const delayMs = calculateDelay(attempt, this.retryConfig.initialDelay, 30000);
         
         logger.warn(
           { toolName: this.name, toolCallId, attempt: attempt + 1, 

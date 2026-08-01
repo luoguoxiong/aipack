@@ -177,9 +177,9 @@ export class FeishuChannel implements Channel {
         chatId,
         senderId,
       })) {
-        if (event.type === 'text_delta') {
+        if (event.type === 'text_chunk') {
           replyContent += event.content || '';
-        } else if (event.type === 'text_completed') {
+        } else if (event.type === 'text_finished') {
           replyContent = event.content || replyContent;
         }
       }

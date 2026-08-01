@@ -13,7 +13,7 @@
  * - 用户记忆（跨项目，用户级）
  */
 
-import type { AgentMessage } from '../../agent/types';
+import type { AgentMessage } from '../../agent';
 import type { AgentState, SessionMemory, ToolDigest } from '../types';
 import { getMessageContent } from '../state/message-adapter';
 

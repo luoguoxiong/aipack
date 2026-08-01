@@ -5,7 +5,7 @@
  * 重新构建一个新的上下文窗口。
  */
 
-import type { AgentMessage } from '../../agent/types';
+import type { AgentMessage } from '../../agent';
 import type { AgentState, CompressionLevel, ToolDigest } from '../types';
 import { formatStateSnapshot } from './agent-state';
 import { RECENT_KEEP } from '../types';

@@ -5,10 +5,28 @@
 ```
 kobot/
 ├── src/
-│   ├── agent/           # Agent 生命周期管理
+│   ├── agent/           # Agent 引擎（核心循环 + 钩子系统 + 上下文构建）
+│   │   ├── agent.ts     # Agent 类（消息循环、工具执行、流式通信）
 │   │   ├── context.ts   # 系统提示词构建
 │   │   ├── hook.ts      # 事件钩子系统
-│   │   └── types.ts     # 钩子接口定义
+│   │   ├── types.ts     # Agent 类型定义
+│   │   └── index.ts     # 模块导出
+│   ├── ai/              # AI 基础设施（流式协议、模型管理、提供商适配）
+│   │   ├── types.ts     # 核心类型（消息、模型、流事件）
+│   │   ├── models.ts    # Models 类（提供商管理、流式路由）
+│   │   ├── catalog.ts   # 内置模型目录（28 个模型）
+│   │   ├── providers-all.ts # 内置提供商工厂
+│   │   ├── stream-openai.ts # OpenAI SSE 流式解析
+│   │   ├── stream-anthropic.ts # Anthropic 流式解析
+│   │   ├── images.ts    # 图片生成
+│   │   ├── compat.ts    # 提供商兼容性检测
+│   │   ├── overflow.ts  # 上下文溢出检测
+│   │   ├── diagnostics.ts  # 诊断工具
+│   │   ├── error-body.ts   # 统一错误格式化
+│   │   ├── retry.ts     # 指数退避重试
+│   │   ├── json-parse.ts   # JSON 修复与流式解析
+│   │   ├── sanitize-unicode.ts # Unicode 清理
+│   │   └── index.ts     # 模块导出
 │   ├── channels/        # 交互渠道
 │   │   ├── cli.ts       # 命令行界面 (CLI)
 │   │   ├── webhook.ts   # Webhook HTTP 服务
@@ -139,18 +157,18 @@ Channel 输出（控制台 / HTTP 响应）
 ```typescript
 class Kobot {
   // 从配置文件初始化
-  static async fromConfig(options?: KobotOptions): Promise<Kobot>
+  static async fromConfig(options?: KobotOptions): Promise<Kobot>;
 
   // 同步运行（等待完整结果）
-  async run(message: string, options?: RunOptions): Promise<RunResult>
+  async run(message: string, options?: RunOptions): Promise<RunResult>;
 
   // 流式运行（逐事件推送）
-  stream(message: string, options?: RunOptions): AsyncGenerator<StreamEvent>
+  stream(message: string, options?: RunOptions): AsyncGenerator<StreamEvent>;
 
   // 会话管理
-  listSessions(): Promise<string[]>
-  getSessionDetail(key: string): Promise<SessionDetail | null>
-  deleteSession(key: string): Promise<boolean>
+  listSessions(): Promise<string[]>;
+  getSessionDetail(key: string): Promise<SessionDetail | null>;
+  deleteSession(key: string): Promise<boolean>;
 }
 ```
 
@@ -166,17 +184,17 @@ class Kobot {
 
 ```typescript
 abstract class BaseTool<TParameters extends TSchema> {
-  abstract name: string
-  abstract label: string
-  abstract description: string
-  abstract parameters: TParameters
+  abstract name: string;
+  abstract label: string;
+  abstract description: string;
+  abstract parameters: TParameters;
 
   // 容错配置
   retryConfig: RetryConfig = {
     maxRetries: 3,
     initialDelay: 1000,
     backoffFactor: 2,
-  }
+  };
 
   // 核心执行方法
   abstract execute(
@@ -184,7 +202,7 @@ abstract class BaseTool<TParameters extends TSchema> {
     params: Static<TParameters>,
     signal?: AbortSignal,
     onUpdate?: AgentToolUpdateCallback,
-  ): Promise<AgentToolResult>
+  ): Promise<AgentToolResult>;
 
   // 带容错的执行包装
   async safeExecute(
@@ -192,7 +210,7 @@ abstract class BaseTool<TParameters extends TSchema> {
     params: Static<TParameters>,
     signal?: AbortSignal,
     onUpdate?: AgentToolUpdateCallback,
-  ): Promise<AgentToolResult>
+  ): Promise<AgentToolResult>;
 }
 ```
 
@@ -209,11 +227,17 @@ abstract class BaseTool<TParameters extends TSchema> {
 
 ```typescript
 class ToolRegistry {
-  register(tool: BaseTool): void
-  registerMany(tools: BaseTool[]): void
-  getAgentTools(): AgentTool<TSchema>[]
-  executeTool(toolName, toolCallId, args, context, options?): Promise<ToolResult>
-  getExecutionHistory(): ToolExecutionRecord[]
+  register(tool: BaseTool): void;
+  registerMany(tools: BaseTool[]): void;
+  getAgentTools(): AgentTool<TSchema>[];
+  executeTool(
+    toolName,
+    toolCallId,
+    args,
+    context,
+    options?,
+  ): Promise<ToolResult>;
+  getExecutionHistory(): ToolExecutionRecord[];
 }
 ```
 
@@ -233,15 +257,16 @@ SessionManager
 
 ```typescript
 interface Channel {
-  id: string
-  name: string
-  start(bot: Kobot): Promise<void>
-  stop(): Promise<void>
-  sendMessage(chatId: string, content: string): Promise<ChannelResponse>
+  id: string;
+  name: string;
+  start(bot: Kobot): Promise<void>;
+  stop(): Promise<void>;
+  sendMessage(chatId: string, content: string): Promise<ChannelResponse>;
 }
 ```
 
 内置渠道：
+
 - **CLIChannel** — 交互式命令行界面，支持 readline 历史、会话管理命令
 - **WebhookChannel** — HTTP 服务，通过 POST 接收消息并返回 AI 回复
 
@@ -253,7 +278,7 @@ interface Channel {
 
 ```typescript
 // src/tools/weather.ts
-import { Type } from "../pi/ai";
+import { Type } from '../ai';
 import { BaseTool, createToolResult, createToolError } from './base';
 
 export class GetWeatherTool extends BaseTool<typeof GetWeatherTool.parameters> {
@@ -268,12 +293,14 @@ export class GetWeatherTool extends BaseTool<typeof GetWeatherTool.parameters> {
   async execute(toolCallId: string, params: { city: string }) {
     try {
       const response = await fetch(
-        `https://api.weather.com/current?city=${params.city}`
+        `https://api.weather.com/current?city=${params.city}`,
       );
       const data = await response.json();
       return createToolResult(JSON.stringify(data));
     } catch (err) {
-      return createToolError(`Failed to get weather: ${(err as Error).message}`);
+      return createToolError(
+        `Failed to get weather: ${(err as Error).message}`,
+      );
     }
   }
 }
@@ -394,7 +421,7 @@ kobot  # 启动 Kobot CLI
 ```typescript
 buildSystemPrompt(): string {
   return `你是 ${this.botIcon} ${this.botName}，一个有用的 AI 助手。
-  
+
 自定义规则：
 - 始终使用中文回复
 - 对代码问题提供详细解释
@@ -411,7 +438,7 @@ providers:
   items:
     - name: my-provider
       base_url: https://api.myprovider.com/v1
-      api_key: "${MY_PROVIDER_API_KEY}"
+      api_key: '${MY_PROVIDER_API_KEY}'
       default_model: my-model
 ```
 
@@ -431,13 +458,13 @@ Kobot 实现了一个多层次的错误处理系统：
 
 1. **工具层** — `BaseTool.safeExecute()` 自动重试和错误分类
 2. **Agent 层** — Agent 的事件订阅和错误传递
-3. **渠道层** — CLI/Webhook 对 `STREAM_EVENT_RUN_FAILED` 做出响应
+3. **渠道层** — CLI/Webhook 对 `run_failed` 事件（`KobotEvent` 业务事件）做出响应
 4. **用户层** — 友好的错误提示和排查建议
 
 ### 错误分类
 
-| 错误类型 | 示例 | 处理方式 |
-|---------|------|---------|
-| 可重试 | timeout, 429, 5xx | 指数退避重试（最多 3 次） |
-| 不可重试 | permission, 404, 400 | 直接返回错误，不重试 |
-| 未知 | 其他异常 | 重试仍失败后返回友好提示 |
+| 错误类型 | 示例                 | 处理方式                  |
+| -------- | -------------------- | ------------------------- |
+| 可重试   | timeout, 429, 5xx    | 指数退避重试（最多 3 次） |
+| 不可重试 | permission, 404, 400 | 直接返回错误，不重试      |
+| 未知     | 其他异常             | 重试仍失败后返回友好提示  |
