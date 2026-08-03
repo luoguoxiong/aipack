@@ -10,8 +10,11 @@
   },
   "scripts": {
     "build": "tsup",
+    "build:agentpack": "pnpm --filter agentpack build",
     "dev": "tsx src/cli.ts",
     "start": "node --import tsx dist/cli.js",
+    "agent": "tsx packages/agentpack/test/start.js",
+    "example:deepseek": "tsx examples/deepseek.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "lint": "tsc --noEmit"
   },
@@ -25,6 +28,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "agentpack": "workspace:*",
     "@types/express": "^5.0.6",
     "axios": "^1.7.0",
     "commander": "^12.1.0",
