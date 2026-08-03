@@ -3,8 +3,6 @@
  *
  * 这是整个框架的类型基础，不依赖任何外部实现。
  * 所有消息、内容块、模型、工具等类型都在此定义。
- *
- * 类似 webpack 的 webpack-sources 和基础类型定义。
  */
 
 // ─── 内容块类型 ───────────────────────────────────────────────────
@@ -145,7 +143,7 @@ export type StreamResult = AsyncIterable<StreamEvent>;
 /**
  * 流式函数类型 - 模型提供者需实现此接口
  *
- * 类似 webpack 的 resolver，是一个可替换的核心能力。
+ * 是一个可替换的核心能力。
  * 用户通过提供不同的 streamFn 来接入不同的 LLM 提供商。
  */
 export type StreamFn = (

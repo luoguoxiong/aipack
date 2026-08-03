@@ -4,8 +4,6 @@
  * 独立实现的 ContextTransformer，不依赖 src/。
  * 提供工具配对修复、状态快照注入、消息截断等内置转换器。
  * 用户可通过 BaseTransformer 实现自定义转换器（如上下文压缩）。
- *
- * Webpack 映射: Loader
  */
 
 import { BaseTransformer } from '../core';

@@ -1,35 +1,23 @@
 /**
- * packages - Webpack 架构风格的 Agent 框架入口
+ * packages - Agent 框架入口
  *
  * 独立框架，不依赖 src/。
- * 所有功能通过 Loader、Plugin 等机制扩展。
- *
- *   Webpack          -> Agent
- *   ─────────────────────────────────
- *   Compiler         -> Runtime             (packages/runtime)
- *   Entry            -> Request             (packages/request)
- *   Module           -> ContextResource     (packages/context-resource)
- *   Dependency Graph -> TaskGraph           (packages/task-graph)
- *   Loader           -> ContextTransformer  (packages/transformer)
- *   Plugin           -> Extension           (packages/extension)
- *   Loader Runner    -> Pipeline            (packages/pipeline)
- *   Bundle           -> Result              (packages/result)
- *   tapable          -> Tapable             (packages/core/tapable)
+ * 所有功能通过 Transformer、Extension 等机制扩展。
  */
 
 // ─── 核心契约层 ───────────────────────────────────────────────────
 export * from './core';
 
-// ─── Runtime: 编排层（Compiler） ──────────────────────────────────
+// ─── Runtime: 编排层 ──────────────────────────────────────────────
 export { AgentRuntime, createRuntime } from './runtime';
 
-// ─── Request: 请求入口（Entry） ───────────────────────────────────
+// ─── Request: 请求入口 ────────────────────────────────────────────
 export {
   validateRequest,
   normalizeRequest,
 } from './request';
 
-// ─── ContextResource: 上下文资源（Module） ────────────────────────
+// ─── ContextResource: 上下文资源 ──────────────────────────────────
 export {
   messageToResource,
   messagesToResources,
@@ -39,7 +27,7 @@ export {
   extractTextFromResource,
 } from './context-resource';
 
-// ─── TaskGraph: 任务依赖图（Dependency Graph） ────────────────────
+// ─── TaskGraph: 任务依赖图 ────────────────────────────────────────
 export {
   buildTaskGraph,
   graphToMessages,
@@ -48,7 +36,7 @@ export {
   getGraphStats,
 } from './task-graph';
 
-// ─── ContextTransformer: 上下文转换器（Loader） ───────────────────
+// ─── ContextTransformer: 上下文转换器 ─────────────────────────────
 export {
   ToolPairingTransformer,
   StateSnapshotTransformer,
@@ -58,14 +46,14 @@ export {
   createDefaultTransformers,
 } from './transformer';
 
-// ─── Pipeline: 转换流水线（Loader Runner） ────────────────────────
+// ─── Pipeline: 转换流水线 ────────────────────────────────────────
 export {
   createDefaultPipeline,
   PipelineRunner,
   createPipelineRunner,
 } from './pipeline';
 
-// ─── Extension: 扩展插件（Plugin） ────────────────────────────────
+// ─── Extension: 扩展插件 ─────────────────────────────────────────
 export {
   LoggingExtension,
   EventCaptureExtension,
@@ -76,7 +64,7 @@ export {
   createExtensionManager,
 } from './extension';
 
-// ─── Result: 运行结果（Bundle） ───────────────────────────────────
+// ─── Result: 运行结果 ────────────────────────────────────────────
 export {
   buildResultFromMessages,
   buildResultFromAssistantMessage,

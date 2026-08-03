@@ -2,10 +2,8 @@
  * packages/runtime - 运行时核心实现
  *
  * 独立实现的 Runtime，不依赖 src/。
- * Runtime 是整个 Agent 系统的核心调度器（Compiler），
+ * Runtime 是整个 Agent 系统的核心调度器，
  * 负责协调对话循环、工具执行、上下文转换和插件钩子。
- *
- * Webpack 映射: Compiler
  */
 
 import type {

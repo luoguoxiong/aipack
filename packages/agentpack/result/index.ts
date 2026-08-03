@@ -3,8 +3,6 @@
  *
  * 独立实现，不依赖 src/。
  * 提供 Result 构建和流式结果聚合。
- *
- * Webpack 映射: Bundle
  */
 
 import { ResultBuilder, createResult, createErrorResult } from '../core';

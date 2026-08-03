@@ -60,6 +60,9 @@ importers:
       '@types/ws':
         specifier: ^8.5.12
         version: 8.18.1
+      agentpack-cli:
+        specifier: workspace:*
+        version: link:packages/agentpack-cli
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(tsx@4.23.5)(typescript@5.9.3)

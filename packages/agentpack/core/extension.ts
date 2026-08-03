@@ -1,11 +1,8 @@
 /**
  * Extension - 扩展插件系统
  *
- * 灵感来自 webpack 的 Plugin 系统。
  * Extension 通过 Tapable 钩子在 Runtime 生命周期的关键节点注入逻辑，
  * 无需修改 Runtime 核心，实现开闭原则。
- *
- * Webpack 映射: Plugin
  */
 
 import { AsyncSeriesHook, AsyncSeriesWaterfallHook } from './tapable';

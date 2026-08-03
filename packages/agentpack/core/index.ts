@@ -3,17 +3,6 @@
  *
  * 定义整个 Agent 架构的"契约层"，
  * 所有实现包（runtime, transformer, extension 等）都依赖此包。
- *
- * Webpack 映射关系:
- *   Compiler         -> Runtime
- *   Entry            -> Request
- *   Module           -> ContextResource
- *   Dependency Graph -> TaskGraph
- *   Loader           -> ContextTransformer
- *   Plugin           -> Extension
- *   Loader Runner    -> Pipeline
- *   Bundle           -> Result
- *   tapable          -> Tapable
  */
 
 // ─── 核心类型: 消息/内容/模型/工具 ─────────────────────────────────

@@ -19,9 +19,9 @@ export interface ResolvedPaths {
   memoryDir: string;
 }
 
-export function resolvePaths(): ResolvedPaths {
+export async function resolvePaths(): Promise<ResolvedPaths> {
   const configDir = getConfigDir();
-  const config = loadConfig();
+  const config = await loadConfig();
   const workspace = config.workspace;
   return {
     configDir,
@@ -74,7 +74,7 @@ function removeDirContents(dirPath: string): number {
 // ─── reset all ─────────────────────────────────────────────────────
 
 export async function resetAll(skipConfirm: boolean): Promise<void> {
-  const paths = resolvePaths();
+  const paths = await resolvePaths();
 
   const confirmed = await confirmAction(
     '⚠️  这将重置所有数据，包括配置、日志、会话和记忆。确定继续吗？',
@@ -98,7 +98,7 @@ export async function resetAll(skipConfirm: boolean): Promise<void> {
 // ─── reset config ──────────────────────────────────────────────────
 
 export async function resetConfig(skipConfirm: boolean): Promise<void> {
-  const paths = resolvePaths();
+  const paths = await resolvePaths();
 
   const confirmed = await confirmAction(
     `⚠️  这将删除用户级配置文件与 .env。\n   配置文件: ${paths.configPath}\n   .env 文件: ${paths.envPath}\n   项目级 agentpack.config.json 不受影响。\n   确定继续吗？`,
@@ -136,7 +136,7 @@ function doResetConfig(paths: ResolvedPaths): void {
 // ─── reset logs ────────────────────────────────────────────────────
 
 export async function resetLogs(skipConfirm: boolean): Promise<void> {
-  const paths = resolvePaths();
+  const paths = await resolvePaths();
 
   const confirmed = await confirmAction(
     `⚠️  这将清空以下目录中的所有日志文件:\n   ${paths.logsDir}\n   确定继续吗？`,
@@ -164,7 +164,7 @@ function doResetLogs(paths: ResolvedPaths): void {
 // ─── reset sessions ────────────────────────────────────────────────
 
 export async function resetSessions(skipConfirm: boolean): Promise<void> {
-  const paths = resolvePaths();
+  const paths = await resolvePaths();
 
   const confirmed = await confirmAction(
     `⚠️  这将删除以下目录中的所有会话数据:\n   ${paths.sessionsDir}\n   确定继续吗？`,
@@ -192,7 +192,7 @@ function doResetSessions(paths: ResolvedPaths): void {
 // ─── reset memory ──────────────────────────────────────────────────
 
 export async function resetMemory(skipConfirm: boolean): Promise<void> {
-  const paths = resolvePaths();
+  const paths = await resolvePaths();
 
   const confirmed = await confirmAction(
     `⚠️  这将删除以下目录中的所有记忆数据:\n   ${paths.memoryDir}\n   确定继续吗？`,
