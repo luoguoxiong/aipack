@@ -15,6 +15,7 @@
     "start": "node --import tsx dist/cli.js",
     "agent": "tsx packages/agentpack/test/start.js",
     "example:deepseek": "tsx examples/deepseek.ts",
+    "example:agent-memory": "tsx examples/agent-memory.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "lint": "tsc --noEmit"
   },
