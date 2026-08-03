@@ -20,7 +20,8 @@
       "@/*": ["./src/*"],
       "agentpack": ["./packages/agentpack/index.ts"],
       "agentpack/*": ["./packages/agentpack/*"],
-      "agentpack-memory": ["./packages/agentpack-memory/index.ts"]
+      "agentpack-memory": ["./packages/agentpack-memory/index.ts"],
+      "agentpack-coding": ["./packages/agentpack-coding/index.ts"]
     }
   },
   "include": ["src/**/*", "packages/**/*", "examples/**/*"],

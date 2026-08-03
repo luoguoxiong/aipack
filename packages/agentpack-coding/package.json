@@ -1,0 +1,50 @@
+{
+  "name": "agentpack-coding",
+  "version": "0.1.0",
+  "description": "agentpack coding 工具集 + coding agent 工厂 + CLI：文件读写、命令执行、代码搜索",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "agentpack-coding": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "prebuild": "pnpm --filter agentpack build",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "example": "node --import tsx examples/round-trip.ts"
+  },
+  "keywords": [
+    "agentpack",
+    "coding",
+    "agent",
+    "tools",
+    "cli"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "agentpack": "workspace:*"
+  },
+  "devDependencies": {
+    "agentpack": "workspace:*",
+    "agentpack-memory": "workspace:*",
+    "@types/node": "^20.12.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.5.0",
+    "tsx": "^4.16.0"
+  }
+}

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <!-- 机器人头部 + 代码括号，表示 AI coding -->
+  <rect x="5" y="8" width="14" height="11" rx="2.5" />
+  <path d="M12 4v4" />
+  <circle cx="12" cy="3.2" r="1.2" fill="currentColor" stroke="none" />
+  <path d="M9 13l-2 1.8L9 16.6" />
+  <path d="M15 13l2 1.8L15 16.6" />
+  <path d="M13 12.5l-2 5" />
+</svg>

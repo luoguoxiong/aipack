@@ -17,7 +17,9 @@
     "example:deepseek": "tsx examples/deepseek.ts",
     "example:agent-memory": "tsx examples/agent-memory.ts",
     "test": "node --import tsx --test tests/*.test.ts",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "example:coding": "tsx packages/agentpack-coding/examples/round-trip.ts",
+    "example:coding:llm": "tsx packages/agentpack-coding/examples/real-llm.ts"
   },
   "keywords": [
     "ai",
@@ -48,6 +50,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.12.0",
     "@types/ws": "^8.5.12",
+    "agentpack-coding": "workspace:*",
     "agentpack-cli": "workspace:*",
     "tsup": "^8.5.1",
     "tsx": "^4.16.0",
