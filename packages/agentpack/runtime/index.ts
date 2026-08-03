@@ -705,6 +705,14 @@ export class AgentRuntime implements Runtime {
         return { type: 'text', content: event.delta };
       case 'thinking_delta':
         return { type: 'thinking', content: event.delta };
+      case 'error':
+        // 模型调用错误（无 API Key / 鉴权失败 / 网络错误 / HTTP 4xx-5xx 等）
+        // 以 error 事件流入，errorMessage 已由 stream-openai/anthropic 填好。
+        // 此前默认分支返回 null，导致错误被静默吞掉、前端只收到 done。
+        return {
+          type: 'error',
+          content: event.message.errorMessage || '模型调用出错',
+        };
       default:
         return null;
     }

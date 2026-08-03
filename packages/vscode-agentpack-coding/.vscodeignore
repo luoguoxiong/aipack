@@ -1,0 +1,11 @@
+# vsce 打包忽略清单（依赖已 bundle 进 dist/extension.js，运行期无需 node_modules）
+src/**
+tests/**
+scripts/**
+node_modules/**
+**/*.map
+esbuild.config.mjs
+tsconfig.json
+.vscode/**
+.trae/**
+**/.DS_Store

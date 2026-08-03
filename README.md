@@ -12,6 +12,7 @@ Agent 框架与命令行工具的 monorepo，核心调度、会话持久化、�
 | --- | --- |
 | [agentpack](packages/agentpack) | Agent 框架：`Runtime + Extension + Transformer`，配置入口 + 执行入口 |
 | [agentpack-cli](packages/agentpack-cli) | 基于 agentpack 框架的命令行工具（交互式聊天、会话管理、回放等） |
+| [agentpack-coding](packages/agentpack-coding) | coding 工具集 + coding agent 工厂 + CLI（文件读写、命令执行、代码搜索） |
 
 ## agentpack（框架）
 
