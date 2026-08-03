@@ -1,0 +1,262 @@
+{
+  "name": "vscode-agentpack-coding",
+  "version": "0.1.0",
+  "description": "基于 agentpack-coding 的 VSCode AI coding 助手扩展：Webview 聊天面板 + 流式输出 + 工具卡片 + 命令确认 + 跨会话记忆",
+  "publisher": "agentpack",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentpack/nanobot-ts",
+    "directory": "packages/vscode-agentpack-coding"
+  },
+  "main": "./dist/extension.js",
+  "engines": {
+    "node": ">=18.0.0",
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "agentpack",
+    "ai",
+    "coding",
+    "agent",
+    "chat"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentpack-coding",
+          "title": "Agentpack Coding",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "agentpack-coding": [
+        {
+          "id": "agentpack.coding.chatView",
+          "name": "Chat",
+          "type": "webview"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "agentpack.coding.openChat",
+          "when": "view == agentpack.coding.chatView",
+          "group": "navigation"
+        },
+        {
+          "command": "agentpack.coding.clearHistory",
+          "when": "view == agentpack.coding.chatView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "agentpack.coding.openChat",
+        "title": "Open Chat",
+        "category": "Agentpack Coding"
+      },
+      {
+        "command": "agentpack.coding.stop",
+        "title": "Stop Run",
+        "category": "Agentpack Coding"
+      },
+      {
+        "command": "agentpack.coding.clearHistory",
+        "title": "Clear History",
+        "category": "Agentpack Coding"
+      }
+    ],
+    "configuration": {
+      "title": "Agentpack Coding",
+      "properties": {
+        "agentpack.provider": {
+          "type": "string",
+          "default": "deepseek",
+          "enum": [
+            "openai",
+            "deepseek",
+            "anthropic",
+            "groq",
+            "google",
+            "openrouter",
+            "mistral",
+            "xai",
+            "cerebras",
+            "together",
+            "fireworks",
+            "nvidia",
+            "moonshot"
+          ],
+          "enumDescriptions": [
+            "OpenAI",
+            "DeepSeek",
+            "Anthropic",
+            "Groq",
+            "Google (Gemini)",
+            "OpenRouter",
+            "Mistral",
+            "xAI (Grok)",
+            "Cerebras",
+            "Together AI",
+            "Fireworks",
+            "NVIDIA NIM",
+            "Moonshot AI"
+          ],
+          "description": "模型提供商"
+        },
+        "agentpack.model": {
+          "type": "string",
+          "default": "",
+          "description": "模型 ID（留空则取该 provider 的推荐模型，如 deepseek-chat / claude-3-5-sonnet-20241022）"
+        },
+        "agentpack.apiKey.openai": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "OpenAI API Key（写入 OPENAI_API_KEY）"
+        },
+        "agentpack.apiKey.deepseek": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "DeepSeek API Key（写入 DEEPSEEK_API_KEY）"
+        },
+        "agentpack.apiKey.anthropic": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Anthropic API Key（写入 ANTHROPIC_API_KEY）"
+        },
+        "agentpack.apiKey.groq": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Groq API Key（写入 GROQ_API_KEY）"
+        },
+        "agentpack.apiKey.google": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Google Gemini API Key（写入 GEMINI_API_KEY）"
+        },
+        "agentpack.apiKey.openrouter": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "OpenRouter API Key（写入 OPENROUTER_API_KEY）"
+        },
+        "agentpack.apiKey.mistral": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Mistral API Key（写入 MISTRAL_API_KEY）"
+        },
+        "agentpack.apiKey.xai": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "xAI (Grok) API Key（写入 XAI_API_KEY）"
+        },
+        "agentpack.apiKey.cerebras": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Cerebras API Key（写入 CEREBRAS_API_KEY）"
+        },
+        "agentpack.apiKey.together": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Together AI API Key（写入 TOGETHER_API_KEY）"
+        },
+        "agentpack.apiKey.fireworks": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Fireworks API Key（写入 FIREWORKS_API_KEY）"
+        },
+        "agentpack.apiKey.nvidia": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "NVIDIA NIM API Key（写入 NVIDIA_API_KEY）"
+        },
+        "agentpack.apiKey.moonshot": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Moonshot AI API Key（写入 MOONSHOT_API_KEY）"
+        },
+        "agentpack.memory.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用跨会话记忆（agentpack-memory），自动 capture/recall 项目约定与决策"
+        },
+        "agentpack.memory.baseDir": {
+          "type": "string",
+          "default": "",
+          "description": "记忆存储目录（默认 ~/.agentpack/memory，支持 ~ 展开）"
+        },
+        "agentpack.sessionDir": {
+          "type": "string",
+          "default": "",
+          "description": "会话持久化目录（默认走扩展 globalStorage/sessions，支持 ~ 展开）"
+        },
+        "agentpack.enabledTools": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "read_file",
+              "write_file",
+              "edit_file",
+              "list_directory",
+              "run_command",
+              "grep",
+              "glob"
+            ]
+          },
+          "default": [],
+          "description": "启用的工具子集（空数组 = 全部 7 个）"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "prebuild": "pnpm --filter agentpack build && pnpm --filter agentpack-memory build && pnpm --filter agentpack-coding build",
+    "watch": "node esbuild.config.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "package:vsix": "NODE_OPTIONS='--require ./scripts/vsce-polyfill.cjs' vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "agentpack-coding": "workspace:*"
+  },
+  "peerDependencies": {
+    "agentpack-memory": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.32.0",
+    "agentpack": "workspace:*",
+    "agentpack-memory": "workspace:*",
+    "esbuild": "^0.23.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}
