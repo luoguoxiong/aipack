@@ -1,15 +1,12 @@
 /**
  * Runtime - 运行时核心接口
  *
- * 灵感来自 webpack 的 Compiler。
  * Runtime 是整个 Agent 系统的核心调度器，负责：
- * 1. 接收 Request（Entry）
- * 2. 构建 TaskGraph（Dependency Graph）
- * 3. 通过 Pipeline（Loader Runner）执行 Transformer（Loader）
- * 4. 触发 Extension（Plugin）钩子
- * 5. 产出 Result（Bundle）
- *
- * Webpack 映射: Compiler
+ * 1. 接收 Request（请求入口）
+ * 2. 构建 TaskGraph（任务依赖图）
+ * 3. 通过 Pipeline 执行 ContextTransformer（上下文转换）
+ * 4. 触发 Extension（扩展插件）钩子
+ * 5. 产出 Result（运行结果）
  */
 
 import type { Model, Tool, StreamFn, Message } from './types';

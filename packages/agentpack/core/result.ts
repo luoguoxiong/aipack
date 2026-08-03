@@ -1,11 +1,8 @@
 /**
  * Result - 运行结果
  *
- * 灵感来自 webpack 的 Bundle。
  * Result 代表 Agent 一次运行的最终产物，
  * 包含输出内容、使用的工具、元数据、以及资源快照。
- *
- * Webpack 映射: Bundle
  */
 
 import type { ContextResource } from './context-resource';

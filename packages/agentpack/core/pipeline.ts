@@ -1,11 +1,8 @@
 /**
  * Pipeline - 转换流水线
  *
- * 灵感来自 webpack 的 Loader Runner。
  * Pipeline 按优先级顺序执行多个 ContextTransformer，
  * 每个 Transformer 接收前一个的输出作为输入，形成链式处理流水线。
- *
- * Webpack 映射: Loader Runner
  */
 
 import type { ContextResource } from './context-resource';
@@ -73,7 +70,6 @@ export class PipelineImpl implements Pipeline {
         current = await transformer.transform(current, context);
       } catch (err) {
         // 单个 Transformer 失败时跳过，保持当前资源不变
-        // 与 webpack Loader Runner 的容错策略一致
       }
     }
 

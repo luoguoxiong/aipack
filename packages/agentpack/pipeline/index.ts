@@ -3,8 +3,6 @@
  *
  * 独立实现，不依赖 src/。
  * Pipeline 按 Transformer 优先级顺序执行，形成链式处理流水线。
- *
- * Webpack 映射: Loader Runner
  */
 
 import {

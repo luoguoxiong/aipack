@@ -5,7 +5,9 @@
  *
  * commander 主程序：
  *   chat（默认） 交互式聊天
+ *   continue     继续历史会话（恢复上下文后进入交互式聊天）
  *   run          一次性提问（缺省从标准输入读取）
+ *   init         初始化配置文件（交互式向导）
  *   models       列出内置模型
  *   replay       回放历史会话
  *   sessions     list / clear / delete
@@ -13,12 +15,14 @@
  */
 
 import { Command } from 'commander';
+import { createFileSessionStorage } from 'agentpack';
 import type { Model as AiModel } from 'agentpack/ai';
 import type { AgentpackConfig, CliOptions } from './config';
 import { loadConfig } from './config';
 import { loadEnvFile } from './env';
 import { createAgentpackRuntime, resolveModelForCli } from './runtime';
 import { hasAnyApiKey, runSetupWizard } from './setup-wizard';
+import { runInitConfig } from './init-config';
 import { startChat } from './chat';
 import { runOnce } from './run';
 import { replaySession } from './replay';
@@ -41,12 +45,11 @@ program
   .version('0.1.0');
 
 program
-  .option('-c, --config <path>', '配置文件路径（默认合并 <cwd>/agentpack.config.json 与 ~/.agentpack/config.json）')
+  .option('-c, --config <path>', '配置文件路径（支持 .js/.json，默认合并 <cwd>/agentpack.config.js 与 ~/.agentpack/config.json）')
   .option('-p, --provider <provider>', '模型提供商（如 deepseek / openai）')
   .option('-m, --model <model>', '模型 ID（如 deepseek-chat / gpt-4o-mini）')
   .option('--system-prompt <text>', '系统提示词')
   .option('-w, --workspace <path>', '工作区路径')
-  .option('-k, --session-key <key>', '会话 key（默认 default）')
   .option('--no-persist', '禁用会话持久化');
 
 // ─── 通用初始化 ────────────────────────────────────────────────────
@@ -59,7 +62,6 @@ function getCliOptions(): CliOptions {
     model: opts.model,
     systemPrompt: opts.systemPrompt,
     workspace: opts.workspace,
-    sessionKey: opts.sessionKey,
     noPersist: opts.persist === false,
   };
 }
@@ -77,7 +79,7 @@ async function init(): Promise<InitResult> {
   loadEnvFile();
   const cli = getCliOptions();
 
-  let config = loadConfig(cli);
+  let config = await loadConfig(cli);
 
   // 未检测到任何 API Key：交互式终端下运行设置向导
   if (!hasAnyApiKey()) {
@@ -92,7 +94,7 @@ async function init(): Promise<InitResult> {
 
     // 向导内部会写入 API Key + AGENTPACK_PROVIDER/MODEL 到环境变量与 .env
     await runSetupWizard();
-    config = loadConfig(cli);
+    config = await loadConfig(cli);
   }
 
   const model = resolveModelForCli(config);
@@ -118,6 +120,34 @@ program
     const { config, model } = await init();
     const runtime = createAgentpackRuntime(config, model);
     printInitInfo(config, model);
+    console.log('');
+    await startChat(runtime, config, `${model.provider}/${model.id}`);
+  });
+
+// ─── 命令：continue ────────────────────────────────────────────────
+
+program
+  .command('continue')
+  .description('继续某个历史会话（恢复上下文后进入交互式聊天）')
+  .argument('<sessionKey>', '要继续的会话 key')
+  .action(async (sessionKey: string) => {
+    const { config, model } = await init();
+
+    // 校验会话是否存在，给出可读错误
+    const storage = createFileSessionStorage({ baseDir: config.sessions.baseDir });
+    const stored = await storage.load(sessionKey);
+    if (!stored) {
+      console.error(`❌ 会话 "${sessionKey}" 未找到（存储目录：${config.sessions.baseDir}）`);
+      console.error('   运行 "agentpack sessions list" 查看已有会话');
+      process.exit(1);
+    }
+
+    // 用指定会话 key 覆盖自动生成的新 key，runtime 会 hydrate 加载历史上下文
+    config.sessionKey = sessionKey;
+
+    const runtime = createAgentpackRuntime(config, model);
+    printInitInfo(config, model);
+    console.log(`已恢复会话：${sessionKey}（${stored.messages.length} 条历史消息）`);
     console.log('');
     await startChat(runtime, config, `${model.provider}/${model.id}`);
   });
@@ -148,6 +178,25 @@ program
 
     const { config, model } = await init();
     await runOnce(message, config, model);
+  });
+
+// ─── 命令：init ───────────────────────────────────────────────────
+
+program
+  .command('init')
+  .description('初始化配置文件（交互式生成 agentpack.config.js / config.json）')
+  .option('-g, --global', '写入全局配置 ~/.agentpack/config.json')
+  .option('-l, --local', '写入项目级配置 <cwd>/agentpack.config.js')
+  .option('-f, --force', '覆盖已存在的配置文件')
+  .action(async (options: { global?: boolean; local?: boolean; force?: boolean }) => {
+    if (options.global && options.local) {
+      console.error('❌ --global 与 --local 不能同时使用。');
+      process.exit(1);
+    }
+    await runInitConfig({
+      target: options.global ? 'global' : options.local ? 'local' : undefined,
+      force: options.force,
+    });
   });
 
 // ─── 命令：models ──────────────────────────────────────────────────
@@ -222,7 +271,7 @@ sessionsCmd
   .command('list')
   .description('列出所有已持久化的会话')
   .action(async () => {
-    const config = loadConfig(getCliOptions());
+    const config = await loadConfig(getCliOptions());
     const sessions = await listSessions(config);
     if (sessions.length === 0) {
       console.log('（无会话）');
@@ -237,7 +286,7 @@ sessionsCmd
   .description('清空所有会话')
   .option('-y, --yes', '跳过确认提示')
   .action(async (options: { yes?: boolean }) => {
-    const config = loadConfig(getCliOptions());
+    const config = await loadConfig(getCliOptions());
     const confirmed = await confirmAction(
       `⚠️  这将删除 ${config.sessions.baseDir} 中的所有会话数据。确定继续吗？`,
       options.yes ?? false,
@@ -255,7 +304,7 @@ sessionsCmd
   .description('删除指定会话')
   .argument('<sessionKey>', '要删除的会话 key')
   .action(async (sessionKey: string) => {
-    const config = loadConfig(getCliOptions());
+    const config = await loadConfig(getCliOptions());
     const ok = await deleteSession(config, sessionKey);
     console.log(ok ? `✅ 已删除会话：${sessionKey}` : `⚠️  会话不存在：${sessionKey}`);
   });

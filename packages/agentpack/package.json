@@ -1,7 +1,7 @@
 {
   "name": "agentpack",
   "version": "0.1.0",
-  "description": "Webpack 架构风格的 Agent 框架：Runtime(Compiler) + Extension(Plugin) + Transformer(Loader)，配置入口 + 执行入口",
+  "description": "Agent 框架：Runtime + Extension + Transformer，配置入口 + 执行入口",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -31,7 +31,6 @@
     "agent",
     "ai",
     "framework",
-    "webpack",
     "llm"
   ],
   "license": "MIT",

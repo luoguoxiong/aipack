@@ -3,8 +3,6 @@
  *
  * 独立实现的 Extension 系统，不依赖 src/。
  * 通过 Tapable 钩子在 Runtime 生命周期的关键节点注入逻辑。
- *
- * Webpack 映射: Plugin
  */
 
 import { BaseExtension, ExtensionManager } from '../core';

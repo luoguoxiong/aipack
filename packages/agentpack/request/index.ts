@@ -3,8 +3,6 @@
  *
  * 独立实现，不依赖 src/。
  * 负责请求的解析、验证与标准化。
- *
- * Webpack 映射: Entry
  */
 
 import { RequestBuilder, createRequest } from '../core';

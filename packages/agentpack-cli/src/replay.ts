@@ -69,9 +69,8 @@ export async function replaySession(
     throw new Error(`会话 "${sessionKey}" 中没有用户消息`);
   }
 
-  // 3. 创建新的回放会话（独立于原会话）
+  // 3. 创建回放 Runtime，直接继续原会话（回放结果追加到原会话历史）
   const runtime = createAgentpackRuntime(config, model);
-  const replayKey = `replay_${sessionKey}`;
   const turns: ReplayTurnResult[] = [];
   let totalErrors = 0;
   const startTime = Date.now();
@@ -87,7 +86,7 @@ export async function replaySession(
 
       try {
         const result = await runtime.run(
-          createRequest(userMsg, { sessionKey: replayKey, channel: 'cli' }),
+          createRequest(userMsg, { sessionKey, channel: 'cli' }),
         );
         response = result.content;
         if (!result.success && result.error) {

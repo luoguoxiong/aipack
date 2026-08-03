@@ -1,11 +1,8 @@
 /**
  * Transformer - 上下文转换器
  *
- * 灵感来自 webpack 的 Loader。
  * Transformer 负责在 Pipeline 中对 ContextResource 集合进行转换，
  * 例如压缩、清理、配对修复、状态快照注入等。
- *
- * Webpack 映射: Loader
  */
 
 import type { ContextResource } from './context-resource';

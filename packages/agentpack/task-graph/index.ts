@@ -1,10 +1,8 @@
 /**
  * packages/task-graph - 任务依赖图
  *
- * 将 Message 列表构建为 webpack 风格的 TaskGraph。
+ * 将 Message 列表构建为 TaskGraph。
  * 自动分析 tool_call -> tool_result 的依赖关系。
- *
- * Webpack 映射: Dependency Graph
  */
 
 import type { Message, AssistantMessage, ToolCallContent, ContentBlock } from '../core';

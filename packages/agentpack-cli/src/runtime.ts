@@ -74,6 +74,9 @@ export function createAgentpackRuntime(
 ): Runtime {
   const aiModel = model ?? resolveAiModel(config);
 
+  // 配置文件透传的 Runtime 选项（tools/extensions 等），优先级高于默认值
+  const runtimeOverrides = config.runtime ?? {};
+
   return createRuntime({
     model: adaptAiModel(aiModel),
     streamFn: createStreamFnFromAi(aiModel),
@@ -85,6 +88,7 @@ export function createAgentpackRuntime(
           maxAge: config.sessions.maxAge,
         })
       : undefined,
+    ...runtimeOverrides,
   });
 }
 

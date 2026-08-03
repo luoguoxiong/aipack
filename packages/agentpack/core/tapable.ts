@@ -1,10 +1,7 @@
 /**
  * Tapable - 事件钩子系统
  *
- * 灵感来自 webpack 的 tapable 库。
  * 提供同步与异步钩子，允许 Extension 在 Runtime 生命周期的关键节点注入逻辑。
- *
- * Webpack 映射: tapable
  */
 
 // ─── 钩子类型 ─────────────────────────────────────────────────────
@@ -39,7 +36,7 @@ export class SyncHook<TArgs extends any[] = any[]> {
       try {
         tap.fn(...args);
       } catch (err) {
-        // 单个 tap 失败不影响其他 tap（与 webpack 行为一致）
+        // 单个 tap 失败不影响其他 tap
       }
     }
   }

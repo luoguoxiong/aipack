@@ -8,13 +8,17 @@ export {
   loadConfig,
   getConfigDir,
   getConfigPath,
+  generateSessionKey,
   resolveHome,
 } from './src/config';
 export type {
   AgentpackConfig,
+  AgentpackConfigFile,
+  AgentpackRuntimeConfig,
   CliOptions,
   SessionsConfig,
 } from './src/config';
+export type { RuntimeOptions } from 'agentpack';
 
 export { loadEnvFile, saveEnvFile } from './src/env';
 

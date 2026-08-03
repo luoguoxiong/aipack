@@ -1,9 +1,7 @@
 /**
  * packages/context-resource - 上下文资源适配层
  *
- * 将 core 的 Message 体系转换为 webpack 风格的 ContextResource。
- *
- * Webpack 映射: Module
+ * 将 core 的 Message 体系转换为 ContextResource。
  */
 
 import type {
