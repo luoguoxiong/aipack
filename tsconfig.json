@@ -19,7 +19,8 @@
     "paths": {
       "@/*": ["./src/*"],
       "agentpack": ["./packages/agentpack/index.ts"],
-      "agentpack/*": ["./packages/agentpack/*"]
+      "agentpack/*": ["./packages/agentpack/*"],
+      "agentpack-memory": ["./packages/agentpack-memory/index.ts"]
     }
   },
   "include": ["src/**/*", "packages/**/*", "examples/**/*"],

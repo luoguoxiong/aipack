@@ -3,6 +3,7 @@ node_modules/
 dist/
 .webui/
 .kobot/
+.agentpack/
 .env
 .env.local
 *.log
