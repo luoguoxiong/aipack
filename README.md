@@ -27,8 +27,8 @@ npm install -g kobot-pi
 # 或者从源码运行
 git clone git@github.com:your/kobot.git
 cd kobot
-npm install
-npm run build
+pnpm install
+pnpm run build
 ```
 
 ### 首次运行
@@ -862,31 +862,32 @@ logging:
 ### 本地开发
 
 ```bash
-# 安装依赖
-npm install
+# 安装依赖（pnpm workspace）
+pnpm install
 
 # 开发模式运行
-npm run dev
+pnpm run dev
 
 # 编译 TypeScript
-npm run build
+pnpm run build
 
 # 运行测试
-npm test
+pnpm test
 
 # 类型检查
-npm run lint
+pnpm run lint
 ```
 
 ### 项目脚本
 
 | 命令              | 说明                |
 | --------------- | ----------------- |
-| `npm run dev`   | 开发模式（使用 tsx 直接运行） |
-| `npm run build` | 编译到 dist/ 目录      |
-| `npm start`     | 生产模式运行            |
-| `npm test`      | 运行测试              |
-| `npm run lint`  | TypeScript 类型检查   |
+| `pnpm run dev`  | 开发模式（使用 tsx 直接运行） |
+| `pnpm run build` | 编译到 dist/ 目录      |
+| `pnpm start`    | 生产模式运行            |
+| `pnpm test`     | 运行测试              |
+| `pnpm run lint` | TypeScript 类型检查   |
+| `pnpm build:agentpack` | 构建 agentpack 子包 |
 
 ### 详细文档
 

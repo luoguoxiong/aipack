@@ -1,0 +1,49 @@
+{
+  "name": "agentpack",
+  "version": "0.1.0",
+  "description": "Webpack 架构风格的 Agent 框架：Runtime(Compiler) + Extension(Plugin) + Transformer(Loader)，配置入口 + 执行入口",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./ai": {
+      "types": "./dist/ai/index.d.ts",
+      "import": "./dist/ai/index.js"
+    },
+    "./adapters/ai": {
+      "types": "./dist/adapters/ai.d.ts",
+      "import": "./dist/adapters/ai.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "agent",
+    "ai",
+    "framework",
+    "webpack",
+    "llm"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.5.0"
+  }
+}
