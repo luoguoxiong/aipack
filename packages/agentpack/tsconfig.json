@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "outDir": "./dist",
+    "rootDir": "."
+  },
+  "include": [
+    "index.ts",
+    "core/**/*",
+    "runtime/**/*",
+    "session/**/*",
+    "context-resource/**/*",
+    "task-graph/**/*",
+    "transformer/**/*",
+    "extension/**/*",
+    "pipeline/**/*",
+    "request/**/*",
+    "result/**/*",
+    "ai/**/*",
+    "adapters/**/*",
+    "examples/**/*",
+    "test/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

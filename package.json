@@ -10,10 +10,16 @@
   },
   "scripts": {
     "build": "tsup",
+    "build:agentpack": "pnpm --filter agentpack build",
     "dev": "tsx src/cli.ts",
     "start": "node --import tsx dist/cli.js",
+    "agent": "tsx packages/agentpack/test/start.js",
+    "example:deepseek": "tsx examples/deepseek.ts",
+    "example:agent-memory": "tsx examples/agent-memory.ts",
     "test": "node --import tsx --test tests/*.test.ts",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "example:coding": "tsx packages/agentpack-coding/examples/round-trip.ts",
+    "example:coding:llm": "tsx packages/agentpack-coding/examples/real-llm.ts"
   },
   "keywords": [
     "ai",
@@ -25,6 +31,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "agentpack": "workspace:*",
     "@types/express": "^5.0.6",
     "axios": "^1.7.0",
     "commander": "^12.1.0",
@@ -43,6 +50,8 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.12.0",
     "@types/ws": "^8.5.12",
+    "agentpack-coding": "workspace:*",
+    "agentpack-cli": "workspace:*",
     "tsup": "^8.5.1",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0"

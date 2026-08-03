@@ -1,11 +1,22 @@
 node_modules/
+.pnpm-store
 dist/
 .webui/
 .kobot/
+.agentpack/
 .env
 .env.local
 *.log
+sessions
 
 # ACR test outputs
 acr-compare-output/
 acr-real-session-compare/
+
+# IDE
+.trae/
+/.vscode/launch.json
+/.vscode/tasks.json
+
+# VSCode 扩展构建产物
+*.vsix

@@ -15,10 +15,15 @@
     "declarationMap": true,
     "sourceMap": true,
     "lib": ["ES2022"],
+    "types": ["node"],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "agentpack": ["./packages/agentpack/index.ts"],
+      "agentpack/*": ["./packages/agentpack/*"],
+      "agentpack-memory": ["./packages/agentpack-memory/index.ts"],
+      "agentpack-coding": ["./packages/agentpack-coding/index.ts"]
     }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "packages/**/*", "examples/**/*"],
   "exclude": ["node_modules", "dist", "webui", "tests"]
 }
