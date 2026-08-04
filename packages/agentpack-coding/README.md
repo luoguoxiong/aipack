@@ -65,7 +65,13 @@ agentpack-coding run "给 src/utils.ts 加上 JSDoc 注释"
 
 # 指定模型与工作区
 agentpack-coding -p openai -m gpt-4o-mini -w /path/to/repo
+
+# 启用记忆集成
+agentpack-coding --memory chat
+agentpack-coding --memory run "总结项目结构"
 ```
+
+`--memory` 标志会动态加载 `agentpack-memory` 插件，为会话注入持久化记忆能力（需已安装 `agentpack-memory`）。
 
 ## 内置工具
 
