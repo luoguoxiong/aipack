@@ -68,3 +68,7 @@ export {
 
 // ─── 目录 ─────────────────────────────────────────────────────
 export { BUILTIN_MODELS, BUILTIN_IMAGES_MODELS, BUILTIN_PROVIDERS, getEnvApiKey, hasProviderConfigured } from './catalog';
+
+// ─── 流式实现（供适配器直接复用） ──────────────────────────────
+export { streamOpenAI } from './stream-openai';
+export { streamAnthropic } from './stream-anthropic';

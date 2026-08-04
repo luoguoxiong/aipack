@@ -17,9 +17,11 @@ import {
   createFileSessionStorage,
   createDefaultTransformers,
   createDefaultPipeline,
+  adaptAiModel,
+  createStreamFnFromAi,
+  getBuiltinModel,
+  hasProviderConfigured,
 } from 'agentpack';
-import { adaptAiModel, createStreamFnFromAi } from 'agentpack/adapters/ai';
-import { getBuiltinModel, hasProviderConfigured } from 'agentpack/ai';
 
 async function main() {
   // ── 1. 从 agentpack/ai 内置目录获取 DeepSeek 模型 ──────────────

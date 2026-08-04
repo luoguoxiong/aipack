@@ -15,8 +15,8 @@ import {
   getBuiltinModels,
   getBuiltinProviders,
   getEnvApiKey,
-} from 'agentpack/ai';
-import type { Model as AiModel } from 'agentpack/ai';
+  type AiModel,
+} from 'agentpack';
 import { saveEnvFile } from './env';
 
 /** 向导结果：选择的提供商与模型 */

@@ -4,7 +4,7 @@
  * 内置模型目录：按提供商分组展示，标注 API Key 配置状态。
  */
 
-import { getBuiltinModels, getBuiltinProviders, getEnvApiKey } from 'agentpack/ai';
+import { getBuiltinModels, getBuiltinProviders, getEnvApiKey } from 'agentpack';
 
 export interface ModelEntry {
   provider: string;

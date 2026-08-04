@@ -6,8 +6,7 @@
  */
 
 import { createFileSessionStorage, createRequest } from 'agentpack';
-import type { Message } from 'agentpack';
-import type { Model as AiModel } from 'agentpack/ai';
+import type { Message, AiModel } from 'agentpack';
 import type { AgentpackConfig } from './config';
 import { createAgentpackRuntime } from './runtime';
 
