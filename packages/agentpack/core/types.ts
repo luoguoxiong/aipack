@@ -56,6 +56,7 @@ export interface AssistantMessage extends BaseMessage {
   stopReason?: string;
   usage?: Usage;
   errorMessage?: string;
+  responseId?: string;
 }
 
 export interface ToolResultMessage extends BaseMessage {
@@ -73,10 +74,30 @@ export type Message = UserMessage | AssistantMessage | ToolResultMessage | Syste
 
 // ─── Token 用量 ───────────────────────────────────────────────────
 
+/**
+ * 用量与费用。与 agentpack/ai 的 Usage 结构对齐：
+ * cacheRead/cacheWrite/reasoning/cost 为可选字段，旧消费者无需感知。
+ */
 export interface Usage {
   input: number;
   output: number;
   total: number;
+  /** 命中缓存读取的 token 数（不计入 input） */
+  cacheRead?: number;
+  /** 写入缓存的 token 数 */
+  cacheWrite?: number;
+  /** 推理 token 数（completion 的子集） */
+  reasoning?: number;
+  /** 还原后的原始 token 总数（input + output + cacheRead + cacheWrite） */
+  totalTokens?: number;
+  /** 费用明细（美元） */
+  cost?: {
+    input: number;
+    output: number;
+    total: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+  };
 }
 
 // ─── 模型定义 ─────────────────────────────────────────────────────

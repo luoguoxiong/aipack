@@ -27,8 +27,12 @@ export interface RuntimeHooks {
   beforeEmit: AsyncSeriesHook<[Result]>;
   /** 结果构建后 */
   afterEmit: AsyncSeriesHook<[Result]>;
-  /** 运行结束 */
-  done: AsyncSeriesHook<[Result]>;
+  /**
+   * 运行结束。
+   * 第二参数为最终 Request（可选，向后兼容）：done 钩子如需按会话配对（如记忆捕获），
+   * 应使用 request.sessionKey 而非依赖 FIFO 推断。
+   */
+  done: AsyncSeriesHook<[Result, Request?]>;
   /** 运行失败 */
   failed: AsyncSeriesHook<[Error, Request]>;
 }
@@ -102,7 +106,8 @@ export class ExtensionManager {
       try {
         ext.apply(this.hooks, context);
       } catch (err) {
-        // 单个 Extension 失败不影响其他 Extension
+        // 单个 Extension 失败不影响其他 Extension，但需可观测
+        console.warn(`[Extension] "${ext.name}" apply 失败:`, (err as Error)?.message ?? err);
       }
     }
   }

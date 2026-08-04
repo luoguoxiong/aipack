@@ -3,7 +3,10 @@
  *
  * 每个会话一个 JSON 文件，默认存储到 <pwd>/.agentpack/sessions/。
  * 写入采用 temp + rename 原子替换，防止进程中断损坏会话。
- * 支持 maxAge 过期清理（加载时惰性删除）。
+ * 支持 maxAge 过期清理（加载与列举时清理）。
+ *
+ * 并发说明：同一进程内由 Runtime 的会话串行队列保证不会并发写同一 key；
+ * 多进程同写同一 key 仍为 last-write-wins。如需多进程安全，请在外层加分布式锁。
  */
 
 import fs from 'node:fs/promises';
@@ -33,13 +36,22 @@ function decodeKey(fileName: string): string {
   return decodeURIComponent(fileName);
 }
 
+/** 判断会话是否已过期 */
+function isExpired(session: StoredSession, maxAge: number): boolean {
+  const updated = Date.parse(session.updatedAt);
+  if (Number.isNaN(updated)) return false;
+  return Date.now() - updated > maxAge;
+}
+
 export class FileSessionStorage implements SessionStorage {
   private baseDir: string;
   private maxAge?: number;
+  private maxStoredMessages: number;
 
   constructor(options: FileSessionStorageOptions = {}) {
     this.baseDir = resolveBaseDir(options.baseDir);
     this.maxAge = options.maxAge;
+    this.maxStoredMessages = options.maxStoredMessages ?? 0;
   }
 
   get dir(): string {
@@ -55,12 +67,9 @@ export class FileSessionStorage implements SessionStorage {
       const raw = await fs.readFile(this.sessionPath(key), 'utf-8');
       const session = JSON.parse(raw) as StoredSession;
 
-      if (this.maxAge) {
-        const updated = Date.parse(session.updatedAt);
-        if (!Number.isNaN(updated) && Date.now() - updated > this.maxAge) {
-          await this.delete(key);
-          return null;
-        }
+      if (this.maxAge && isExpired(session, this.maxAge)) {
+        await this.delete(key);
+        return null;
       }
       return session;
     } catch {
@@ -70,9 +79,19 @@ export class FileSessionStorage implements SessionStorage {
 
   async save(key: string, session: StoredSession): Promise<void> {
     await fs.mkdir(this.baseDir, { recursive: true });
+
+    // 应用消息条数上限，保留最新部分
+    const toStore: StoredSession = this.maxStoredMessages > 0 &&
+      session.messages.length > this.maxStoredMessages
+      ? {
+          ...session,
+          messages: session.messages.slice(-this.maxStoredMessages),
+        }
+      : session;
+
     const target = this.sessionPath(key);
     const tmp = `${target}.${process.pid}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(session, null, 2), 'utf-8');
+    await fs.writeFile(tmp, JSON.stringify(toStore, null, 2), 'utf-8');
     await fs.rename(tmp, target); // 原子替换
   }
 
@@ -92,7 +111,24 @@ export class FileSessionStorage implements SessionStorage {
       for (const f of files) {
         if (!f.endsWith('.json') || f.endsWith('.tmp')) continue;
         try {
-          keys.push(decodeKey(path.basename(f, '.json')));
+          const decoded = decodeKey(path.basename(f, '.json'));
+
+          // 若配置了 maxAge，列举时顺带清理过期会话
+          if (this.maxAge) {
+            try {
+              const raw = await fs.readFile(path.join(this.baseDir, f), 'utf-8');
+              const session = JSON.parse(raw) as StoredSession;
+              if (isExpired(session, this.maxAge)) {
+                await fs.unlink(path.join(this.baseDir, f)).catch(() => {});
+                continue;
+              }
+            } catch {
+              // 损坏文件跳过，不阻塞列举
+              continue;
+            }
+          }
+
+          keys.push(decoded);
         } catch {
           // 忽略无法解码的文件名
         }

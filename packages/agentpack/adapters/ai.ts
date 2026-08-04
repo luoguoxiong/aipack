@@ -117,6 +117,10 @@ function findToolCall(
  * 创建 StreamFn：内部使用 agentpack/ai 的 streamOpenAI / streamAnthropic
  * 处理模型调用，并把 agentpack/ai 的流式事件自动转换为框架事件。
  *
+ * 注意：StreamFn 入参的 `model` 会被实际使用（而非闭包捕获的 aiModel），
+ * 这样 `runtime.setModel(adaptAiModel(otherAiModel))` 才能生效。
+ * `adaptAiModel` 会透传 ai 的全部字段（api/baseUrl/cost 等），因此可安全回退为 ai Model。
+ *
  * @param aiModel 来自 agentpack/ai 的标准化模型（含 api/baseUrl/cost 等元数据）
  * @param options 透传给底层流式实现的选项（apiKey、env、headers、baseUrl 等）
  */
@@ -125,10 +129,16 @@ export function createStreamFnFromAi(
   options: SimpleStreamOptions = {},
 ): StreamFn {
   return async function* (
-    _model: Model,
+    model: Model,
     context: Parameters<StreamFn>[1],
     streamOptions?: StreamOptions,
   ): AsyncGenerator<StreamEvent> {
+    // 使用 runtime 传入的 model（setModel 后会更新）；其携带 ai 的扩展字段。
+    // 回退到闭包 aiModel 以兼容调用方直接传入裸 core Model 的情况。
+    const activeModel: AiModel = (model && (model as unknown as AiModel).api)
+      ? (model as unknown as AiModel)
+      : aiModel;
+
     // ── 组装 agentpack/ai Context ──
     // 框架 Message 与 agentpack/ai Message 结构同源，直接映射；
     // 唯一差异：agentpack/ai 没有 system 角色消息（systemPrompt 单独传），这里合并。
@@ -161,9 +171,9 @@ export function createStreamFnFromAi(
     }
 
     // ── 按 model.api 分派(与 agentpack/ai Models.dispatchStream 保持一致) ──
-    const stream = hasApi(aiModel, 'anthropic-messages')
-      ? streamAnthropic(aiModel, aiContext, merged)
-      : streamOpenAI(aiModel, aiContext, merged);
+    const stream = hasApi(activeModel, 'anthropic-messages')
+      ? streamAnthropic(activeModel, aiContext, merged)
+      : streamOpenAI(activeModel, aiContext, merged);
 
     // ── 事件转换 ──
     // agentpack/ai 的 toolcall_start 事件没有 id/name（只有 contentIndex），
