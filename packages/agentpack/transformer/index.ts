@@ -12,19 +12,55 @@ import type { Message, ToolCallContent, ContentBlock } from '../core';
 import { extractToolCalls } from '../core';
 import { messagesToResources, resourcesToMessages } from '../context-resource';
 
+// ─── token 估算 ───────────────────────────────────────────────────
+
+/**
+ * 粗略 token 估算：约 4 字符/token（对中英文混合近似可用）。
+ * 不引入 tokenizer 依赖；若需要精确计数，使用方可注入自定义转换器替换。
+ */
+function estimateTokens(text: string): number {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
+/** 估算单个资源的 token 数（序列化内容后计数） */
+function estimateResourceTokens(resource: ContextResource): number {
+  const content = resource.content;
+  if (typeof content === 'string') return estimateTokens(content);
+  try {
+    return estimateTokens(JSON.stringify(content ?? ''));
+  } catch {
+    return 0;
+  }
+}
+
+/** 序列化资源内容为可读文本，用于 token 估算 */
+function resourceText(resource: ContextResource): string {
+  const content = resource.content;
+  if (typeof content === 'string') return content;
+  try {
+    return JSON.stringify(content ?? '');
+  } catch {
+    return '';
+  }
+}
+
 // ─── 工具配对转换器 ───────────────────────────────────────────────
 
 /**
  * 确保上下文中 tool_call 与 tool_result 的配对完整性。
  * 移除孤立的工具调用或工具结果消息。
  *
- * 优先级: 10
+ * 优先级: 100（最高，最后执行）。
+ * 必须晚于 TruncationTransformer：截断会丢弃旧资源，可能打破配对
+ * （例如丢掉 toolCall 但保留 toolResult，或反之），需要本转换器作为
+ * 最终兜底重新修复，否则破坏后的消息序列会导致下一次模型调用 400。
  */
 export class ToolPairingTransformer extends BaseTransformer {
   readonly name = 'tool-pairing';
 
   constructor() {
-    super({ priority: 10 });
+    super({ priority: 100 });
   }
 
   protected async run(
@@ -147,6 +183,10 @@ export class StateSnapshotTransformer extends BaseTransformer {
 /**
  * 当资源总数超过限制时，移除最旧的非关键资源。
  *
+ * 截断按"配对组"丢弃：丢弃一个带 toolCall 的 assistant 资源时，会一并丢弃
+ * 对应的 toolResult 资源，避免留下孤立结果（孤立结果虽会被 ToolPairingTransformer
+ * 兜底清理，但会浪费保留预算）。
+ *
  * 优先级: 90
  */
 export class TruncationTransformer extends BaseTransformer {
@@ -168,7 +208,98 @@ export class TruncationTransformer extends BaseTransformer {
 
     if (keepCount <= 0) return pinned;
 
-    const kept = unpinned.slice(-keepCount);
+    // 保留最新的 keepCount 个，但需按"配对组"整体丢弃头部。
+    // 从尾部回溯收集要保留的资源，遇到 assistant(toolCall) 时把对应的
+    // toolResult 也纳入保留集合（即便它位于 keepCount 边界之外）。
+    const keep = new Set<number>();
+    const toolCallIdsInRange = new Set<string>();
+
+    for (let i = unpinned.length - 1; i >= 0 && keep.size < keepCount; i--) {
+      const res = unpinned[i];
+      keep.add(i);
+      if (res.type === 'assistant_message') {
+        for (const dep of res.dependencies) toolCallIdsInRange.add(dep);
+      }
+      if (res.type === 'tool_result') {
+        const tcId = (res.meta as { toolCallId?: string } | undefined)?.toolCallId;
+        if (tcId) toolCallIdsInRange.add(tcId);
+      }
+    }
+
+    // 二次扫描：把与已保留 toolCall 配对的 toolResult（或反之）一并保留，
+    // 防止截断打破配对。
+    for (let i = 0; i < unpinned.length; i++) {
+      if (keep.has(i)) continue;
+      const res = unpinned[i];
+      if (res.type === 'tool_result') {
+        const tcId = (res.meta as { toolCallId?: string } | undefined)?.toolCallId;
+        if (tcId && toolCallIdsInRange.has(tcId)) keep.add(i);
+      }
+    }
+
+    const kept = unpinned.filter((_, i) => keep.has(i));
+    return [...pinned, ...kept].sort((a, b) => a.timestamp - b.timestamp);
+  }
+}
+
+// ─── Token 预算截断转换器 ─────────────────────────────────────────
+
+/**
+ * 按模型 contextWindow 的 token 预算截断上下文。
+ *
+ * 条数截断（TruncationTransformer）无法防止 token 溢出：200 条消息可能远超
+ * 模型上下文窗口。本转换器在条数截断之后运行，按 token 估算从最旧的非关键
+ * 资源开始丢弃，直到总 token 低于预算（默认 contextWindow * 0.8，预留输出空间）。
+ *
+ * 优先级: 95（晚于条数截断 90，早于配对修复 100）。
+ */
+export class TokenBudgetTransformer extends BaseTransformer {
+  readonly name = 'token-budget';
+
+  constructor(private ratio: number = 0.8) {
+    super({ priority: 95 });
+  }
+
+  protected async run(
+    resources: ContextResource[],
+    context: TransformContext,
+  ): Promise<ContextResource[]> {
+    const contextWindow = context.runtime.contextWindow;
+    if (!contextWindow || contextWindow <= 0) return resources;
+
+    const ratio = context.runtime.contextBudgetRatio ?? this.ratio ?? 0.8;
+    const budget = Math.floor(contextWindow * ratio);
+
+    const pinned = resources.filter(r => r.pinned);
+    const unpinned = resources.filter(r => !r.pinned); // 按时间顺序：旧在前
+
+    let total = pinned.reduce((sum, r) => sum + estimateResourceTokens(r), 0)
+      + unpinned.reduce((sum, r) => sum + estimateResourceTokens(r), 0);
+    if (total <= budget) return resources;
+
+    // 从头部（最旧）开始丢弃，直到总 token <= 预算。
+    // 配对组感知：丢弃 assistant(toolCall) 时记录其 toolCallId，
+    // 后续对应的 toolResult 也一并丢弃。
+    const droppedToolCallIds = new Set<string>();
+    let i = 0;
+    while (i < unpinned.length && total > budget) {
+      const res = unpinned[i];
+      total -= estimateResourceTokens(res);
+      if (res.type === 'assistant_message') {
+        for (const dep of res.dependencies) droppedToolCallIds.add(dep);
+      }
+      i++;
+    }
+
+    // 保留未丢弃部分，并移除与已丢弃 toolCall 配对的 toolResult
+    const kept = unpinned.slice(i).filter(res => {
+      if (res.type === 'tool_result') {
+        const tcId = (res.meta as { toolCallId?: string } | undefined)?.toolCallId;
+        if (tcId && droppedToolCallIds.has(tcId)) return false;
+      }
+      return true;
+    });
+
     return [...pinned, ...kept].sort((a, b) => a.timestamp - b.timestamp);
   }
 }
@@ -205,17 +336,18 @@ export class SystemMessageCleanerTransformer extends BaseTransformer {
 export function createDefaultTransformers(options?: {
   getStateSnapshot?: () => string | null;
   maxResources?: number;
+  contextBudgetRatio?: number;
 }): import('../core').ContextTransformer[] {
   const transformers: import('../core').ContextTransformer[] = [
-    new ToolPairingTransformer(),
     new SystemMessageCleanerTransformer(),
+    new TruncationTransformer(options?.maxResources ?? 200),
+    new TokenBudgetTransformer(options?.contextBudgetRatio ?? 0.8),
+    new ToolPairingTransformer(),  // 优先级 100，最后兜底修复配对
   ];
 
   if (options?.getStateSnapshot) {
     transformers.push(new StateSnapshotTransformer(options.getStateSnapshot));
   }
-
-  transformers.push(new TruncationTransformer(options?.maxResources ?? 200));
 
   return transformers;
 }

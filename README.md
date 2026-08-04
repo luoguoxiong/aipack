@@ -8,11 +8,14 @@ Agent 框架与命令行工具的 monorepo，核心调度、会话持久化、�
 
 ## 包结构
 
-| 包 | 说明 |
-| --- | --- |
-| [agentpack](packages/agentpack) | Agent 框架：`Runtime + Extension + Transformer`，配置入口 + 执行入口 |
-| [agentpack-cli](packages/agentpack-cli) | 基于 agentpack 框架的命令行工具（交互式聊天、会话管理、回放等） |
-| [agentpack-coding](packages/agentpack-coding) | coding 工具集 + coding agent 工厂 + CLI（文件读写、命令执行、代码搜索） |
+| 包                                                          | 说明                                                                         |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [agentpack](packages/agentpack)                             | Agent 框架：`Runtime + Extension + Transformer`，配置入口 + 执行入口         |
+| [agentpack-cli](packages/agentpack-cli)                     | 基于 agentpack 框架的命令行工具（交互式聊天、会话管理、回放等）              |
+| [agentpack-coding](packages/agentpack-coding)               | coding 工具集 + coding agent 工厂 + CLI（文件读写、命令执行、代码搜索）      |
+| [agentpack-memory](packages/agentpack-memory)               | 持久化记忆插件：自动捕获/注入、BM25 + 可选向量混合检索、记忆工具             |
+| [agentpack-compression](packages/agentpack-compression)     | 五级上下文压缩：工具输出裁剪、消息摘要、任务状态提取、会话检查点、新会话交接 |
+| [vscode-agentpack-coding](packages/vscode-agentpack-coding) | VSCode 扩展：基于 agentpack-coding 的 WebView 聊天面板                       |
 
 ## agentpack（框架）
 
@@ -50,7 +53,9 @@ const result = await runtime.run(createRequest('你好', { sessionKey: 's1' }));
 console.log(result.content);
 
 // 流式调用
-for await (const chunk of runtime.stream(createRequest('写一首诗', { sessionKey: 's1' }))) {
+for await (const chunk of runtime.stream(
+  createRequest('写一首诗', { sessionKey: 's1' }),
+)) {
   if (chunk.type === 'text') process.stdout.write(chunk.content ?? '');
 }
 
@@ -105,6 +110,8 @@ pnpm --filter agentpack-cli typecheck
 
 - [agentpack 框架文档](packages/agentpack/README.md)
 - [agentpack-cli 文档](packages/agentpack-cli/README.md)
+- [agentpack-memory 文档](packages/agentpack-memory/README.md)
+- [agentpack 压缩策略](agentpack-compression-strategy.md)（agentpack-compression 设计文档）
 
 ## 许可证
 

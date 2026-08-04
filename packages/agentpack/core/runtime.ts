@@ -9,7 +9,7 @@
  * 5. 产出 Result（运行结果）
  */
 
-import type { Model, Tool, StreamFn, Message } from './types';
+import type { Model, Tool, StreamFn, Message, ThinkingLevel } from './types';
 import type { Request } from './request';
 import type { Result, ResultChunk } from './result';
 import type { ContextResource } from './context-resource';
@@ -68,6 +68,9 @@ export interface Runtime {
   /** 设置系统提示词 */
   setSystemPrompt(prompt: string): this;
 
+  /** 设置思考/推理级别（仅对 reasoning 模型生效） */
+  setThinkingLevel(level: ThinkingLevel): this;
+
   /** 设置流式函数（模型提供者） */
   setStreamFn(fn: StreamFn): this;
 
@@ -125,4 +128,16 @@ export interface RuntimeOptions {
   pipeline?: Pipeline;
   /** 会话存储适配器（可选，启用后会话自动持久化到存储） */
   sessionStorage?: SessionStorage;
+  /** 单次请求最大对话回合数（默认 50，防止失控循环） */
+  maxTurns?: number;
+  /** 单个工具执行超时（毫秒，默认 120000）。超时后该工具调用以错误结果返回 */
+  toolTimeoutMs?: number;
+  /** 是否并行执行同一轮的多个工具调用（默认 true） */
+  parallelToolCalls?: boolean;
+  /** 思考/推理级别（默认 'off'，仅对 reasoning 模型生效） */
+  thinkingLevel?: ThinkingLevel;
+  /** 上下文资源条数上限（TruncationTransformer，默认 200） */
+  maxResources?: number;
+  /** token 预算占 contextWindow 的比例（默认 0.8），超出则按 token 截断 */
+  contextBudgetRatio?: number;
 }

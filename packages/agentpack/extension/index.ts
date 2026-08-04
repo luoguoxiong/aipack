@@ -47,15 +47,22 @@ export class LoggingExtension extends BaseExtension {
 
 /**
  * 捕获所有 Runtime 事件，用于调试和监控。
+ * 事件数组有上限（默认 1000），超出后丢弃最旧，防止长生命周期进程内存泄漏。
  */
 export class EventCaptureExtension extends BaseExtension {
   readonly name = 'event-capture';
   private events: Array<{ hook: string; timestamp: number; data?: unknown }> = [];
+  private maxEvents: number;
+
+  constructor(maxEvents: number = 1000) {
+    super();
+    this.maxEvents = Math.max(1, maxEvents);
+  }
 
   protected setup(hooks: RuntimeHooks, _context: ExtensionContext): void {
     const captureSeries = (hookName: string) => {
       return async (...args: any[]) => {
-        this.events.push({
+        this.push({
           hook: hookName,
           timestamp: Date.now(),
           data: args.length === 1 ? args[0] : args,
@@ -65,7 +72,7 @@ export class EventCaptureExtension extends BaseExtension {
 
     const captureWaterfall = (hookName: string) => {
       return async (value: any, ...rest: any[]) => {
-        this.events.push({
+        this.push({
           hook: hookName,
           timestamp: Date.now(),
           data: rest.length > 0 ? [value, ...rest] : value,
@@ -83,6 +90,13 @@ export class EventCaptureExtension extends BaseExtension {
     hooks.afterEmit.tapPromise('event-capture', captureSeries('afterEmit'));
     hooks.done.tapPromise('event-capture', captureSeries('done'));
     hooks.failed.tapPromise('event-capture', captureSeries('failed'));
+  }
+
+  private push(event: { hook: string; timestamp: number; data?: unknown }): void {
+    this.events.push(event);
+    if (this.events.length > this.maxEvents) {
+      this.events.splice(0, this.events.length - this.maxEvents);
+    }
   }
 
   getEvents(): Array<{ hook: string; timestamp: number; data?: unknown }> {

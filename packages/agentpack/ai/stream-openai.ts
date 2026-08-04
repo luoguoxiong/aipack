@@ -69,7 +69,10 @@ function resolveApiKey(model: Model, options: SimpleStreamOptions): string | und
   if (!env) return undefined;
   const providerKey = `${model.provider.toUpperCase().replace(/-/g, '_')}_API_KEY`;
   if (env[providerKey]) return env[providerKey];
-  if (env['OPENAI_API_KEY']) return env['OPENAI_API_KEY'];
+  // 仅当 provider 确为 openai 时才回退到 OPENAI_API_KEY。
+  // 此前对任意 provider 都回退，会把 OpenAI 密钥作为 Bearer 发往第三方端点，
+  // 造成密钥泄露与错误计费（参见 401 教训）。
+  if (model.provider === 'openai' && env['OPENAI_API_KEY']) return env['OPENAI_API_KEY'];
   return undefined;
 }
 

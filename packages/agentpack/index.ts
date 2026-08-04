@@ -41,6 +41,7 @@ export {
   ToolPairingTransformer,
   StateSnapshotTransformer,
   TruncationTransformer,
+  TokenBudgetTransformer,
   SystemMessageCleanerTransformer,
   ensureToolPairing,
   createDefaultTransformers,

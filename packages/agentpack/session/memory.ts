@@ -3,15 +3,34 @@
  *
  * 纯内存实现，进程退出即丢失。
  * 用于未配置持久化时的默认行为，或测试环境。
+ * 支持 maxAge 过期清理（加载时惰性删除，与文件实现行为一致）。
  */
 
-import type { SessionStorage, StoredSession } from '../core';
+import type { SessionStorage, StoredSession, MemorySessionStorageOptions } from '../core';
 
 export class MemorySessionStorage implements SessionStorage {
   private sessions = new Map<string, StoredSession>();
+  private maxAge?: number;
+
+  constructor(options: MemorySessionStorageOptions = {}) {
+    this.maxAge = options.maxAge;
+  }
+
+  private isExpired(session: StoredSession): boolean {
+    if (!this.maxAge) return false;
+    const updated = Date.parse(session.updatedAt);
+    if (Number.isNaN(updated)) return false;
+    return Date.now() - updated > this.maxAge;
+  }
 
   async load(key: string): Promise<StoredSession | null> {
-    return this.sessions.get(key) ?? null;
+    const session = this.sessions.get(key);
+    if (!session) return null;
+    if (this.isExpired(session)) {
+      this.sessions.delete(key);
+      return null;
+    }
+    return session;
   }
 
   async save(key: string, session: StoredSession): Promise<void> {
@@ -23,10 +42,18 @@ export class MemorySessionStorage implements SessionStorage {
   }
 
   async list(): Promise<string[]> {
-    return Array.from(this.sessions.keys());
+    const keys: string[] = [];
+    for (const [key, session] of this.sessions) {
+      if (this.isExpired(session)) {
+        this.sessions.delete(key);
+        continue;
+      }
+      keys.push(key);
+    }
+    return keys;
   }
 }
 
-export function createMemorySessionStorage(): SessionStorage {
-  return new MemorySessionStorage();
+export function createMemorySessionStorage(options?: MemorySessionStorageOptions): SessionStorage {
+  return new MemorySessionStorage(options);
 }
