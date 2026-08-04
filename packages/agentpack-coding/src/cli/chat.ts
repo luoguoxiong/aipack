@@ -19,6 +19,7 @@ export interface ChatOptions {
   model?: string;
   workspace?: string;
   sessionDir?: string;
+  memory?: boolean;
 }
 
 /** 消费 runtime.stream 事件，打印文本/思考/工具执行进度。供 chat 与 run 复用。 */
@@ -163,6 +164,7 @@ export async function startChat(opts: ChatOptions): Promise<void> {
     model: opts.model,
     workspace,
     sessionDir: opts.sessionDir ?? path.join(workspace, '.agentpack', 'sessions'),
+    memory: opts.memory,
     permission: { confirmFn },
   });
 
