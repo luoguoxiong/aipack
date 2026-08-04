@@ -13,8 +13,15 @@
  *   const transformer = createCompressionTransformer({
  *     config: loadCompressionConfig(),
  *     model, streamFn, contextWindow: model.contextWindow,
+ *     // 可选：注入 ExtensionContext.shared 让 CompressionTelemetryExtension 自动上报
+ *     sharedMap: extensionContext.shared,
  *   });
  *   pipeline.use(transformer);
+ *
+ *   // 可选：注入 handoff 钩子，让 L5 真正切换会话
+ *   transformer.setHandoffHook(({ handoff }) => {
+ *     runtime.switchSession(handoff.newSessionId);
+ *   });
  */
 
 // ─── 复合转换器 ───────────────────────────────────────────────────
@@ -42,12 +49,14 @@ export type { TokenEstimator } from './src/token-estimator';
 export {
   CompressionSafetyGuard,
   createSafetyState,
+  abortSafetyState,
   buildToolPairMap,
   isToolPairComplete,
 } from './src/safety';
 export type {
   CompressionSafetyState,
   SafetyConfig,
+  CreateSafetyStateOptions,
 } from './src/safety';
 
 // ─── 遥测 ─────────────────────────────────────────────────────────
@@ -55,10 +64,12 @@ export {
   createTelemetry,
   ConsoleTelemetryReporter,
   CompressionTelemetryExtension,
+  TELEMETRY_SHARED_KEY,
 } from './src/telemetry';
 export type {
   CompressionTelemetry,
   TelemetryReporter,
+  ConsoleReporterOptions,
 } from './src/telemetry';
 
 // ─── L1: 工具输出裁剪 ─────────────────────────────────────────────
@@ -79,7 +90,7 @@ export type { L4Config, SessionCheckpoint } from './src/l4-session-checkpoint';
 
 // ─── L5: 新会话交接 ───────────────────────────────────────────────
 export { NewSessionHandoff } from './src/l5-new-session-handoff';
-export type { L5Config, SessionHandoff } from './src/l5-new-session-handoff';
+export type { L5Config, SessionHandoff, HandoffHook, HandoffHookContext } from './src/l5-new-session-handoff';
 
 // ─── 从 agentpack 再导出常用类型 ──────────────────────────────────
 export type {

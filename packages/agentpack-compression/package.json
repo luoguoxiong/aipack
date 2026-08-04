@@ -17,9 +17,10 @@
   ],
   "scripts": {
     "build": "tsup",
-    "prebuild": "pnpm --filter agentpack build",
+    "prebuild": "pnpm --filter agentpack build || true",
     "typecheck": "tsc --noEmit",
-    "example": "node --import tsx examples/compression-demo.ts"
+    "example": "node --import tsx examples/compression-demo.ts",
+    "test": "node --import tsx --test test/safety.test.ts test/l1-l4.test.ts test/transformer.test.ts"
   },
   "keywords": [
     "agentpack",

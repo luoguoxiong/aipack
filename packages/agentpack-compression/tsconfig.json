@@ -5,7 +5,9 @@
   },
   "include": [
     "index.ts",
-    "src/**/*"
+    "src/**/*",
+    "examples/**/*",
+    "test/**/*"
   ],
   "exclude": ["node_modules", "dist"]
 }

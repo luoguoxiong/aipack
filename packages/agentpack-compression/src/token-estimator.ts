@@ -1,5 +1,7 @@
 /**
  * Token 估算器 - 轻量字符启发式，零依赖
+ *
+ * 缓存带 LRU 上限，避免长会话下缓存无限膨胀。
  */
 
 import type { ContextResource } from 'agentpack';
@@ -14,18 +16,59 @@ export interface TokenEstimator {
   invalidate(resourceId?: string): void;
 }
 
+// ─── LRU 缓存 ─────────────────────────────────────────────────────
+
+class LruCache<K, V> {
+  private map = new Map<K, V>();
+  constructor(private capacity: number) {}
+
+  get(key: K): V | undefined {
+    if (!this.map.has(key)) return undefined;
+    // 重新插入以刷新顺序
+    const value = this.map.get(key)!;
+    this.map.delete(key);
+    this.map.set(key, value);
+    return value;
+  }
+
+  set(key: K, value: V): void {
+    if (this.map.has(key)) this.map.delete(key);
+    else if (this.map.size >= this.capacity) {
+      const oldestKey = this.map.keys().next().value;
+      if (oldestKey !== undefined) this.map.delete(oldestKey);
+    }
+    this.map.set(key, value);
+  }
+
+  delete(key: K): boolean {
+    return this.map.delete(key);
+  }
+
+  clear(): void {
+    this.map.clear();
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
+}
+
 // ─── 字符启发式实现 ───────────────────────────────────────────────
 
 export class CharHeuristicEstimator implements TokenEstimator {
-  private cache = new Map<string, number>();
+  private cache: LruCache<string, number>;
 
   constructor(
     private charsPerTokenAscii = 4,
     private charsPerTokenCJK = 1.5,
-  ) {}
+    cacheCapacity = 1000,
+  ) {
+    this.cache = new LruCache<string, number>(Math.max(1, cacheCapacity));
+  }
 
   estimate(resource: ContextResource): number {
-    if (this.cache.has(resource.id)) return this.cache.get(resource.id)!;
+    const cached = this.cache.get(resource.id);
+    if (cached !== undefined) return cached;
 
     const text = extractTextFromResource(resource);
     let asciiChars = 0;
@@ -74,6 +117,7 @@ export class CharHeuristicEstimator implements TokenEstimator {
 export function createTokenEstimator(
   charsPerTokenAscii = 4,
   charsPerTokenCJK = 1.5,
+  cacheCapacity = 1000,
 ): TokenEstimator {
-  return new CharHeuristicEstimator(charsPerTokenAscii, charsPerTokenCJK);
+  return new CharHeuristicEstimator(charsPerTokenAscii, charsPerTokenCJK, cacheCapacity);
 }
