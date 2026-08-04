@@ -149,22 +149,50 @@ export class ToolOutputTrim {
     return result;
   }
 
-  /** 空白规范化：合并多余空行 */
+  /**
+   * 空白规范化：合并多余空行。
+   * 仅对 string 类型 content 做整段规范化；对 ContentBlock[] 仅规范化其中
+   * 的 text 块，保留其他类型块（image/tool_use 等）的原始结构。
+   */
   private normalizeWhitespace(resources: ContextResource[]): ContextResource[] {
     return resources.map(r => {
       if (r.type === 'system_message' || r.type === 'state_snapshot') return r;
-      const text = extractTextFromResource(r);
-      if (!text) return r;
-      const normalized = text
-        .replace(/\n{3,}/g, '\n\n')
-        .replace(/[ \t]+$/gm, '')
-        .trim();
-      if (normalized === text) return r;
-      this.estimator.invalidate(r.id);
-      return {
-        ...r,
-        content: typeof r.content === 'string' ? normalized : [{ type: 'text', text: normalized }],
-      };
+
+      // string content：整段规范化
+      if (typeof r.content === 'string') {
+        const normalized = normalizeWs(r.content);
+        if (normalized === r.content) return r;
+        this.estimator.invalidate(r.id);
+        return { ...r, content: normalized };
+      }
+
+      // ContentBlock[]：仅规范化 text 块，保留其他块结构
+      if (Array.isArray(r.content)) {
+        let changed = false;
+        const newContent = (r.content as ContentBlock[]).map(b => {
+          if (b && typeof b === 'object' && b.type === 'text' && typeof b.text === 'string') {
+            const normalized = normalizeWs(b.text);
+            if (normalized !== b.text) {
+              changed = true;
+              return { ...b, text: normalized };
+            }
+          }
+          return b;
+        });
+        if (!changed) return r;
+        this.estimator.invalidate(r.id);
+        return { ...r, content: newContent };
+      }
+
+      return r;
     });
   }
+}
+
+/** 空白规范化辅助：合并 3+ 换行为 2 个，去除行尾空格，整段 trim */
+function normalizeWs(text: string): string {
+  return text
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+$/gm, '')
+    .trim();
 }

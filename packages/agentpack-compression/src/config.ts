@@ -1,5 +1,9 @@
 /**
  * 压缩配置 - 所有阈值支持环境变量覆盖
+ *
+ * 注意：所有 `targetRatio` 表示"压缩后目标 token 占 contextWindow 的比例"，
+ * 当单次压缩未达到目标时，转换器会按级向上升级。
+ * `forkModel` 为空表示复用主模型；`forkMaxTokens` 限制 fork 输出长度。
  */
 
 import type { ResourceType } from 'agentpack';
@@ -9,8 +13,14 @@ import type { ResourceType } from 'agentpack';
 export interface CompressionConfig {
   enabled: boolean;
 
-  estimator: 'char-heuristic' | 'tiktoken';
+  /** 估算器类型（当前仅支持 'char-heuristic'） */
+  estimator: 'char-heuristic';
+  /** 估算器缓存容量 */
+  estimatorCacheCapacity: number;
   charsPerToken: { ascii: number; cjk: number };
+
+  /** fork 调用超时（ms），0 表示不超时 */
+  forkTimeoutMs: number;
 
   /** L1: 工具输出裁剪 */
   l1: {
@@ -30,10 +40,13 @@ export interface CompressionConfig {
     enabled: boolean;
     threshold: number;
     targetRatio: number;
+    /** fork 用模型 id；为空则复用主模型 */
     forkModel?: string;
+    /** fork 输出 max tokens 上限（覆盖 Model.maxTokens） */
     forkMaxTokens: number;
     minResourcesToCompress: number;
     protectedRecentCount: number;
+    /** 单次 pipeline 内最大压缩深度（不跨 turn 累积） */
     maxCompressionDepth: number;
   };
 
@@ -52,8 +65,11 @@ export interface CompressionConfig {
     enabled: boolean;
     threshold: number;
     targetRatio: number;
+    /** 检查点存储后端类型（仅用于遥测标注，实际后端由 sessionStorage 决定） */
     checkpointStorage: 'file' | 'memory' | 'custom';
     minWorkingSet: number;
+    /** 持久化失败时是否中止压缩（推荐 true，避免信息丢失） */
+    failOnPersistError: boolean;
   };
 
   /** L5: 新会话交接 */
@@ -67,6 +83,7 @@ export interface CompressionConfig {
   safety: {
     maxAttempts: number;
     cooldownTurns: number;
+    forkTimeoutMs?: number;
   };
 
   telemetry: {
@@ -99,13 +116,18 @@ export function loadCompressionConfig(
 ): CompressionConfig {
   const env = process.env;
 
+  const forkTimeoutMs = Number(env.AGENTPACK_COMPRESSION_FORK_TIMEOUT) || 30_000;
+
   const config: CompressionConfig = {
     enabled: env.AGENTPACK_COMPRESSION_ENABLED !== 'false',
-    estimator: (env.AGENTPACK_COMPRESSION_ESTIMATOR as CompressionConfig['estimator']) ?? 'char-heuristic',
+    estimator: 'char-heuristic',
+    estimatorCacheCapacity: Number(env.AGENTPACK_COMPRESSION_ESTIMATOR_CACHE) || 1000,
     charsPerToken: {
       ascii: Number(env.AGENTPACK_CHARS_PER_TOKEN_ASCII) || 4,
       cjk: Number(env.AGENTPACK_CHARS_PER_TOKEN_CJK) || 1.5,
     },
+
+    forkTimeoutMs,
 
     l1: {
       enabled: env.AGENTPACK_L1_ENABLED !== 'false',
@@ -145,6 +167,7 @@ export function loadCompressionConfig(
       targetRatio: Number(env.AGENTPACK_L4_TARGET) || 0.25,
       checkpointStorage: (env.AGENTPACK_L4_STORAGE as CompressionConfig['l4']['checkpointStorage']) ?? 'file',
       minWorkingSet: Number(env.AGENTPACK_L4_MIN_WORKING_SET) || 2,
+      failOnPersistError: env.AGENTPACK_L4_FAIL_ON_PERSIST_ERROR !== 'false',
     },
 
     l5: {
@@ -157,12 +180,13 @@ export function loadCompressionConfig(
     safety: {
       maxAttempts: Number(env.AGENTPACK_COMPRESSION_MAX_ATTEMPTS) || 5,
       cooldownTurns: Number(env.AGENTPACK_COMPRESSION_COOLDOWN_TURNS) || 5,
+      forkTimeoutMs,
     },
 
     telemetry: {
       enabled: env.AGENTPACK_COMPRESSION_TELEMETRY !== 'false',
-      logTokenDelta: true,
-      logTriggerReason: true,
+      logTokenDelta: env.AGENTPACK_COMPRESSION_TELEMETRY_LOG_DELTA !== 'false',
+      logTriggerReason: env.AGENTPACK_COMPRESSION_TELEMETRY_LOG_REASON !== 'false',
     },
   };
 
