@@ -11,6 +11,9 @@
  *  - fork 失败时仍写 fallback 文档（原行为保留），但 telemetry 标注 _fallback
  */
 
+import {
+  randomUUID,
+} from 'node:crypto';
 import type {
   ContextResource, Model, Context, StreamFn,
 } from 'agentpack';
@@ -22,6 +25,7 @@ import type { CompressionSafetyState } from './safety';
 import type { TaskState } from './l3-task-state-extraction';
 import { findTaskState } from './l3-task-state-extraction';
 import type { CompressResult } from './l1-tool-output-trim';
+import { runForkWithRetry, ForkStreamError, type RetryConfig, type ForkResult, type ForkCallbackResult } from './retry';
 
 export interface L5Config {
   enabled: boolean;
@@ -74,6 +78,10 @@ export class NewSessionHandoff {
     private streamFn: StreamFn,
     private model: Model,
     private config: L5Config,
+    /** P0#1/#4: 单次 fork 超时（ms），由 transformer 注入 */
+    private forkTimeoutMs: number,
+    /** P0#4: 重试配置 */
+    private retry: RetryConfig,
   ) {}
 
   /** 注入 handoff 钩子 */
@@ -91,14 +99,17 @@ export class NewSessionHandoff {
     if (!this.config.enabled) return { resources, telemetry: [] };
 
     const allContext = this.collectContext(resources, safety);
-    const handoffDoc = await this.forkHandoff(allContext, safety);
+    const forkOut = await this.forkHandoff(allContext, safety, sessionKey, turn);
+    const handoffDoc = forkOut.ok && forkOut.value ? forkOut.value : null;
     const isFallback = !handoffDoc;
 
+    const now = Date.now();
     const handoff: SessionHandoff = {
-      handoffId: `handoff_${Date.now()}`,
+      // P1#8: 用 randomUUID 替代 Date.now()，避免同毫秒冲突
+      handoffId: `handoff_${randomUUID()}`,
       originalSessionId: sessionKey,
-      newSessionId: `${sessionKey}_h${Date.now()}`,
-      timestamp: Date.now(),
+      newSessionId: `${sessionKey}_h${now}_${randomUUID().slice(0, 8)}`,
+      timestamp: now,
       handoffDocument: handoffDoc ?? this.fallbackDoc(resources, safety),
       taskState: findTaskState(resources),
       checkpointId: safety.checkpointId,
@@ -114,7 +125,7 @@ export class NewSessionHandoff {
       type: 'user_message',
       role: 'user',
       content: this.formatHandoffAsUserMessage(handoff),
-      timestamp: Date.now(),
+      timestamp: now,
       dependencies: [],
       meta: {
         _compressionLevel: 5,
@@ -140,7 +151,12 @@ export class NewSessionHandoff {
     }
 
     const systemMessages = resources.filter(r => r.type === 'system_message');
-    const result = [...systemMessages, handoffResource];
+    let result: ContextResource[] = [...systemMessages, handoffResource];
+
+    // P1#9 修复：L5 完成后必须复检，若仍超 contextWindow 则对 handoff doc 自身硬截断。
+    // 旧实现不复检，systemMessages + handoffResource 本身可能超窗，handoffCompleted=true
+    // 后续 canCompress 永远 false，会陷入"压缩完成但实际未达标"的死循环空间。
+    result = this.hardTruncateIfOverWindow(result, contextWindow, handoff);
 
     const beforeTokens = this.estimator.estimateAll(resources);
     const afterTokens = this.estimator.estimateAll(result);
@@ -151,6 +167,10 @@ export class NewSessionHandoff {
       cachePreserved: false,
       compressionDepth: safety.compressionDepth + 1,
       message: isFallback ? 'used_fallback_doc' : undefined,
+      forkDurationMs: forkOut.durationMs,
+      forkRetries: forkOut.retries,
+      forkModelId: this.resolveForkModel().id,
+      forkUsage: forkOut.usage,
     });
 
     safety.compressionDepth++;
@@ -158,6 +178,57 @@ export class NewSessionHandoff {
     safety.handoffCompleted = true;
 
     return { resources: result, telemetry: [telemetry], handoff };
+  }
+
+  /**
+   * P1#9: 硬截断兜底。若 L5 结果仍超 contextWindow，对 handoffResource 内容做硬截断。
+   * 策略：保留 systemMessages 全量；handoffResource 按剩余 token 预算截断。
+   */
+  private hardTruncateIfOverWindow(
+    result: ContextResource[],
+    contextWindow: number,
+    handoff: SessionHandoff,
+  ): ContextResource[] {
+    const currentTokens = this.estimator.estimateAll(result);
+    if (currentTokens <= contextWindow) return result;
+
+    // 找到 handoffResource（id 以 handoff_ 开头）
+    const handoffIdx = result.findIndex(r => r.id === `handoff_${handoff.handoffId}`);
+    if (handoffIdx === -1) return result;
+
+    const systemTokens = this.estimator.estimateAll(result.filter((_, i) => i !== handoffIdx));
+    // 给截断后内容预留 64 token 缓冲（截断标记 + 估算误差）
+    const budgetForHandoff = Math.max(64, contextWindow - systemTokens - 64);
+    if (budgetForHandoff <= 0) {
+      // system 本身就超窗：只能保留极少 handoff 摘要
+      return result;
+    }
+
+    const handoffResource = result[handoffIdx];
+    const originalText = typeof handoffResource.content === 'string'
+      ? handoffResource.content
+      : extractTextFromResource(handoffResource);
+
+    // 按字符近似截断（用 estimator 校准）
+    // 注意：每次迭代前必须 invalidate 该资源缓存。testResource 与 handoffResource 同 id，
+    // estimator 以 id 为 cache key，否则循环内 estimate 永远命中旧值，截断永不生效。
+    const charsPerTokenFallback = 4;
+    let cutLen = budgetForHandoff * charsPerTokenFallback;
+    while (cutLen > 0) {
+      this.estimator.invalidate(handoffResource.id);
+      const cutText = originalText.slice(0, cutLen);
+      const testResource: ContextResource = {
+        ...handoffResource,
+        content: cutText + `\n\n[... handoff truncated: ${originalText.length - cutLen} chars omitted ...]`,
+      };
+      const testTokens = this.estimator.estimate(testResource);
+      if (testTokens <= budgetForHandoff) {
+        result[handoffIdx] = testResource;
+        break;
+      }
+      cutLen = Math.floor(cutLen * 0.8);
+    }
+    return result;
   }
 
   private collectContext(resources: ContextResource[], safety: CompressionSafetyState): string {
@@ -189,7 +260,9 @@ export class NewSessionHandoff {
   private async forkHandoff(
     allContext: string,
     safety: CompressionSafetyState,
-  ): Promise<string | null> {
+    sessionKey: string,
+    turn: number,
+  ): Promise<ForkResult<string>> {
     const forkModel = this.resolveForkModel();
     const context: Context = {
       systemPrompt: L5_PROMPT,
@@ -200,18 +273,46 @@ export class NewSessionHandoff {
       }],
     };
 
-    try {
-      let output = '';
-      for await (const event of this.streamFn(forkModel, context, {
-        signal: safety.abortController?.signal,
-      })) {
-        if (event.type === 'text_delta') output += event.delta;
-        if (event.type === 'error') return null;
-      }
-      return output || null;
-    } catch {
-      return null;
+    // P2#16: 透传 sessionId
+    const forkSessionId = `${sessionKey}#L5#t${turn}`;
+
+    const out = await runForkWithRetry(
+      safety,
+      this.forkTimeoutMs,
+      this.retry,
+      async (signal) => {
+        let text = '';
+        let usage: ForkCallbackResult<string>['usage'];
+        for await (const event of this.streamFn(forkModel, context, {
+          signal,
+          sessionId: forkSessionId,
+        })) {
+          if (event.type === 'text_delta') text += event.delta;
+          if (event.type === 'done' && event.message.usage) {
+            usage = {
+              input: event.message.usage.input,
+              output: event.message.usage.output,
+              total: event.message.usage.total,
+            };
+          }
+          if (event.type === 'error') {
+            const errMsg = event.message as { errorMessage?: string; status?: number } | undefined;
+            throw new ForkStreamError(
+              errMsg?.errorMessage ?? 'stream_error',
+              true,
+              errMsg?.status,
+            );
+          }
+        }
+        return { value: text || null, usage };
+      },
+    );
+
+    // 空文档视为失败（fallback）
+    if (!out.ok || !out.value) {
+      return { ok: false, value: null, retries: out.retries, durationMs: out.durationMs };
     }
+    return { ok: true, value: out.value, usage: out.usage, retries: out.retries, durationMs: out.durationMs };
   }
 
   /** Fork 失败时的硬编码兜底文档 */

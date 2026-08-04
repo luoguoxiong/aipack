@@ -104,7 +104,14 @@ export class ToolOutputTrim {
     });
   }
 
-  /** 从尾部向头部裁剪 tool_result */
+  /**
+   * 从尾部向头部裁剪 tool_result。
+   *
+   * P1#11 修复：
+   *  - 关键行匹配强化：扩展正则覆盖 JSON error、stack trace、FAIL/✗/panic/exception
+   *  - 按行扫描不限行首，匹配整行包含关键字
+   *  - 尝试从 JSON 输出提取 error/status/message 字段
+   */
   private trimToolResults(
     resources: ContextResource[],
     tokensToFree: number,
@@ -124,9 +131,9 @@ export class ToolOutputTrim {
 
       const headLines = lines.slice(0, this.config.toolResultHeadLines);
       const tailLines = lines.slice(-this.config.toolResultTailLines);
-      const keyLines = lines
-        .filter(l => /^(error|warning|result|summary|fail)/i.test(l.trim()))
-        .slice(0, 3);
+
+      // P1#11: 强化的关键行匹配
+      const keyLines = this.extractKeyLines(lines);
 
       const omitted = lines.length - headLines.length - tailLines.length;
       const truncated = [
@@ -147,6 +154,46 @@ export class ToolOutputTrim {
     }
 
     return result;
+  }
+
+  /**
+   * P1#11: 强化的关键行提取。
+   * - 匹配整行包含关键字（不限于行首）
+   * - 覆盖：error/warn/fail/✗/panic/exception/traceback/✗/✘
+   * - 尝试从 JSON 行提取 error/status/message 字段
+   */
+  private extractKeyLines(lines: string[]): string[] {
+    const KEY_LINE_RE = /(error|warn|fail|✗|✘|panic|exception|traceback|fatal|critical)/i;
+    const found: string[] = [];
+
+    for (const line of lines) {
+      if (found.length >= 5) break;
+      if (KEY_LINE_RE.test(line)) {
+        found.push(line);
+        continue;
+      }
+      // 尝试 JSON 提取
+      const jsonField = this.tryExtractJsonError(line);
+      if (jsonField) found.push(jsonField);
+    }
+    return found;
+  }
+
+  /** P1#11: 尝试从单行 JSON 提取 error/status/message 字段 */
+  private tryExtractJsonError(line: string): string | null {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null;
+    try {
+      const obj = JSON.parse(trimmed);
+      const err = obj?.error ?? obj?.errors?.[0] ?? obj?.message;
+      const status = obj?.status ?? obj?.code;
+      if (err || status) {
+        return `[json] status=${status ?? 'n/a'}: ${typeof err === 'string' ? err : JSON.stringify(err)}`;
+      }
+    } catch {
+      // 非 JSON，忽略
+    }
+    return null;
   }
 
   /**

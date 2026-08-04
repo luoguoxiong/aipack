@@ -16,6 +16,7 @@ import type {
   ContextResource, Message, SessionStorage, StoredSession, Usage,
 } from 'agentpack';
 import { resourcesToMessages, createEmptyUsage } from 'agentpack';
+import { randomUUID } from 'node:crypto';
 import type { TokenEstimator } from './token-estimator';
 import type { CompressionTelemetry } from './telemetry';
 import { createTelemetry } from './telemetry';
@@ -77,7 +78,8 @@ export class SessionCheckpointLevel {
     const messages = resourcesToMessages(resources);
 
     const checkpoint: SessionCheckpoint = {
-      checkpointId: `ckpt_${Date.now()}`,
+      // P1#8: 用 randomUUID 替代 Date.now()
+      checkpointId: `ckpt_${randomUUID()}`,
       sessionId: sessionKey,
       timestamp: Date.now(),
       fullMessages: messages,
@@ -153,17 +155,39 @@ export class SessionCheckpointLevel {
     return [...pinned, ...newRecent].sort((a, b) => a.timestamp - b.timestamp);
   }
 
-  /** 持久化检查点到 SessionStorage，返回成功/失败结果 */
+  /**
+   * 持久化检查点到 SessionStorage，返回成功/失败结果。
+   *
+   * P0#2 修复：旧实现只存 messages，taskState / compactionHistory / estimatedTokens
+   * 全部丢失，recover 出来的是残缺会话。现在用一个特殊 system message（role='system',
+   * content 为 JSON）追加到 messages 末尾，recover 时识别并取出。
+   */
   private async persistCheckpoint(
     checkpoint: SessionCheckpoint,
   ): Promise<{ ok: true } | { ok: false; error?: string }> {
     if (!this.sessionStorage) return { ok: false, error: 'no_session_storage' };
 
     const usage: Usage = createEmptyUsage();
+    // 把结构化字段序列化为一个特殊 system message 追加到末尾
+    const metaMessage: Message = {
+      role: 'system',
+      content: JSON.stringify({
+        __checkpointMeta: true,
+        checkpointId: checkpoint.checkpointId,
+        sessionId: checkpoint.sessionId,
+        timestamp: checkpoint.timestamp,
+        taskState: checkpoint.taskState ?? null,
+        compactionHistory: checkpoint.compactionHistory,
+        resourceCount: checkpoint.resourceCount,
+        estimatedTokens: checkpoint.estimatedTokens,
+      }),
+      timestamp: checkpoint.timestamp,
+    } as Message;
+
     const stored: StoredSession = {
       key: `checkpoint_${checkpoint.checkpointId}`,
       version: 1,
-      messages: checkpoint.fullMessages,
+      messages: [...checkpoint.fullMessages, metaMessage],
       model: null,
       usage,
       createdAt: new Date(checkpoint.timestamp).toISOString(),
@@ -178,23 +202,61 @@ export class SessionCheckpointLevel {
     }
   }
 
-  /** 从检查点恢复完整会话（实例方法，由 transformer 暴露） */
+  /**
+   * 从检查点恢复完整会话（实例方法，由 transformer 暴露）。
+   *
+   * P0#2 修复：从 messages 末尾取出 __checkpointMeta system message，
+   * 还原 taskState / compactionHistory / estimatedTokens 等结构化字段。
+   */
   async recover(checkpointId: string): Promise<SessionCheckpoint | null> {
     if (!this.sessionStorage) return null;
     try {
       const stored = await this.sessionStorage.load(`checkpoint_${checkpointId}`);
       if (!stored) return null;
 
-      // 恢复时尽量还原结构化信息；taskState/compactionHistory 在 StoredSession 中不存储，
-      // 因此只能恢复 messages，结构化字段为空
+      // 末尾的 system message 可能是 __checkpointMeta
+      const messages = [...stored.messages];
+      let taskState: TaskState | undefined;
+      let compactionHistory: CompressionTelemetry[] = [];
+      let resourceCount = messages.length;
+      let estimatedTokens = 0;
+      let timestamp = new Date(stored.updatedAt).getTime();
+
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'system' && typeof last.content === 'string') {
+        try {
+          const parsed = JSON.parse(last.content) as {
+            __checkpointMeta?: boolean;
+            checkpointId?: string;
+            sessionId?: string;
+            timestamp?: number;
+            taskState?: TaskState | null;
+            compactionHistory?: CompressionTelemetry[];
+            resourceCount?: number;
+            estimatedTokens?: number;
+          };
+          if (parsed.__checkpointMeta) {
+            messages.pop(); // 移除 meta message，只保留真实会话
+            taskState = parsed.taskState ?? undefined;
+            compactionHistory = parsed.compactionHistory ?? [];
+            resourceCount = parsed.resourceCount ?? messages.length;
+            estimatedTokens = parsed.estimatedTokens ?? 0;
+            if (parsed.timestamp) timestamp = parsed.timestamp;
+          }
+        } catch {
+          // 非 JSON 或旧格式：保持原样，taskState/compactionHistory 为空
+        }
+      }
+
       return {
         checkpointId,
         sessionId: '',
-        timestamp: new Date(stored.updatedAt).getTime(),
-        fullMessages: stored.messages,
-        resourceCount: stored.messages.length,
-        estimatedTokens: 0,
-        compactionHistory: [],
+        timestamp,
+        fullMessages: messages,
+        taskState,
+        compactionHistory,
+        resourceCount,
+        estimatedTokens,
       };
     } catch {
       return null;

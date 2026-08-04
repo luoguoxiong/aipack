@@ -1,5 +1,15 @@
 # AgentPack 多级上下文压缩策略设计
 
+> **实现状态（2026-08-05）**：本文档为**设计初稿**，以下内容已落地于
+> `packages/agentpack-compression`，但实现与设计存在差异，以源码为准：
+> - fork 超时改为 **per-fork AbortController**（`createForkAbortController`），不再使用 `safety.abortSignal`
+> - fork 调用带**指数退避重试**（`retry.ts`），瞬时错误与生成失败分离
+> - L3 JSON 解析失败时**记失败遥测并跳过**，不再把自由文本塞进 `originalRequest`
+> - L4 检查点通过追加 `__checkpointMeta` system message 持久化 `taskState` 等结构化字段
+> - L5 完成后**复检窗口**，超窗时对 handoff 文档硬截断（`hardTruncateIfOverWindow`）
+> - 新增 `dryRun` 模式、`validateConfig` 配置校验、同 session 串行化、`sessionAbortController` 生命周期管理
+> - 所有 level 构造签名已扩展为 `(estimator, streamFn, model, config, forkTimeoutMs, retry)`
+
 ## 一、架构总览
 
 压缩系统作为**单个复合转换器** `ContextCompressionTransformer`（priority=40）插入现有 Pipeline，内部按序执行**五级渐进式降级**。每一级比上一级代价更高、信息损耗更大，确保不到万不得已不丢失信息。

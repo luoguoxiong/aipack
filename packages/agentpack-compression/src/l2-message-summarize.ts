@@ -11,6 +11,9 @@
  *  - targetRatio 用于判断压缩后是否达标，未达标会通过 telemetry 标注
  */
 
+import {
+  randomUUID,
+} from 'node:crypto';
 import type {
   ContextResource, Model, Context, StreamFn,
 } from 'agentpack';
@@ -21,6 +24,7 @@ import { createTelemetry } from './telemetry';
 import type { CompressionSafetyState } from './safety';
 import { buildToolPairMap, isToolPairComplete } from './safety';
 import type { CompressResult } from './l1-tool-output-trim';
+import { runForkWithRetry, ForkStreamError, type RetryConfig, type ForkResult, type ForkCallbackResult } from './retry';
 
 export interface L2Config {
   enabled: boolean;
@@ -57,6 +61,10 @@ export class MessageSummarize {
     private streamFn: StreamFn,
     private model: Model,
     private config: L2Config,
+    /** P0#1/#4: 单次 fork 超时（ms），由 transformer 注入 */
+    private forkTimeoutMs: number,
+    /** P0#4: 重试配置 */
+    private retry: RetryConfig,
   ) {}
 
   async compress(
@@ -82,8 +90,8 @@ export class MessageSummarize {
       .map(r => this.formatResource(r))
       .join('\n\n');
 
-    const summary = await this.forkSummarize(transcript, safety);
-    if (!summary) {
+    const forkOut = await this.forkSummarize(transcript, safety, sessionKey, turn);
+    if (!forkOut.ok || !forkOut.value) {
       // fork 失败：记录失败遥测，不修改 resources
       return {
         resources,
@@ -92,12 +100,17 @@ export class MessageSummarize {
           failed: true,
           message: 'fork_summarize_returned_empty',
           compressionDepth: safety.compressionDepth,
+          forkDurationMs: forkOut.durationMs,
+          forkRetries: forkOut.retries,
+          forkModelId: this.resolveForkModel().id,
         })],
       };
     }
+    const summary = forkOut.value;
 
     const summaryResource: ContextResource = {
-      id: `compaction_${Date.now()}`,
+      // P1#8: 用 randomUUID 替代 Date.now()
+      id: `compaction_${randomUUID()}`,
       type: 'compaction_summary',
       role: 'system',
       content: summary,
@@ -144,6 +157,10 @@ export class MessageSummarize {
       cachePreserved: firstIdx > 0,
       compressionDepth: safety.compressionDepth + 1,
       message: reachedTarget ? undefined : `above_target:${Math.round(afterTokens - targetTokens)}`,
+      forkDurationMs: forkOut.durationMs,
+      forkRetries: forkOut.retries,
+      forkModelId: this.resolveForkModel().id,
+      forkUsage: forkOut.usage,
     });
 
     safety.compressionDepth++;
@@ -173,11 +190,13 @@ export class MessageSummarize {
     return `[${r.type}] ${text}`;
   }
 
-  /** Fork Agent 摘要请求 */
+  /** Fork Agent 摘要请求：用 runForkWithRetry 自动管理 AbortController + 重试 */
   private async forkSummarize(
     transcript: string,
     safety: CompressionSafetyState,
-  ): Promise<string | null> {
+    sessionKey: string,
+    turn: number,
+  ): Promise<ForkResult<string>> {
     const forkModel = this.resolveForkModel();
     const context: Context = {
       systemPrompt: L2_PROMPT,
@@ -188,18 +207,48 @@ export class MessageSummarize {
       }],
     };
 
-    try {
-      let summary = '';
-      for await (const event of this.streamFn(forkModel, context, {
-        signal: safety.abortController?.signal,
-      })) {
-        if (event.type === 'text_delta') summary += event.delta;
-        if (event.type === 'error') return null;
-      }
-      return summary || null;
-    } catch {
-      return null;
+    // P2#16: 透传 sessionId 便于 fork 调用与主会话关联
+    const forkSessionId = `${sessionKey}#L2#t${turn}`;
+
+    const out = await runForkWithRetry(
+      safety,
+      this.forkTimeoutMs,
+      this.retry,
+      async (signal) => {
+        let summary = '';
+        let usage: ForkCallbackResult<string>['usage'];
+        for await (const event of this.streamFn(forkModel, context, {
+          signal,
+          sessionId: forkSessionId,
+        })) {
+          if (event.type === 'text_delta') summary += event.delta;
+          // P2#15: 从 done 事件捕获真实 usage
+          if (event.type === 'done' && event.message.usage) {
+            usage = {
+              input: event.message.usage.input,
+              output: event.message.usage.output,
+              total: event.message.usage.total,
+            };
+          }
+          if (event.type === 'error') {
+            // P0#4: stream 错误 throw ForkStreamError，由 retry 层判断是否重试
+            const errMsg = event.message as { errorMessage?: string; status?: number } | undefined;
+            throw new ForkStreamError(
+              errMsg?.errorMessage ?? 'stream_error',
+              /* retryable */ true,
+              errMsg?.status,
+            );
+          }
+        }
+        return { value: summary || null, usage };
+      },
+    );
+
+    // 空摘要视为失败
+    if (!out.ok || !out.value) {
+      return { ok: false, value: null, retries: out.retries, durationMs: out.durationMs };
     }
+    return { ok: true, value: out.value, usage: out.usage, retries: out.retries, durationMs: out.durationMs };
   }
 
   /** 解析 fork 用模型：若配置了 forkModel 则克隆主模型并切换 id，否则用主模型 */

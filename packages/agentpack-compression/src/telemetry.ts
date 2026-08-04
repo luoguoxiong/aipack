@@ -32,6 +32,26 @@ export interface CompressionTelemetry {
   failed?: boolean;
   /** 错误/警告信息 */
   message?: string;
+
+  // P2#15: 以下字段为补充的运维指标
+  /** 单次 fork 调用耗时（ms） */
+  forkDurationMs?: number;
+  /** 单次 fork 调用重试次数 */
+  forkRetries?: number;
+  /** fork 实际使用的模型 id */
+  forkModelId?: string;
+  /** fork 调用的 token 用量 */
+  forkUsage?: {
+    input?: number;
+    output?: number;
+    total?: number;
+  };
+  /** 触发压缩时 token 占比最高的资源（前 N） */
+  topContributors?: { id: string; type: string; tokens: number }[];
+  /** 压缩前资源条数 */
+  messageCountBefore?: number;
+  /** 压缩后资源条数 */
+  messageCountAfter?: number;
 }
 
 /** 创建遥测条目的辅助函数 */
@@ -58,6 +78,13 @@ export function createTelemetry(
     rolledBack: options?.rolledBack,
     failed: options?.failed,
     message: options?.message,
+    forkDurationMs: options?.forkDurationMs,
+    forkRetries: options?.forkRetries,
+    forkModelId: options?.forkModelId,
+    forkUsage: options?.forkUsage,
+    topContributors: options?.topContributors,
+    messageCountBefore: options?.messageCountBefore,
+    messageCountAfter: options?.messageCountAfter,
   };
 }
 
@@ -99,6 +126,13 @@ export class ConsoleTelemetryReporter implements TelemetryReporter {
     if (t.rolledBack) payload.rolledBack = true;
     if (t.failed) payload.failed = true;
     if (t.message) payload.message = t.message;
+    if (t.forkDurationMs !== undefined) payload.forkDurationMs = t.forkDurationMs;
+    if (t.forkRetries !== undefined) payload.forkRetries = t.forkRetries;
+    if (t.forkModelId !== undefined) payload.forkModelId = t.forkModelId;
+    if (t.forkUsage !== undefined) payload.forkUsage = t.forkUsage;
+    if (t.topContributors !== undefined) payload.topContributors = t.topContributors;
+    if (t.messageCountBefore !== undefined) payload.messageCountBefore = t.messageCountBefore;
+    if (t.messageCountAfter !== undefined) payload.messageCountAfter = t.messageCountAfter;
     console.log(JSON.stringify(payload));
   }
 }

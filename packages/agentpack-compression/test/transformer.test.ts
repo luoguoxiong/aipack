@@ -299,6 +299,99 @@ test('transformer: recover API 可用', async () => {
   assert.ok(recovered!.fullMessages.length > 0);
 });
 
+// ─── P2#18 补充测试 ──────────────────────────────────────────────
+
+test('transformer: dryRun 模式不修改 resources，生成 would_trigger telemetry', async () => {
+  const reported: CompressionTelemetry[] = [];
+  const reporter: { report: (t: CompressionTelemetry) => void } = {
+    report: (t) => { reported.push(t); },
+  };
+
+  const config = loadCompressionConfig({
+    dryRun: true,
+    l1: {
+      enabled: true, threshold: 0.1, targetRatio: 0.05,
+      stripThinking: false, trimToolResults: true,
+      toolResultMaxLines: 1, toolResultHeadLines: 0, toolResultTailLines: 0,
+      normalizeWhitespace: false,
+    },
+    l2: { enabled: false }, l3: { enabled: false }, l4: { enabled: false }, l5: { enabled: false },
+  });
+
+  const transformer = createCompressionTransformer({
+    config,
+    model: mockModel,
+    streamFn: makeMockStreamFn('summary'),
+    contextWindow: 100,
+    telemetryReporter: reporter,
+  });
+
+  const longText = 'x'.repeat(500);
+  const resources = [makeResource('u1', 'user_message', longText)];
+
+  const out = await transformer.transform(resources, {
+    graph: {} as any,
+    runtime: { sessionKey: 's1', turn: 1 },
+  });
+
+  // P2#14: dryRun 必须透传原 resources（引用相等）
+  assert.equal(out, resources, 'dryRun 不应修改 resources');
+  assert.ok(reported.length >= 1, 'dryRun 也应生成遥测');
+  assert.match(reported[0].action, /dry_run_would_trigger/);
+});
+
+test('transformer: 同 session 并发 transform 被串行化（P1#6）', async () => {
+  const order: string[] = [];
+  const streamFn: StreamFn = async function* (): StreamResult {
+    order.push('start');
+    await new Promise<void>(resolve => setTimeout(resolve, 20));
+    order.push('end');
+    yield { type: 'text_delta', delta: 'summary' };
+  };
+
+  const config = loadCompressionConfig({
+    l1: { enabled: false },
+    l2: {
+      enabled: true, threshold: 0.1, targetRatio: 0.5,
+      forkMaxTokens: 100, minResourcesToCompress: 2,
+      // 注意 protectedRecentCount 不能用 0：slice(-0) 返回整个数组，
+      // 所有资源都会被 recent 保护导致 L2 永不触发
+      protectedRecentCount: 1, maxCompressionDepth: 3,
+    },
+    l3: { enabled: false }, l4: { enabled: false }, l5: { enabled: false },
+    safety: { serializePerSession: true, maxAttempts: 5, cooldownTurns: 1 },
+  });
+
+  const transformer = createCompressionTransformer({
+    config,
+    model: mockModel,
+    streamFn,
+    contextWindow: 1000,
+  });
+
+  // 内容足够长，确保 token 超过 contextWindow * l2.threshold，触发 L2 fork
+  const longText = 'x'.repeat(300);
+  const resources = [
+    makeResource('u1', 'user_message', longText),
+    makeResource('a1', 'assistant_message', longText, { deps: ['c1'] }),
+    makeResource('tr1', 'tool_result', longText, { deps: ['c1'] }),
+    makeResource('u2', 'user_message', longText),
+  ];
+
+  const ctx = {
+    graph: {} as any,
+    runtime: { sessionKey: 's1', turn: 1 },
+  };
+
+  await Promise.all([
+    transformer.transform(resources, ctx),
+    transformer.transform(resources, ctx),
+  ]);
+
+  // 严格串行：start end start end（不能出现 start start end end）
+  assert.deepEqual(order, ['start', 'end', 'start', 'end'], `同 session 并发 run 必须串行化，实际 ${JSON.stringify(order)}`);
+});
+
 // ─── ConsoleTelemetryReporter 配置项 ──────────────────────────────
 
 test('ConsoleTelemetryReporter: logTokenDelta=false 时不输出 tokenDelta', () => {

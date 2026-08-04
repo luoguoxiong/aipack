@@ -10,6 +10,7 @@
  *  - fork 失败时记录失败遥测，不修改 resources
  */
 
+import { randomUUID } from 'node:crypto';
 import type {
   ContextResource, Model, Context, StreamFn,
 } from 'agentpack';
@@ -19,6 +20,7 @@ import type { CompressionTelemetry } from './telemetry';
 import { createTelemetry } from './telemetry';
 import type { CompressionSafetyState } from './safety';
 import type { CompressResult } from './l1-tool-output-trim';
+import { runForkWithRetry, ForkStreamError, type RetryConfig, type ForkResult, type ForkCallbackResult } from './retry';
 
 export interface L3Config {
   enabled: boolean;
@@ -70,6 +72,10 @@ export class TaskStateExtraction {
     private streamFn: StreamFn,
     private model: Model,
     private config: L3Config,
+    /** P0#1/#4: 单次 fork 超时（ms），由 transformer 注入 */
+    private forkTimeoutMs: number,
+    /** P0#4: 重试配置 */
+    private retry: RetryConfig,
   ) {}
 
   async compress(
@@ -82,9 +88,9 @@ export class TaskStateExtraction {
     if (!this.config.enabled) return { resources, telemetry: [] };
 
     const allContent = this.extractAllContent(resources);
-    const taskState = await this.forkExtract(allContent, safety);
+    const forkOut = await this.forkExtract(allContent, safety, sessionKey, turn);
 
-    if (!taskState) {
+    if (!forkOut.ok || !forkOut.value) {
       return {
         resources,
         telemetry: [createTelemetry('L3', 'task_state_extraction', 0, 0, {
@@ -92,12 +98,17 @@ export class TaskStateExtraction {
           failed: true,
           message: 'fork_extract_returned_empty',
           compressionDepth: safety.compressionDepth,
+          forkDurationMs: forkOut.durationMs,
+          forkRetries: forkOut.retries,
+          forkModelId: this.resolveForkModel().id,
         })],
       };
     }
+    const taskState = forkOut.value;
 
     const taskStateResource: ContextResource = {
-      id: `task_state_${Date.now()}`,
+      // P1#8: 用 randomUUID 替代 Date.now()
+      id: `task_state_${randomUUID()}`,
       type: 'custom',
       role: 'taskState',
       content: taskState,
@@ -133,6 +144,10 @@ export class TaskStateExtraction {
       resourcesAffected: resources.length - recent.length - pinned.length,
       cachePreserved: false,
       compressionDepth: safety.compressionDepth + 1,
+      forkDurationMs: forkOut.durationMs,
+      forkRetries: forkOut.retries,
+      forkModelId: this.resolveForkModel().id,
+      forkUsage: forkOut.usage,
     });
 
     safety.compressionDepth++;
@@ -152,7 +167,9 @@ export class TaskStateExtraction {
   private async forkExtract(
     allContent: string,
     safety: CompressionSafetyState,
-  ): Promise<TaskState | null> {
+    sessionKey: string,
+    turn: number,
+  ): Promise<ForkResult<TaskState>> {
     const forkModel = this.resolveForkModel();
     const context: Context = {
       systemPrompt: L3_PROMPT,
@@ -163,37 +180,62 @@ export class TaskStateExtraction {
       }],
     };
 
+    // P2#16: 透传 sessionId
+    const forkSessionId = `${sessionKey}#L3#t${turn}`;
+
+    const out = await runForkWithRetry(
+      safety,
+      this.forkTimeoutMs,
+      this.retry,
+      async (signal) => {
+        let text = '';
+        let usage: ForkCallbackResult<string>['usage'];
+        for await (const event of this.streamFn(forkModel, context, {
+          signal,
+          sessionId: forkSessionId,
+        })) {
+          if (event.type === 'text_delta') text += event.delta;
+          if (event.type === 'done' && event.message.usage) {
+            usage = {
+              input: event.message.usage.input,
+              output: event.message.usage.output,
+              total: event.message.usage.total,
+            };
+          }
+          if (event.type === 'error') {
+            const errMsg = event.message as { errorMessage?: string; status?: number } | undefined;
+            throw new ForkStreamError(
+              errMsg?.errorMessage ?? 'stream_error',
+              true,
+              errMsg?.status,
+            );
+          }
+        }
+        return { value: text || null, usage };
+      },
+    );
+
+    if (!out.ok || !out.value) {
+      return { ok: false, value: null, retries: out.retries, durationMs: out.durationMs };
+    }
+
+    // 尝试提取 JSON（可能被包裹在 ```json ... ``` 中）
+    const jsonMatch = out.value.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonStr = jsonMatch ? jsonMatch[1].trim() : out.value.trim();
+
     try {
-      let output = '';
-      for await (const event of this.streamFn(forkModel, context, {
-        signal: safety.abortController?.signal,
-      })) {
-        if (event.type === 'text_delta') output += event.delta;
-        if (event.type === 'error') return null;
-      }
-
-      // 尝试提取 JSON（可能被包裹在 ```json ... ``` 中）
-      const jsonMatch = output.match(/```(?:json)?\s*([\s\S]*?)```/);
-      const jsonStr = jsonMatch ? jsonMatch[1].trim() : output.trim();
-
-      try {
-        return JSON.parse(jsonStr) as TaskState;
-      } catch {
-        // JSON 解析失败：返回带原始输出的兜底 TaskState
-        return {
-          originalRequest: output.slice(0, 500),
-          currentPhase: 'unknown',
-          completedSteps: [],
-          pendingSteps: [],
-          keyDecisions: [],
-          constraints: [],
-          toolResults: [],
-          errors: ['failed_to_parse_json'],
-          variables: {},
-        };
-      }
+      return {
+        ok: true,
+        value: JSON.parse(jsonStr) as TaskState,
+        retries: out.retries,
+        durationMs: out.durationMs,
+        usage: out.usage,
+      };
     } catch {
-      return null;
+      // P1#12 修复：JSON 解析失败返回 null，让 L3 记失败遥测、不替换 resources。
+      // 旧实现把模型自由文本塞进 originalRequest，等价于信息全丢却被当成有效 taskState
+      // 后续 L4/L5 会基于这个残缺对象继续，污染下游。
+      return { ok: false, value: null, retries: out.retries, durationMs: out.durationMs };
     }
   }
 
