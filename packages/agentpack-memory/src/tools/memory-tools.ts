@@ -20,14 +20,28 @@ export interface MemoryToolsOptions {
   listLimit?: number;
   /** search_memory 默认返回上限，默认 5 */
   searchLimit?: number;
+  /** save_memory 保存的记忆 TTL（ms），过期后 prune 时清理 */
+  saveTtlMs?: number;
+}
+
+/** 工具输入硬上限：防止 LLM 误调用写入超长内容 / 超大集合 */
+const MAX_CONTENT_CHARS = 2000;
+const MAX_CONCEPTS = 20;
+const MAX_LIST_LIMIT = 200;
+const MAX_SEARCH_LIMIT = 50;
+
+function clampInt(v: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : fallback;
+  return Math.min(max, Math.max(min, n));
 }
 
 export function createMemoryTools(
   store: MemoryStore,
   options: MemoryToolsOptions = {},
 ): Tool[] {
-  const listLimit = options.listLimit ?? 20;
-  const searchLimit = options.searchLimit ?? 5;
+  const listLimit = clampInt(options.listLimit, 20, 1, MAX_LIST_LIMIT);
+  const searchLimit = clampInt(options.searchLimit, 5, 1, MAX_SEARCH_LIMIT);
+  const saveTtlMs = options.saveTtlMs;
 
   const saveMemory: Tool = {
     name: 'save_memory',
@@ -54,16 +68,21 @@ export function createMemoryTools(
           details: { error: 'empty content' },
         };
       }
-      const entry = await store.save({
-        content: a.content.trim(),
-        concepts: a.concepts ?? [],
+      const content = a.content.trim().slice(0, MAX_CONTENT_CHARS);
+      const concepts = (a.concepts ?? [])
+        .filter((c): c is string => typeof c === 'string' && c.length > 0)
+        .map((c) => c.trim().slice(0, 50))
+        .slice(0, MAX_CONCEPTS);
+      return store.save({
+        content,
+        concepts,
         confidence: 0.7,
         source: 'tool',
-      });
-      return {
+        ttlMs: saveTtlMs,
+      }).then((entry) => ({
         content: [createTextContent(`已保存记忆（id=${entry.id}）`)],
         details: { id: entry.id, saved: true },
-      };
+      }));
     },
   };
 
@@ -87,7 +106,8 @@ export function createMemoryTools(
           details: { error: 'empty query' },
         };
       }
-      const results = await store.search(a.query.trim(), a.limit ?? searchLimit);
+      const limit = clampInt(a.limit, searchLimit, 1, MAX_SEARCH_LIMIT);
+      const results = await store.search(a.query.trim(), limit);
       if (results.length === 0) {
         return {
           content: [createTextContent('未找到相关记忆。')],
@@ -116,7 +136,8 @@ export function createMemoryTools(
     },
     async execute(_toolCallId, args): Promise<ToolResult> {
       const a = (args ?? {}) as { limit?: number };
-      const entries = await store.list(a.limit ?? listLimit);
+      const limit = clampInt(a.limit, listLimit, 1, MAX_LIST_LIMIT);
+      const entries = await store.list(limit);
       if (entries.length === 0) {
         return {
           content: [createTextContent('当前无任何记忆。')],

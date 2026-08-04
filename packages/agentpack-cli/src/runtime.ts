@@ -6,15 +6,16 @@
  * + FileSessionStorage（会话持久化）。
  */
 
-import { createRuntime, createFileSessionStorage } from 'agentpack';
-import type { Model, Runtime } from 'agentpack';
 import {
+  createRuntime,
+  createFileSessionStorage,
   getBuiltinModel,
   getBuiltinModels,
   getEnvApiKey,
-} from 'agentpack/ai';
-import type { Model as AiModel } from 'agentpack/ai';
-import { adaptAiModel, createStreamFnFromAi } from 'agentpack/adapters/ai';
+  adaptAiModel,
+  createStreamFnFromAi,
+} from 'agentpack';
+import type { Model, Runtime, AiModel } from 'agentpack';
 import type { AgentpackConfig } from './config';
 
 /**

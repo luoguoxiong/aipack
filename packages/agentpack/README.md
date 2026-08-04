@@ -10,7 +10,7 @@ Agent 框架：`Runtime + Extension + Transformer`，配置入口 + 执行入口
 - **会话持久化**：内存 / 文件两种 `SessionStorage` 适配器，`maxAge` 过期惰性清理
 - **流式与同步双入口**：`runtime.run()` 一次性返回，`runtime.stream()` 流式返回增量事件
 - **工具循环**：模型输出 tool call → 自动执行工具 → 结果回填上下文，直到无工具调用或终止
-- **可选 AI 模型层**：子路径 `agentpack/ai` 提供模型目录、多提供商流式实现与图片生成，`agentpack/adapters/ai` 提供一键适配
+- **可选 AI 模型层**：子模块 `agentpack/ai` 提供模型目录、多提供商流式实现与图片生成；根路径 re-export `adaptAiModel`/`createStreamFnFromAi` 一键适配，无需手写 streamFn
 
 ## 安装
 
@@ -29,9 +29,10 @@ import {
   createRuntime,
   createRequest,
   createFileSessionStorage,
+  getBuiltinModel,
+  adaptAiModel,
+  createStreamFnFromAi,
 } from 'agentpack';
-import { getBuiltinModel } from 'agentpack/ai';
-import { adaptAiModel, createStreamFnFromAi } from 'agentpack/adapters/ai';
 
 const aiModel = getBuiltinModel('deepseek', 'deepseek-chat'); // 需配置 DEEPSEEK_API_KEY
 
@@ -188,9 +189,9 @@ interface Result {
   - **`maxAge` 单位为毫秒**：超过 `updatedAt + maxAge` 的会话在加载时惰性清理
 - `createMemorySessionStorage({ maxAge? })` — 内存存储
 
-## 子路径 `agentpack/ai`
+## AI 模型层（`agentpack/ai`）
 
-标准化模型层（独立于核心框架）：
+标准化模型层（内置子模块，独立于核心框架类型）：
 
 - **类型重导出**：`Type` / `Static` / `TSchema`（来自 `@sinclair/typebox`），以及 `Model`、`Message`、`StreamEvent`、`ImagesModel`、`Provider`、`CredentialStore` 等
 - **模型目录**：`Models` / `createModels(options?)`
@@ -204,17 +205,22 @@ interface Result {
 
 支持多提供商：OpenAI、Anthropic、DeepSeek、Google、Mistral、Bedrock 等（按 `model.api` 自动分派 `streamOpenAI` / `streamAnthropic` / ...）。
 
-## 子路径 `agentpack/adapters/ai`
+常用符号（`getBuiltinModel` / `getEnvApiKey` / `hasProviderConfigured` / `BUILTIN_PROVIDERS` / `AiModel` 类型）已从根路径 `agentpack` re-export；完整 surface 见 `agentpack/ai` 子路径。
 
-把 `agentpack/ai` 的标准化模型接入核心框架：
+## AI 适配器（`adaptAiModel` / `createStreamFnFromAi`）
+
+把 `agentpack/ai` 的标准化模型接入核心框架（从根路径 `agentpack` 导入）：
 
 - `adaptAiModel(aiModel)` — `agentpack/ai` 的 `Model` → 框架 `Model`
 - `createStreamFnFromAi(aiModel, options?)` — 生成框架 `StreamFn`，内部自动对接 OpenAI / Anthropic 流式实现，并转换事件与内容块
 
 ```ts
-import { createRuntime } from 'agentpack';
-import { getBuiltinModel } from 'agentpack/ai';
-import { adaptAiModel, createStreamFnFromAi } from 'agentpack/adapters/ai';
+import {
+  createRuntime,
+  getBuiltinModel,
+  adaptAiModel,
+  createStreamFnFromAi,
+} from 'agentpack';
 
 const aiModel = getBuiltinModel('openai', 'gpt-4o-mini');
 const runtime = createRuntime({
