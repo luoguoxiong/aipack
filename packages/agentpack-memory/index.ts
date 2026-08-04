@@ -37,6 +37,9 @@ export type {
   FileMemoryStoreOptions,
   MemorySaveInput,
   MemoryStore,
+  MemoryEvent,
+  MemoryEventSink,
+  MemoryStats,
 } from './src/types';
 
 // ─── 存储 ────────────────────────────────────────────────────────────
@@ -49,8 +52,15 @@ export { tokenize, isCJK, STOPWORDS, extractConcepts } from './src/retrieval/tok
 export { BM25Index, BM25Retriever } from './src/retrieval/bm25';
 export type { BM25Options } from './src/retrieval/bm25';
 export { cosine, minMaxNormalize } from './src/retrieval/embedder';
+export { VectorIndex } from './src/retrieval/vector-index';
+export type { VectorIndexOptions, VectorSearchResult } from './src/retrieval/vector-index';
 export { HybridRetriever } from './src/retrieval/hybrid-retriever';
-export type { HybridRetrieverOptions, RetrieverLike } from './src/retrieval/hybrid-retriever';
+export type {
+  HybridRetrieverOptions,
+  HybridSearchOptions,
+  RetrieverLike,
+  VectorSearchLike,
+} from './src/retrieval/hybrid-retriever';
 
 // ─── 捕获 ────────────────────────────────────────────────────────────
 export { extractFromTurn, runCaptureExtractor } from './src/capture/extractor';
