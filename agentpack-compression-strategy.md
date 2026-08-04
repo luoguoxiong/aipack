@@ -2,21 +2,101 @@
 
 ## 一、架构总览
 
-压缩系统作为**单个复合转换器** `ContextCompressionTransformer`（priority=40）插入现有 Pipeline，内部按序执行三级降级。这样避免了多转换器间的状态传递问题（`meta` 在 round-trip 中丢失），同时保持 Pipeline 的单一职责。
+压缩系统作为**单个复合转换器** `ContextCompressionTransformer`（priority=40）插入现有 Pipeline，内部按序执行**五级渐进式降级**。每一级比上一级代价更高、信息损耗更大，确保不到万不得已不丢失信息。
 
 ```
 现有 Pipeline（按 priority 排序）:
   10  ToolPairingTransformer          ← 已有：清理孤立 tool_call/tool_result
   20  SystemMessageCleanerTransformer  ← 已有：保留最后一条 system message
   30  StateSnapshotTransformer         ← 已有：注入状态快照（pinned）
-  40  ContextCompressionTransformer    ← 新增：三级复合压缩
-       ├─ Level 0: MicroCompaction     （无损微压缩，缓存安全）
-       ├─ Level 1: SummaryCompaction   （有损摘要压缩，Fork Agent）
-       └─ Level 2: PTLRecovery         （保底丢弃，断路器保护）
+  40  ContextCompressionTransformer    ← 新增：五级复合压缩
+       ├─ L1: ToolOutputTrim           （工具输出裁剪，无损，缓存安全）
+       ├─ L2: MessageSummarize         （旧消息摘要，有损，Fork Agent）
+       ├─ L3: TaskStateExtraction      （任务状态提取，结构化降级）
+       ├─ L4: SessionCheckpoint         （会话检查点，持久化后激进缩减）
+       └─ L5: NewSessionHandoff        （新会话交接，保底重置）
   90  TruncationTransformer            ← 已有：按数量截断（最终兜底）
 ```
 
 **核心设计原则**：每一级仅在前一级不足以将 token 用量降至阈值以下时才触发。级别之间通过复合转换器内部的共享状态直接传递，无需依赖 `meta` round-trip。
+
+### 五级降级总览
+
+| 级别 | 名称 | 操作类型 | 信息损耗 | 触发阈值 | 缓存影响 |
+|------|------|---------|---------|---------|---------|
+| L1 | ToolOutputTrim | 工具输出裁剪 + thinking 剥离 | 无损/极低 | >60% | 尾部操作，前缀不变 |
+| L2 | MessageSummarize | 旧消息块摘要替换 | 有损（语义保留） | >75% | 前缀保留 |
+| L3 | TaskStateExtraction | 任务状态结构化提取 | 有损（结构化降级） | >85% | 重建上下文 |
+| L4 | SessionCheckpoint | 持久化检查点 + 激进缩减 | 有损（可恢复） | >92% | 缓存失效 |
+| L5 | NewSessionHandoff | 新会话交接 + 旧会话归档 | 高损耗（保底重置） | >95% | 完全重置 |
+
+### 降级流程图
+
+```
+                    ┌─────────────────┐
+                    │ transformMessages() │
+                    │ 每 tool-loop 迭代执行  │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │ estimateTokens()  │
+                    └────────┬────────┘
+                             │
+              ┌──────────────▼──────────────┐
+              │ tokens > ctxWindow × 0.60?  │── No ──→ 直接返回
+              └──────┬──────────────────────┘
+                     │ Yes
+              ┌──────▼──────┐
+              │  L1: Trim    │
+              │  工具输出裁剪  │
+              │  (无损,缓存安全)│
+              └──────┬──────┘
+                     │
+              ┌──────▼──────────────────┐
+              │ tokens > ctxWindow × 0.75?│── No ──→ 返回 L1 结果
+              └──────┬──────────────────────┘
+                     │ Yes
+              ┌──────▼──────┐
+              │  L2: Summarize│
+              │  旧消息摘要    │
+              │  (Fork Agent) │
+              └──────┬──────┘
+                     │
+              ┌──────▼──────────────────┐
+              │ tokens > ctxWindow × 0.85?│── No ──→ 返回 L2 结果
+              └──────┬──────────────────────┘
+                     │ Yes
+              ┌──────▼──────┐
+              │  L3: Extract │
+              │  任务状态提取 │
+              │  (结构化降级) │
+              └──────┬──────┘
+                     │
+              ┌──────▼──────────────────┐
+              │ tokens > ctxWindow × 0.92?│── No ──→ 返回 L3 结果
+              └──────┬──────────────────────┘
+                     │ Yes
+              ┌──────▼──────┐
+              │  L4: Checkpoint│
+              │  会话检查点    │
+              │  (持久化+激进缩减)│
+              └──────┬──────┘
+                     │
+              ┌──────▼──────────────────┐
+              │ tokens > ctxWindow × 0.95?│── No ──→ 返回 L4 结果
+              └──────┬──────────────────────┘
+                     │ Yes
+              ┌──────▼──────┐
+              │  L5: Handoff │
+              │  新会话交接    │
+              │  (保底重置)    │
+              └──────┬──────┘
+                     │
+              ┌──────▼──────────────┐
+              │  断路器: 冷却 5 轮    │
+              │  旧会话归档          │
+              └─────────────────────┘
+```
 
 ---
 
@@ -53,7 +133,7 @@ export class CharHeuristicEstimator implements TokenEstimator {
                  + Math.ceil(cjkChars / this.charsPerTokenCJK);
     // Image block: 固定开销估算
     const hasImage = JSON.stringify(resource.content).includes('"type":"image"');
-    const imageTokens = hasImage ? 1500 : 0;  // 单张图约 1500 token
+    const imageTokens = hasImage ? 1500 : 0;
 
     const total = tokens + imageTokens;
     this.cache.set(resource.id, total);
@@ -66,35 +146,45 @@ export class CharHeuristicEstimator implements TokenEstimator {
 }
 ```
 
-**策略**：默认使用字符启发式（零依赖、O(n) 复杂度），可配置切换为 `tiktoken`（OpenAI 模型）或 Anthropic tokenizer。估算结果按 `resource.id` 缓存，避免重复计算。
-
 ---
 
-## 三、Level 0 - 微压缩（MicroCompaction）
+## 三、L1 - 工具输出裁剪（ToolOutputTrim）
 
 ### 目标
 无损或极低损耗操作，专门设计为**不破坏 Prompt Cache 前缀**。
 
 ### 触发条件
-`estimatedTokens > contextWindow × microThreshold`（默认 0.60）
+`estimatedTokens > contextWindow × L1_THRESHOLD`（默认 0.60）
 
 ### 缓存安全设计
 所有操作只从**上下文尾部**（最近的消息）向头部扫描，一旦释放足够 token 即停止。这确保缓存前缀完全不变，下次 API 调用仍命中缓存。
 
 ```typescript
-// compression/micro-compaction.ts
+// compression/l1-tool-output-trim.ts
 
-export class MicroCompaction {
+export interface L1Config {
+  enabled: boolean;
+  threshold: number;           // 0.60
+  targetRatio: number;         // 0.50 - 降至 contextWindow 的 50%
+  stripThinking: boolean;
+  trimToolResults: boolean;
+  toolResultMaxLines: number;  // 50
+  toolResultHeadLines: number; // 10
+  toolResultTailLines: number; // 10
+  normalizeWhitespace: boolean;
+}
+
+export class ToolOutputTrim {
   constructor(
     private estimator: TokenEstimator,
-    private config: MicroCompactionConfig,
+    private config: L1Config,
   ) {}
 
   async compress(
     resources: ContextResource[],
     contextWindow: number,
   ): Promise<{ resources: ContextResource[]; telemetry: CompressionTelemetry[] }> {
-    const target = contextWindow * this.config.targetRatio; // 降至 50% 以下
+    const target = contextWindow * this.config.targetRatio;
     const telemetry: CompressionTelemetry[] = [];
     let current = [...resources];
     let currentTokens = this.estimator.estimateAll(current);
@@ -191,25 +281,36 @@ export class MicroCompaction {
 
 ---
 
-## 四、Level 1 - 摘要压缩（SummaryCompaction）
+## 四、L2 - 旧消息摘要（MessageSummarize）
 
 ### 目标
-当微压缩不足以降级时，通过 Fork Agent 生成摘要替换旧消息块。
+当 L1 不足以降级时，通过 Fork Agent 生成摘要替换旧消息块。
 
 ### 触发条件
-Level 0 执行后 `estimatedTokens > contextWindow × summaryThreshold`（默认 0.75）
+L1 执行后 `estimatedTokens > contextWindow × L2_THRESHOLD`（默认 0.75）
 
 ### Fork Agent 机制
 
 ```typescript
-// compression/summary-compaction.ts
+// compression/l2-message-summarize.ts
 
-export class SummaryCompaction {
+export interface L2Config {
+  enabled: boolean;
+  threshold: number;                // 0.75
+  targetRatio: number;              // 0.60
+  forkModel?: string;               // 可指定更便宜的模型
+  forkMaxTokens: number;            // 2048
+  minResourcesToCompress: number;    // 4
+  protectedRecentCount: number;     // 6
+  maxCompressionDepth: number;     // 3
+}
+
+export class MessageSummarize {
   constructor(
     private estimator: TokenEstimator,
-    private streamFn: StreamFn,      // 复用 runtime 的 streamFn
-    private model: Model,            // 可配置使用更便宜的模型
-    private config: SummaryCompactionConfig,
+    private streamFn: StreamFn,
+    private model: Model,
+    private config: L2Config,
   ) {}
 
   async compress(
@@ -223,8 +324,9 @@ export class SummaryCompaction {
     }
 
     // ── 识别可压缩块 ──
-    const protectedCount = this.config.protectedRecentCount; // 默认 6
-    const compressible = this.identifyCompressible(resources, protectedCount);
+    const compressible = this.identifyCompressible(
+      resources, this.config.protectedRecentCount,
+    );
 
     if (compressible.length < this.config.minResourcesToCompress) {
       return { resources, telemetry: [] };
@@ -237,10 +339,7 @@ export class SummaryCompaction {
 
     // ── Fork Agent: 发起摘要请求 ──
     const summary = await this.forkSummarize(transcript, safety);
-
-    if (!summary) {
-      return { resources, telemetry: [] };
-    }
+    if (!summary) return { resources, telemetry: [] };
 
     // ── 构建 compaction_summary 资源 ──
     const summaryResource: ContextResource = {
@@ -251,11 +350,12 @@ export class SummaryCompaction {
       timestamp: Date.now(),
       dependencies: [],
       meta: {
+        _compressionLevel: 2,
         _compressionDepth: safety.compressionDepth + 1,
         _sourceCount: compressible.length,
         _sourceRange: `${compressible[0].id}..${compressible[compressible.length - 1].id}`,
       },
-      pinned: true,  // 摘要不可被后续压缩移除
+      pinned: true,
     };
 
     // ── 替换：保留前缀 + 摘要 + 最近消息 ──
@@ -268,13 +368,13 @@ export class SummaryCompaction {
     ];
 
     const telemetry: CompressionTelemetry = {
-      level: 'summary',
-      action: 'fork_summarize',
+      level: 'L2',
+      action: 'message_summarize',
       beforeTokens: this.estimator.estimateAll(resources),
       afterTokens: this.estimator.estimateAll(result),
       resourcesAffected: compressible.length,
       triggerReason: 'threshold_exceeded',
-      cachePreserved: prefixEnd > 0,  // 前缀保留则缓存有效
+      cachePreserved: prefixEnd > 0,
       compressionDepth: safety.compressionDepth + 1,
     };
 
@@ -289,15 +389,13 @@ export class SummaryCompaction {
   ): ContextResource[] {
     const recent = resources.slice(-protectedCount);
     const recentIds = new Set(recent.map(r => r.id));
-
-    // 构建工具配对图
     const toolPairIds = this.buildToolPairIds(resources);
 
     return resources.filter(r => {
       if (r.pinned) return false;
       if (recentIds.has(r.id)) return false;
-      if (r.type === 'compaction_summary') return false;  // 已有摘要不压缩
-      // 不完整的工具对跳过
+      if (r.type === 'compaction_summary') return false;
+      if (r.type === 'task_state') return false;  // L3 产物也不压缩
       if (toolPairIds.has(r.id) && !this.isPairComplete(r, resources, toolPairIds)) {
         return false;
       }
@@ -315,15 +413,10 @@ export class SummaryCompaction {
       : this.model;
 
     const context: Context = {
-      systemPrompt: SUMMARIZATION_SYSTEM_PROMPT,
+      systemPrompt: L2_SUMMARIZATION_PROMPT,
       messages: [{
         role: 'user',
-        content: `请将以下对话历史压缩为结构化摘要，保留：\n`
-               + `1. 用户的核心意图与决策\n`
-               + `2. 关键的工具调用及其结果（成功/失败）\n`
-               + `3. 已确定的事实和约束条件\n`
-               + `4. 待完成的任务状态\n\n`
-               + `对话历史：\n${transcript}`,
+        content: `请将以下对话历史压缩为结构化摘要：\n${transcript}`,
         timestamp: Date.now(),
       }],
     };
@@ -332,22 +425,22 @@ export class SummaryCompaction {
       const result = await this.streamFn(forkModel, context, {
         signal: safety.abortSignal,
       });
-      // 收集流式输出
       let summary = '';
       for await (const event of result) {
         if (event.type === 'text') summary += event.text;
       }
       return summary || null;
     } catch {
-      return null;  // Fork 失败时降级到 Level 2
+      return null;  // Fork 失败时降级到 L3
     }
   }
 }
 
-const SUMMARIZATION_SYSTEM_PROMPT = `You are a context compression agent.
-Summarize the conversation history into a concise, structured summary that
-preserves all critical information for continued task execution.
-Output in the following format:
+const L2_SUMMARIZATION_PROMPT = `You are a context compression agent.
+Summarize the conversation history into a concise, structured summary.
+Preserve all critical information for continued task execution.
+
+## Output Format
 
 ## Context Summary
 [Core user intent and current task state]
@@ -365,27 +458,59 @@ Output in the following format:
 ```
 
 ### 缓存共享设计
-- Fork Agent 使用与主对话相同的 `provider` 和 `baseUrl`，使得 API 端的缓存前缀可以共享
-- 摘要替换位置在**前缀之后**，主对话的缓存前缀（system prompt + 早期消息）完全不变
+- Fork Agent 使用与主对话相同的 `provider` 和 `baseUrl`，API 端缓存前缀可共享
+- 摘要替换位置在**前缀之后**，主对话的缓存前缀完全不变
 - `compaction_summary` 资源被 `pinned: true`，不会被后续压缩移除
 
 ---
 
-## 五、Level 2 - PTL Recovery（保底丢弃）
+## 五、L3 - 任务状态提取（TaskStateExtraction）
 
 ### 目标
-当摘要压缩仍不足时的最后防线，按优先级丢弃整个资源块。
+当 L2 摘要仍不足以降级时，将整个对话历史**结构化提取**为任务状态对象，用极紧凑的结构化表示替换所有历史上下文。
+
+### 与 L2 的区别
+- L2 生成**自然语言摘要**，保留对话叙事结构
+- L3 生成**结构化任务状态**，只保留执行所需的关键事实，丢弃叙事细节
+- L3 输出体积远小于 L2，但信息密度更高、损失更大
 
 ### 触发条件
-Level 1 执行后 `estimatedTokens > contextWindow × ptlThreshold`（默认 0.90）
+L2 执行后 `estimatedTokens > contextWindow × L3_THRESHOLD`（默认 0.85）
 
 ```typescript
-// compression/ptl-recovery.ts
+// compression/l3-task-state-extraction.ts
 
-export class PTLRecovery {
+export interface L3Config {
+  enabled: boolean;
+  threshold: number;            // 0.85
+  targetRatio: number;          // 0.40 - 激进缩减至 40%
+  forkModel?: string;
+  forkMaxTokens: number;        // 1024
+  protectedRecentCount: number; // 4 - 比L2更少保护
+}
+
+export interface TaskState {
+  originalRequest: string;       // 用户原始请求
+  currentPhase: string;          // 当前执行阶段
+  completedSteps: string[];      // 已完成步骤
+  pendingSteps: string[];         // 待执行步骤
+  keyDecisions: string[];        // 关键决策
+  constraints: string[];          // 约束条件
+  toolResults: {                  // 工具调用结果摘要
+    tool: string;
+    status: 'success' | 'failure' | 'partial';
+    summary: string;
+  }[];
+  errors: string[];               // 错误记录
+  variables: Record<string, unknown>; // 上下文变量
+}
+
+export class TaskStateExtraction {
   constructor(
     private estimator: TokenEstimator,
-    private config: PTLRecoveryConfig,
+    private streamFn: StreamFn,
+    private model: Model,
+    private config: L3Config,
   ) {}
 
   async compress(
@@ -393,97 +518,522 @@ export class PTLRecovery {
     contextWindow: number,
     safety: CompressionSafetyState,
   ): Promise<{ resources: ContextResource[]; telemetry: CompressionTelemetry[] }> {
-    const target = contextWindow * this.config.targetRatio; // 降至 80% 以下
-    let current = [...resources];
-    let currentTokens = this.estimator.estimateAll(current);
-    const telemetry: CompressionTelemetry[] = [];
+    // ── 提取全部对话内容（包括已有的 compaction_summary） ──
+    const allContent = this.extractAllContent(resources);
 
-    if (currentTokens <= target) return { resources: current, telemetry };
+    // ── Fork Agent: 结构化任务状态提取 ──
+    const taskState = await this.forkExtract(allContent, safety);
+    if (!taskState) return { resources, telemetry: [] };
 
-    // ── 按丢弃优先级排序（最低价值优先丢弃） ──
-    const dropOrder = this.config.dropOrder ?? [
-      'tool_result',       // 冗长工具结果最先丢（已在摘要中）
-      'tool_call',         // 配对的 tool_call 一起丢
-      'user_message',      // 旧用户消息
-      'assistant_message', // 旧助手消息
-      // 永不丢弃: system_message, state_snapshot, compaction_summary
-    ];
+    // ── 构建 task_state 资源 ──
+    const taskStateResource: ContextResource = {
+      id: `task_state_${Date.now()}`,
+      type: 'custom',           // 使用 custom 类型，role 标记为 taskState
+      role: 'taskState',
+      content: taskState,
+      timestamp: Date.now(),
+      dependencies: [],
+      meta: {
+        _compressionLevel: 3,
+        _sourceResourceCount: resources.length,
+      },
+      pinned: true,
+    };
 
-    // ── 保护最近 N 条消息 + pinned + 工具对完整性 ──
-    const protectedSet = this.buildProtectedSet(current);
+    // ── 激进替换：只保留 task_state + 最近 N 条消息 ──
+    const recent = resources.slice(-this.config.protectedRecentCount);
+    const result = [taskStateResource, ...recent];
 
-    for (const dropType of dropOrder) {
-      for (let i = 0; i < current.length && currentTokens > target; i++) {
-        const r = current[i];
-        if (r.type !== dropType || protectedSet.has(r.id)) continue;
+    const telemetry: CompressionTelemetry = {
+      level: 'L3',
+      action: 'task_state_extraction',
+      beforeTokens: this.estimator.estimateAll(resources),
+      afterTokens: this.estimator.estimateAll(result),
+      resourcesAffected: resources.length - recent.length,
+      triggerReason: 'threshold_exceeded',
+      cachePreserved: false,  // 上下文重建，缓存失效
+      compressionDepth: safety.compressionDepth + 1,
+    };
 
-        // 工具配对检查：必须同时丢弃 tool_call + tool_result
-        const pairIds = this.findPairIds(r, current);
-        const toRemove = pairIds.size > 0
-          ? current.filter(x => pairIds.has(x.id) || x === r)
-          : [r];
-
-        // 检查移除后不会留下孤立配对
-        if (this.wouldCreateOrphan(r, current)) continue;
-
-        const beforeTokens = currentTokens;
-        current = current.filter(x => !toRemove.includes(x));
-        currentTokens = this.estimator.estimateAll(current);
-
-        telemetry.push({
-          level: 'ptl',
-          action: 'drop_resource',
-          beforeTokens,
-          afterTokens: currentTokens,
-          resourcesAffected: toRemove.length,
-          triggerReason: 'ptl_recovery',
-          cachePreserved: i > 0,  // 非首条丢弃则前缀仍有效
-        });
-      }
-    }
-
-    // ── 断路器：如果仍然超限，硬截断 ──
-    if (currentTokens > contextWindow * 0.95) {
-      const keepCount = this.config.minKeepCount;
-      const pinned = current.filter(r => r.pinned);
-      const unpinned = current.filter(r => !r.pinned);
-      const kept = unpinned.slice(-Math.max(keepCount - pinned.length, 0));
-      current = [...pinned, ...kept].sort((a, b) => a.timestamp - b.timestamp);
-
-      telemetry.push({
-        level: 'ptl',
-        action: 'hard_truncate',
-        beforeTokens: currentTokens,
-        afterTokens: this.estimator.estimateAll(current),
-        resourcesAffected: current.length,
-        triggerReason: 'circuit_breaker',
-        cachePreserved: false,
-      });
-
-      safety.circuitBreakerTripped = true;
-    }
-
-    return { resources: current, telemetry };
+    safety.compressionDepth++;
+    return { resources: result, telemetry: [telemetry] };
   }
 
-  /** 构建不可丢弃集合：pinned + 最近 N 条 + compaction_summary */
-  private buildProtectedSet(resources: ContextResource[]): Set<string> {
-    const protectedSet = new Set<string>();
-    const recent = resources.slice(-this.config.minKeepCount);
-    for (const r of recent) protectedSet.add(r.id);
-    for (const r of resources) {
-      if (r.pinned || r.type === 'compaction_summary') {
-        protectedSet.add(r.id);
+  /** 提取所有资源的内容文本，包括已有的摘要 */
+  private extractAllContent(resources: ContextResource[]): string {
+    return resources
+      .filter(r => r.type !== 'system_message' && r.type !== 'state_snapshot')
+      .map(r => {
+        const text = extractTextFromResource(r);
+        const prefix = `[${r.type}]`;
+        return `${prefix} ${text}`;
+      })
+      .join('\n\n');
+  }
+
+  /** Fork Agent: 结构化任务状态提取 */
+  private async forkExtract(
+    allContent: string,
+    safety: CompressionSafetyState,
+  ): Promise<TaskState | null> {
+    const forkModel = this.config.forkModel
+      ? this.lookupModel(this.config.forkModel)
+      : this.model;
+
+    const context: Context = {
+      systemPrompt: L3_EXTRACTION_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `从以下对话历史中提取结构化任务状态：\n\n${allContent}`,
+        timestamp: Date.now(),
+      }],
+    };
+
+    try {
+      const result = await this.streamFn(forkModel, context, {
+        signal: safety.abortSignal,
+      });
+      let output = '';
+      for await (const event of result) {
+        if (event.type === 'text') output += event.text;
       }
+      // 尝试解析 JSON，失败则将纯文本作为 originalRequest
+      try {
+        return JSON.parse(output) as TaskState;
+      } catch {
+        return {
+          originalRequest: output.slice(0, 500),
+          currentPhase: 'unknown',
+          completedSteps: [],
+          pendingSteps: [],
+          keyDecisions: [],
+          constraints: [],
+          toolResults: [],
+          errors: [],
+          variables: {},
+        };
+      }
+    } catch {
+      return null;
     }
-    return protectedSet;
+  }
+}
+
+const L3_EXTRACTION_PROMPT = `You are a task state extraction agent.
+Extract a structured JSON object representing the current task state from the conversation history.
+Be extremely concise. Only include information necessary for continued execution.
+
+Output valid JSON matching this schema:
+{
+  "originalRequest": "用户原始请求的核心描述（1-2句）",
+  "currentPhase": "当前执行阶段",
+  "completedSteps": ["已完成的步骤1", "已完成的步骤2"],
+  "pendingSteps": ["待执行的步骤1"],
+  "keyDecisions": ["关键决策1"],
+  "constraints": ["约束条件1"],
+  "toolResults": [
+    {"tool": "工具名", "status": "success|failure|partial", "summary": "结果摘要"}
+  ],
+  "errors": ["错误记录1"],
+  "variables": {"key": "value"}
+}`;
+```
+
+### 关键区别
+- L2 保留**对话叙事**（谁说了什么、按什么顺序）
+- L3 只保留**执行所需事实**（做了什么、还要做什么、约束是什么）
+- L3 的 `TaskState` 是结构化 JSON，可以被 agent 直接解析使用，而非人类阅读的摘要
+
+---
+
+## 六、L4 - 会话检查点（SessionCheckpoint）
+
+### 目标
+当 L3 仍不足以降级时，先将完整会话状态**持久化到存储**（不丢失任何信息），然后激进缩减上下文到最小工作集。
+
+### 与 L3 的区别
+- L3 提取任务状态但仍保留最近 N 条消息
+- L4 先保存完整快照（可恢复），然后只保留**最小执行上下文**：system prompt + task_state + 最近 2 条消息
+- L4 是"安全网"--信息不会真正丢失，只是从内存移到磁盘
+
+### 触发条件
+L3 执行后 `estimatedTokens > contextWindow × L4_THRESHOLD`（默认 0.92）
+
+```typescript
+// compression/l4-session-checkpoint.ts
+
+export interface L4Config {
+  enabled: boolean;
+  threshold: number;            // 0.92
+  targetRatio: number;          // 0.25 - 缩减至 25%
+  checkpointStorage: 'file' | 'memory' | 'custom';
+  minWorkingSet: number;        // 2 - 最小保留消息数
+}
+
+export interface SessionCheckpoint {
+  checkpointId: string;
+  sessionId: string;
+  timestamp: number;
+  fullMessages: Message[];           // 完整消息快照
+  taskState?: TaskState;             // L3 提取的任务状态
+  compactionHistory: CompressionTelemetry[];  // 压缩历史
+  resourceCount: number;
+  estimatedTokens: number;
+}
+
+export class SessionCheckpointLevel {
+  constructor(
+    private estimator: TokenEstimator,
+    private sessionStorage: SessionStorage,
+    private config: L4Config,
+  ) {}
+
+  async compress(
+    resources: ContextResource[],
+    contextWindow: number,
+    safety: CompressionSafetyState,
+    sessionKey: string,
+  ): Promise<{ resources: ContextResource[]; telemetry: CompressionTelemetry[] }> {
+    // ── 步骤 1: 创建完整检查点 ──
+    const messages = resourcesToMessages(resources);
+    const checkpoint: SessionCheckpoint = {
+      checkpointId: `ckpt_${Date.now()}`,
+      sessionId: sessionKey,
+      timestamp: Date.now(),
+      fullMessages: messages,
+      taskState: this.findTaskState(resources),
+      compactionHistory: safety.telemetryHistory,
+      resourceCount: resources.length,
+      estimatedTokens: this.estimator.estimateAll(resources),
+    };
+
+    // ── 步骤 2: 持久化检查点 ──
+    await this.persistCheckpoint(checkpoint);
+
+    // ── 步骤 3: 激进缩减到最小工作集 ──
+    const workingSet = this.buildMinimalWorkingSet(resources);
+    const checkpointRef: ContextResource = {
+      id: `checkpoint_ref_${checkpoint.checkpointId}`,
+      type: 'custom',
+      role: 'system',
+      content: `[Session Checkpoint: ${checkpoint.checkpointId}]\n`
+             + `Full context saved at ${checkpoint.timestamp}.\n`
+             + `Resource count: ${checkpoint.resourceCount}, Tokens: ${checkpoint.estimatedTokens}.\n`
+             + `Recovery: load checkpoint ${checkpoint.checkpointId} to restore full context.`,
+      timestamp: Date.now(),
+      dependencies: [],
+      meta: {
+        _compressionLevel: 4,
+        _checkpointId: checkpoint.checkpointId,
+        _recoverable: true,
+      },
+      pinned: true,
+    };
+
+    const result = [checkpointRef, ...workingSet];
+
+    const telemetry: CompressionTelemetry = {
+      level: 'L4',
+      action: 'session_checkpoint',
+      beforeTokens: checkpoint.estimatedTokens,
+      afterTokens: this.estimator.estimateAll(result),
+      resourcesAffected: resources.length - workingSet.length,
+      triggerReason: 'threshold_exceeded',
+      cachePreserved: false,
+      compressionDepth: safety.compressionDepth + 1,
+    };
+
+    safety.compressionDepth++;
+    safety.hasCheckpoint = true;
+    safety.checkpointId = checkpoint.checkpointId;
+    return { resources: result, telemetry: [telemetry] };
+  }
+
+  /** 构建最小工作集：pinned + task_state + 最近 2 条消息 */
+  private buildMinimalWorkingSet(resources: ContextResource[]): ContextResource[] {
+    const pinned = resources.filter(r => r.pinned);
+    const unpinned = resources.filter(r => !r.pinned);
+    const recent = unpinned.slice(-this.config.minWorkingSet);
+
+    // 去重：pinned 中可能已有 task_state，不重复加入
+    const pinnedIds = new Set(pinned.map(r => r.id));
+    const newRecent = recent.filter(r => !pinnedIds.has(r.id));
+
+    return [...pinned, ...newRecent].sort((a, b) => a.timestamp - b.timestamp);
+  }
+
+  private async persistCheckpoint(checkpoint: SessionCheckpoint): Promise<void> {
+    const key = `checkpoint_${checkpoint.checkpointId}`;
+    await this.sessionStorage.save(checkpoint.sessionId, {
+      messages: checkpoint.fullMessages,
+      checkpoint,
+    });
+  }
+
+  private findTaskState(resources: ContextResource[]): TaskState | undefined {
+    const taskStateRes = resources.find(r => r.role === 'taskState');
+    return taskStateRes?.content as TaskState | undefined;
   }
 }
 ```
 
+### 恢复机制
+当 agent 需要回溯被 L4 移除的上下文时，可通过 `checkpointId` 从 `SessionStorage` 加载完整快照。这确保 L4 虽然激进缩减了上下文，但信息从未真正丢失。
+
 ---
 
-## 六、安全机制
+## 七、L5 - 新会话交接（NewSessionHandoff）
+
+### 目标
+**最终保底手段**：当所有压缩级别都无法有效降级时，创建一个全新的干净会话，通过交接文档传递关键上下文。旧会话归档保留。
+
+### 触发条件
+L4 执行后 `estimatedTokens > contextWindow × L5_THRESHOLD`（默认 0.95）
+或断路器触发（`safety.circuitBreakerTripped`）
+
+```typescript
+// compression/l5-new-session-handoff.ts
+
+export interface L5Config {
+  enabled: boolean;
+  threshold: number;            // 0.95
+  forkModel?: string;
+  forkMaxTokens: number;        // 2048
+}
+
+export interface SessionHandoff {
+  handoffId: string;
+  originalSessionId: string;
+  newSessionId: string;
+  timestamp: number;
+  handoffDocument: string;      // 交接文档（自然语言）
+  taskState?: TaskState;         // L3 提取的任务状态
+  checkpointId?: string;        // L4 的检查点 ID
+  compactionSummary: string;     // 所有压缩历史摘要
+  reason: string;               // 触发原因
+}
+
+export class NewSessionHandoff {
+  constructor(
+    private estimator: TokenEstimator,
+    private streamFn: StreamFn,
+    private model: Model,
+    private config: L5Config,
+  ) {}
+
+  async compress(
+    resources: ContextResource[],
+    contextWindow: number,
+    safety: CompressionSafetyState,
+    sessionKey: string,
+  ): Promise<{ resources: ContextResource[]; telemetry: CompressionTelemetry[]; handoff?: SessionHandoff }> {
+    // ── 收集所有可用上下文 ──
+    const allContext = this.collectContext(resources, safety);
+
+    // ── Fork Agent: 生成交接文档 ──
+    const handoffDoc = await this.forkHandoff(allContext, safety);
+    if (!handoffDoc) {
+      // Fork 失败：用硬编码模板兜底
+      return this.fallbackHandoff(resources, safety, sessionKey);
+    }
+
+    // ── 构建交接数据 ──
+    const handoff: SessionHandoff = {
+      handoffId: `handoff_${Date.now()}`,
+      originalSessionId: sessionKey,
+      newSessionId: `${sessionKey}_h${Date.now()}`,
+      timestamp: Date.now(),
+      handoffDocument: handoffDoc,
+      taskState: this.findTaskState(resources),
+      checkpointId: safety.checkpointId,
+      compactionSummary: this.summarizeCompactionHistory(safety.telemetryHistory),
+      reason: safety.circuitBreakerTripped
+        ? 'circuit_breaker_triggered'
+        : 'threshold_exceeded',
+    };
+
+    // ── 构建新会话初始上下文 ──
+    // 只有 system prompt + 交接文档作为首条 user message
+    const handoffResource: ContextResource = {
+      id: `handoff_${handoff.handoffId}`,
+      type: 'user_message',
+      role: 'user',
+      content: this.formatHandoffAsUserMessage(handoff),
+      timestamp: Date.now(),
+      dependencies: [],
+      meta: {
+        _compressionLevel: 5,
+        _isHandoff: true,
+        _originalSessionId: sessionKey,
+      },
+      pinned: true,
+    };
+
+    // 保留原始 system message
+    const systemMessages = resources.filter(r => r.type === 'system_message');
+
+    const result = [...systemMessages, handoffResource];
+
+    const telemetry: CompressionTelemetry = {
+      level: 'L5',
+      action: 'new_session_handoff',
+      beforeTokens: this.estimator.estimateAll(resources),
+      afterTokens: this.estimator.estimateAll(result),
+      resourcesAffected: resources.length,
+      triggerReason: handoff.reason,
+      cachePreserved: false,
+      compressionDepth: safety.compressionDepth + 1,
+    };
+
+    safety.compressionDepth++;
+    safety.circuitBreakerTripped = true;
+    safety.handoffCompleted = true;
+
+    return { resources: result, telemetry: [telemetry], handoff };
+  }
+
+  /** Fork Agent: 生成交接文档 */
+  private async forkHandoff(
+    allContext: string,
+    safety: CompressionSafetyState,
+  ): Promise<string | null> {
+    const forkModel = this.config.forkModel
+      ? this.lookupModel(this.config.forkModel)
+      : this.model;
+
+    const context: Context = {
+      systemPrompt: L5_HANDOFF_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `为以下对话生成交接文档：\n\n${allContext}`,
+        timestamp: Date.now(),
+      }],
+    };
+
+    try {
+      const result = await this.streamFn(forkModel, context, {
+        signal: safety.abortSignal,
+      });
+      let output = '';
+      for await (const event of result) {
+        if (event.type === 'text') output += event.text;
+      }
+      return output || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** 将交接文档格式化为新会话的首条用户消息 */
+  private formatHandoffAsUserMessage(handoff: SessionHandoff): string {
+    return `## Session Handoff
+
+This session was continued from a previous session that exceeded context limits.
+
+**Original Session:** ${handoff.originalSessionId}
+**Handoff Time:** ${new Date(handoff.timestamp).toISOString()}
+**Reason:** ${handoff.reason}
+
+---
+
+${handoff.handoffDocument}
+
+---
+
+${handoff.checkpointId
+  ? `**Note:** Full context from the previous session is available as checkpoint \`${handoff.checkpointId}\`. `
+  : ''}Please continue the task based on the information above.`;
+  }
+
+  /** Fork 失败时的硬编码兜底 */
+  private fallbackHandoff(
+    resources: ContextResource[],
+    safety: CompressionSafetyState,
+    sessionKey: string,
+  ): { resources: ContextResource[]; telemetry: CompressionTelemetry[]; handoff: SessionHandoff } {
+    // 提取最后的用户消息和 task_state
+    const lastUserMsg = [...resources].reverse().find(r => r.type === 'user_message');
+    const taskState = this.findTaskState(resources);
+
+    const handoffDoc = `## Fallback Handoff
+
+Original request: ${taskState?.originalRequest ?? extractTextFromResource(lastUserMsg!)}
+
+Completed steps:
+${taskState?.completedSteps.map(s => `- ${s}`).join('\n') ?? '- (unknown)'}
+
+Pending steps:
+${taskState?.pendingSteps.map(s => `- ${s}`).join('\n') ?? '- (unknown)'}
+
+Please continue from where the previous session left off.`;
+
+    const handoff: SessionHandoff = {
+      handoffId: `handoff_fallback_${Date.now()}`,
+      originalSessionId: sessionKey,
+      newSessionId: `${sessionKey}_h${Date.now()}`,
+      timestamp: Date.now(),
+      handoffDocument: handoffDoc,
+      taskState,
+      checkpointId: safety.checkpointId,
+      compactionSummary: 'fallback - no compaction history available',
+      reason: 'fallback_handoff',
+    };
+
+    const systemMessages = resources.filter(r => r.type === 'system_message');
+    const handoffResource: ContextResource = {
+      id: `handoff_${handoff.handoffId}`,
+      type: 'user_message',
+      role: 'user',
+      content: this.formatHandoffAsUserMessage(handoff),
+      timestamp: Date.now(),
+      dependencies: [],
+      meta: { _compressionLevel: 5, _isHandoff: true, _fallback: true },
+      pinned: true,
+    };
+
+    const result = [...systemMessages, handoffResource];
+    safety.circuitBreakerTripped = true;
+
+    return {
+      resources: result,
+      telemetry: [{
+        level: 'L5',
+        action: 'fallback_handoff',
+        beforeTokens: this.estimator.estimateAll(resources),
+        afterTokens: this.estimator.estimateAll(result),
+        resourcesAffected: resources.length,
+        triggerReason: 'fork_failure_fallback',
+        cachePreserved: false,
+        compressionDepth: safety.compressionDepth + 1,
+      }],
+      handoff,
+    };
+  }
+}
+
+const L5_HANDOFF_PROMPT = `You are a session handoff agent.
+A previous agent session has exhausted its context window after multiple compression attempts.
+Generate a concise handoff document that allows a fresh session to continue the task seamlessly.
+
+The handoff document MUST include:
+1. **Original Task**: What the user originally asked for
+2. **What Was Done**: Summary of completed work and key results
+3. **Current State**: Where the task currently stands
+4. **What Remains**: Specific next steps to complete the task
+5. **Critical Context**: Any constraints, decisions, or facts that must be preserved
+6. **Errors/Issues**: Any errors encountered that the new session should be aware of
+
+Be concise but complete. The new session will have NO other context besides this document.`;
+```
+
+### 交接后行为
+- 旧会话标记为 `archived`，可通过 `checkpointId` 恢复
+- 新会话以交接文档作为首条 user message 开始
+- 断路器触发：`safety.circuitBreakerTripped = true`，冷却 5 轮内不再尝试压缩
+
+---
+
+## 八、安全机制
 
 ```typescript
 // compression/safety.ts
@@ -499,6 +1049,14 @@ export interface CompressionSafetyState {
   cooldownRemaining: number;
   /** 中止信号 */
   abortSignal?: AbortSignal;
+  /** 是否已创建检查点（L4） */
+  hasCheckpoint: boolean;
+  /** 检查点 ID */
+  checkpointId?: string;
+  /** 是否已完成会话交接（L5） */
+  handoffCompleted: boolean;
+  /** 压缩历史记录（用于遥测和交接） */
+  telemetryHistory: CompressionTelemetry[];
 }
 
 export class CompressionSafetyGuard {
@@ -506,10 +1064,15 @@ export class CompressionSafetyGuard {
 
   /** 检查是否允许执行压缩 */
   canCompress(state: CompressionSafetyState): boolean {
-    if (state.circuitBreakerTripped) return false;
-    if (state.cooldownRemaining > 0) {
-      state.cooldownRemaining--;
-      return false;
+    if (state.handoffCompleted) return false;  // 已交接，不再压缩
+    if (state.circuitBreakerTripped) {
+      if (state.cooldownRemaining > 0) {
+        state.cooldownRemaining--;
+        return false;
+      }
+      // 冷却结束，重置断路器
+      state.circuitBreakerTripped = false;
+      state.attemptCount = 0;
     }
     if (state.attemptCount >= this.config.maxAttempts) {
       state.cooldownRemaining = this.config.cooldownTurns;
@@ -530,11 +1093,9 @@ export class CompressionSafetyGuard {
       }
     }
 
-    // 每个 tool_result 的依赖必须在 tool_call 中存在
     for (const depId of toolResultIds) {
       if (!toolCallIds.has(depId)) return false;
     }
-    // 每个 tool_call 应有对应的 tool_result（除非在最近保护区内）
     for (const callId of toolCallIds) {
       if (!toolResultIds.has(callId)) return false;
     }
@@ -546,14 +1107,13 @@ export class CompressionSafetyGuard {
     before: ContextResource[],
     after: ContextResource[],
   ): boolean {
-    // 同一 message.id 的资源块必须整体保留或整体移除
     const beforeGroups = this.groupByMessageId(before);
     const afterGroups = this.groupByMessageId(after);
 
     for (const [msgId, group] of afterGroups) {
       const beforeGroup = beforeGroups.get(msgId);
       if (beforeGroup && beforeGroup.length !== group.length) {
-        return false; // 部分移除，违反完整性
+        return false;
       }
     }
     return true;
@@ -562,8 +1122,6 @@ export class CompressionSafetyGuard {
   private groupByMessageId(resources: ContextResource[]): Map<string, ContextResource[]> {
     const groups = new Map<string, ContextResource[]>();
     for (const r of resources) {
-      // msg_0 -> assistant message; msg_0_result -> tool result
-      // 但它们共享 toolCallId 关系，应作为一组
       const groupId = r.meta.toolCallId
         ? r.meta.toolCallId as string
         : r.id;
@@ -577,7 +1135,7 @@ export class CompressionSafetyGuard {
 
 ---
 
-## 七、复合转换器：三级协调
+## 九、复合转换器：五级协调
 
 ```typescript
 // compression/index.ts
@@ -587,9 +1145,11 @@ export class ContextCompressionTransformer extends BaseTransformer {
 
   constructor(
     private estimator: TokenEstimator,
-    private micro: MicroCompaction,
-    private summary: SummaryCompaction,
-    private ptl: PTLRecovery,
+    private l1: ToolOutputTrim,
+    private l2: MessageSummarize,
+    private l3: TaskStateExtraction,
+    private l4: SessionCheckpointLevel,
+    private l5: NewSessionHandoff,
     private safetyGuard: CompressionSafetyGuard,
     private config: CompressionConfig,
     private contextWindow: number,
@@ -603,41 +1163,64 @@ export class ContextCompressionTransformer extends BaseTransformer {
   ): Promise<ContextResource[]> {
     if (!this.config.enabled) return resources;
 
-    const safetyState: CompressionSafetyState = this.loadOrCreateState(context);
+    const safetyState = this.loadOrCreateState(context);
     if (!this.safetyGuard.canCompress(safetyState)) return resources;
 
-    const beforeTokens = this.estimator.estimateAll(resources);
     let current = resources;
     const allTelemetry: CompressionTelemetry[] = [];
+    const currentTokens = this.estimator.estimateAll(current);
 
-    // ── Level 0: 微压缩 ──
-    if (beforeTokens > this.contextWindow * this.config.micro.threshold) {
-      const result = await this.micro.compress(current, this.contextWindow);
+    // ── L1: 工具输出裁剪 ──
+    if (currentTokens > this.contextWindow * this.config.l1.threshold) {
+      const result = await this.l1.compress(current, this.contextWindow);
       current = result.resources;
       allTelemetry.push(...result.telemetry);
+      safetyState.attemptCount++;
     }
 
-    // ── Level 1: 摘要压缩 ──
-    if (this.estimator.estimateAll(current) > this.contextWindow * this.config.summary.threshold) {
-      const result = await this.summary.compress(current, this.contextWindow, safetyState);
+    // ── L2: 旧消息摘要 ──
+    if (this.estimator.estimateAll(current) > this.contextWindow * this.config.l2.threshold) {
+      const result = await this.l2.compress(current, this.contextWindow, safetyState);
       current = result.resources;
       allTelemetry.push(...result.telemetry);
+      safetyState.attemptCount++;
     }
 
-    // ── Level 2: PTL 丢弃 ──
-    if (this.estimator.estimateAll(current) > this.contextWindow * this.config.ptl.threshold) {
-      const result = await this.ptl.compress(current, this.contextWindow, safetyState);
+    // ── L3: 任务状态提取 ──
+    if (this.estimator.estimateAll(current) > this.contextWindow * this.config.l3.threshold) {
+      const result = await this.l3.compress(current, this.contextWindow, safetyState);
       current = result.resources;
       allTelemetry.push(...result.telemetry);
+      safetyState.attemptCount++;
+    }
+
+    // ── L4: 会话检查点 ──
+    if (this.estimator.estimateAll(current) > this.contextWindow * this.config.l4.threshold) {
+      const result = await this.l4.compress(
+        current, this.contextWindow, safetyState, context.runtime.sessionKey,
+      );
+      current = result.resources;
+      allTelemetry.push(...result.telemetry);
+      safetyState.attemptCount++;
+    }
+
+    // ── L5: 新会话交接 ──
+    if (this.estimator.estimateAll(current) > this.contextWindow * this.config.l5.threshold) {
+      const result = await this.l5.compress(
+        current, this.contextWindow, safetyState, context.runtime.sessionKey,
+      );
+      current = result.resources;
+      allTelemetry.push(...result.telemetry);
+      safetyState.attemptCount++;
     }
 
     // ── 安全验证 ──
     if (!this.safetyGuard.validateToolPairing(current)) {
-      // 配对被破坏，回退到压缩前状态
-      current = resources;
+      current = resources;  // 配对被破坏，回退
     }
 
     // ── 遥测上报 ──
+    safetyState.telemetryHistory.push(...allTelemetry);
     for (const t of allTelemetry) {
       this.emitTelemetry(t, context);
     }
@@ -646,25 +1229,26 @@ export class ContextCompressionTransformer extends BaseTransformer {
   }
 
   private loadOrCreateState(context: TransformContext): CompressionSafetyState {
-    // 通过 runtime.config 或外部 Map 传递状态
     const key = `safety_${context.runtime.sessionKey}`;
     const existing = (context.runtime.config as any)?.[key];
     if (existing) return existing;
 
-    const state: CompressionSafetyState = {
+    return {
       compressionDepth: 0,
       attemptCount: 0,
       circuitBreakerTripped: false,
       cooldownRemaining: 0,
+      hasCheckpoint: false,
+      handoffCompleted: false,
+      telemetryHistory: [],
     };
-    return state;
   }
 }
 ```
 
 ---
 
-## 八、配置系统
+## 十、配置系统
 
 ```typescript
 // compression/config.ts
@@ -676,44 +1260,62 @@ export interface CompressionConfig {
   estimator: 'char-heuristic' | 'tiktoken';
   charsPerToken: { ascii: number; cjk: number };
 
-  // Level 0: 微压缩
-  micro: {
+  // L1: 工具输出裁剪
+  l1: {
     enabled: boolean;
-    threshold: number;        // 0.60
-    targetRatio: number;      // 0.50 - 降至 contextWindow 的 50%
+    threshold: number;            // 0.60
+    targetRatio: number;          // 0.50
     stripThinking: boolean;
     trimToolResults: boolean;
-    toolResultMaxLines: number;
-    toolResultHeadLines: number;
-    toolResultTailLines: number;
+    toolResultMaxLines: number;   // 50
+    toolResultHeadLines: number;  // 10
+    toolResultTailLines: number;  // 10
     normalizeWhitespace: boolean;
   };
 
-  // Level 1: 摘要压缩
-  summary: {
+  // L2: 旧消息摘要
+  l2: {
     enabled: boolean;
-    threshold: number;        // 0.75
-    targetRatio: number;      // 0.60
-    forkModel?: string;       // 可指定更便宜的模型
-    forkMaxTokens: number;    // 2048
-    minResourcesToCompress: number;  // 4
-    protectedRecentCount: number;    // 6
+    threshold: number;            // 0.75
+    targetRatio: number;          // 0.60
+    forkModel?: string;
+    forkMaxTokens: number;        // 2048
+    minResourcesToCompress: number; // 4
+    protectedRecentCount: number;   // 6
     maxCompressionDepth: number;    // 3
   };
 
-  // Level 2: PTL 丢弃
-  ptl: {
+  // L3: 任务状态提取
+  l3: {
     enabled: boolean;
-    threshold: number;        // 0.90
-    targetRatio: number;      // 0.80
-    dropOrder: ResourceType[];
-    minKeepCount: number;     // 4
+    threshold: number;            // 0.85
+    targetRatio: number;          // 0.40
+    forkModel?: string;
+    forkMaxTokens: number;        // 1024
+    protectedRecentCount: number; // 4
+  };
+
+  // L4: 会话检查点
+  l4: {
+    enabled: boolean;
+    threshold: number;            // 0.92
+    targetRatio: number;          // 0.25
+    checkpointStorage: 'file' | 'memory' | 'custom';
+    minWorkingSet: number;        // 2
+  };
+
+  // L5: 新会话交接
+  l5: {
+    enabled: boolean;
+    threshold: number;            // 0.95
+    forkModel?: string;
+    forkMaxTokens: number;        // 2048
   };
 
   // 安全
   safety: {
-    maxAttempts: number;      // 3
-    cooldownTurns: number;     // 5
+    maxAttempts: number;          // 5 - 每级算一次
+    cooldownTurns: number;         // 5
   };
 
   // 遥测
@@ -725,7 +1327,7 @@ export interface CompressionConfig {
   };
 }
 
-/** 从环境变量加载配置，支持运行时覆盖 */
+/** 从环境变量加载配置 */
 export function loadCompressionConfig(
   overrides?: Partial<CompressionConfig>,
 ): CompressionConfig {
@@ -737,36 +1339,50 @@ export function loadCompressionConfig(
       ascii: Number(env.AGENTPACK_CHARS_PER_TOKEN_ASCII) || 4,
       cjk: Number(env.AGENTPACK_CHARS_PER_TOKEN_CJK) || 1.5,
     },
-    micro: {
-      enabled: env.AGENTPACK_COMPRESSION_MICRO !== 'false',
-      threshold: Number(env.AGENTPACK_COMPRESSION_MICRO_THRESHOLD) || 0.60,
-      targetRatio: Number(env.AGENTPACK_COMPRESSION_MICRO_TARGET) || 0.50,
-      stripThinking: env.AGENTPACK_COMPRESSION_STRIP_THINKING !== 'false',
-      trimToolResults: env.AGENTPACK_COMPRESSION_TRIM_TOOL_RESULTS !== 'false',
-      toolResultMaxLines: Number(env.AGENTPACK_TOOL_RESULT_MAX_LINES) || 50,
-      toolResultHeadLines: Number(env.AGENTPACK_TOOL_RESULT_HEAD_LINES) || 10,
-      toolResultTailLines: Number(env.AGENTPACK_TOOL_RESULT_TAIL_LINES) || 10,
-      normalizeWhitespace: env.AGENTPACK_COMPRESSION_NORMALIZE_WS !== 'false',
+    l1: {
+      enabled: env.AGENTPACK_L1_ENABLED !== 'false',
+      threshold: Number(env.AGENTPACK_L1_THRESHOLD) || 0.60,
+      targetRatio: Number(env.AGENTPACK_L1_TARGET) || 0.50,
+      stripThinking: env.AGENTPACK_L1_STRIP_THINKING !== 'false',
+      trimToolResults: env.AGENTPACK_L1_TRIM_TOOL_RESULTS !== 'false',
+      toolResultMaxLines: Number(env.AGENTPACK_L1_TOOL_MAX_LINES) || 50,
+      toolResultHeadLines: Number(env.AGENTPACK_L1_TOOL_HEAD_LINES) || 10,
+      toolResultTailLines: Number(env.AGENTPACK_L1_TOOL_TAIL_LINES) || 10,
+      normalizeWhitespace: env.AGENTPACK_L1_NORMALIZE_WS !== 'false',
     },
-    summary: {
-      enabled: env.AGENTPACK_COMPRESSION_SUMMARY !== 'false',
-      threshold: Number(env.AGENTPACK_COMPRESSION_SUMMARY_THRESHOLD) || 0.75,
-      targetRatio: Number(env.AGENTPACK_COMPRESSION_SUMMARY_TARGET) || 0.60,
-      forkModel: env.AGENTPACK_COMPRESSION_FORK_MODEL,
-      forkMaxTokens: Number(env.AGENTPACK_COMPRESSION_FORK_MAX_TOKENS) || 2048,
-      minResourcesToCompress: Number(env.AGENTPACK_COMPRESSION_MIN_RESOURCES) || 4,
-      protectedRecentCount: Number(env.AGENTPACK_COMPRESSION_PROTECTED_RECENT) || 6,
-      maxCompressionDepth: Number(env.AGENTPACK_COMPRESSION_MAX_DEPTH) || 3,
+    l2: {
+      enabled: env.AGENTPACK_L2_ENABLED !== 'false',
+      threshold: Number(env.AGENTPACK_L2_THRESHOLD) || 0.75,
+      targetRatio: Number(env.AGENTPACK_L2_TARGET) || 0.60,
+      forkModel: env.AGENTPACK_L2_FORK_MODEL,
+      forkMaxTokens: Number(env.AGENTPACK_L2_FORK_MAX_TOKENS) || 2048,
+      minResourcesToCompress: Number(env.AGENTPACK_L2_MIN_RESOURCES) || 4,
+      protectedRecentCount: Number(env.AGENTPACK_L2_PROTECTED_RECENT) || 6,
+      maxCompressionDepth: Number(env.AGENTPACK_L2_MAX_DEPTH) || 3,
     },
-    ptl: {
-      enabled: env.AGENTPACK_COMPRESSION_PTL !== 'false',
-      threshold: Number(env.AGENTPACK_COMPRESSION_PTL_THRESHOLD) || 0.90,
-      targetRatio: Number(env.AGENTPACK_COMPRESSION_PTL_TARGET) || 0.80,
-      dropOrder: ['tool_result', 'tool_call', 'user_message', 'assistant_message'],
-      minKeepCount: Number(env.AGENTPACK_COMPRESSION_MIN_KEEP) || 4,
+    l3: {
+      enabled: env.AGENTPACK_L3_ENABLED !== 'false',
+      threshold: Number(env.AGENTPACK_L3_THRESHOLD) || 0.85,
+      targetRatio: Number(env.AGENTPACK_L3_TARGET) || 0.40,
+      forkModel: env.AGENTPACK_L3_FORK_MODEL,
+      forkMaxTokens: Number(env.AGENTPACK_L3_FORK_MAX_TOKENS) || 1024,
+      protectedRecentCount: Number(env.AGENTPACK_L3_PROTECTED_RECENT) || 4,
+    },
+    l4: {
+      enabled: env.AGENTPACK_L4_ENABLED !== 'false',
+      threshold: Number(env.AGENTPACK_L4_THRESHOLD) || 0.92,
+      targetRatio: Number(env.AGENTPACK_L4_TARGET) || 0.25,
+      checkpointStorage: (env.AGENTPACK_L4_STORAGE as any) ?? 'file',
+      minWorkingSet: Number(env.AGENTPACK_L4_MIN_WORKING_SET) || 2,
+    },
+    l5: {
+      enabled: env.AGENTPACK_L5_ENABLED !== 'false',
+      threshold: Number(env.AGENTPACK_L5_THRESHOLD) || 0.95,
+      forkModel: env.AGENTPACK_L5_FORK_MODEL,
+      forkMaxTokens: Number(env.AGENTPACK_L5_FORK_MAX_TOKENS) || 2048,
     },
     safety: {
-      maxAttempts: Number(env.AGENTPACK_COMPRESSION_MAX_ATTEMPTS) || 3,
+      maxAttempts: Number(env.AGENTPACK_COMPRESSION_MAX_ATTEMPTS) || 5,
       cooldownTurns: Number(env.AGENTPACK_COMPRESSION_COOLDOWN_TURNS) || 5,
     },
     telemetry: {
@@ -782,9 +1398,7 @@ export function loadCompressionConfig(
 
 ---
 
-## 九、遥测系统
-
-利用现有的 `afterTransform` hook 钩子，在转换完成后上报埋点：
+## 十一、遥测系统
 
 ```typescript
 // compression/telemetry.ts
@@ -793,7 +1407,7 @@ export interface CompressionTelemetry {
   timestamp: number;
   sessionKey: string;
   turn: number;
-  level: 'micro' | 'summary' | 'ptl';
+  level: 'L1' | 'L2' | 'L3' | 'L4' | 'L5';
   action: string;
   beforeTokens: number;
   afterTokens: number;
@@ -806,18 +1420,15 @@ export interface CompressionTelemetry {
   duration: number;
 }
 
-/** 通过 Extension 系统集成遥测 */
 export class CompressionTelemetryExtension implements Extension {
   readonly name = 'compression-telemetry';
 
   apply(hooks: RuntimeHooks, context: ExtensionContext): void {
-    // 在 afterTransform 钩子中收集压缩遥测
     hooks.afterTransform.tap('compression-telemetry', async (resources) => {
       const telemetry = (context.shared.get('compression_telemetry') as CompressionTelemetry[]) ?? [];
       if (telemetry.length === 0) return resources;
 
       for (const t of telemetry) {
-        // 发送到可观测性后端（GrowthBook / Datadog / 自建）
         this.report(t);
       }
       context.shared.delete('compression_telemetry');
@@ -826,14 +1437,20 @@ export class CompressionTelemetryExtension implements Extension {
   }
 
   private report(t: CompressionTelemetry): void {
-    // 结构化日志
     console.log(JSON.stringify({
       event: 'tengu_compact',
-      ...t,
+      level: t.level,
+      action: t.action,
+      beforeTokens: t.beforeTokens,
+      afterTokens: t.afterTokens,
       tokenDelta: t.beforeTokens - t.afterTokens,
       reductionRatio: t.beforeTokens > 0
         ? ((t.beforeTokens - t.afterTokens) / t.beforeTokens).toFixed(4)
         : 0,
+      triggerReason: t.triggerReason,
+      cachePreserved: t.cachePreserved,
+      compressionDepth: t.compressionDepth,
+      duration: t.duration,
     }));
   }
 }
@@ -841,23 +1458,25 @@ export class CompressionTelemetryExtension implements Extension {
 
 ---
 
-## 十、文件结构
+## 十二、文件结构
 
 ```
 packages/agentpack/compression/
-  config.ts                  - CompressionConfig + env var 加载
-  token-estimator.ts         - Token 估算（char heuristic / tiktoken）
-  micro-compaction.ts        - Level 0: 无损微压缩
-  summary-compaction.ts      - Level 1: Fork Agent 摘要压缩
-  ptl-recovery.ts            - Level 2: 保底丢弃 + 断路器
-  safety.ts                  - 安全守卫: 配对验证 + 递归保护 + 断路器
-  telemetry.ts               - 埋点: CompressionTelemetry + Extension
-  index.ts                    - 复合转换器 + 工厂函数
+  config.ts                       - CompressionConfig + env var 加载
+  token-estimator.ts              - Token 估算（char heuristic / tiktoken）
+  l1-tool-output-trim.ts          - L1: 工具输出裁剪
+  l2-message-summarize.ts         - L2: 旧消息摘要（Fork Agent）
+  l3-task-state-extraction.ts     - L3: 任务状态提取（结构化降级）
+  l4-session-checkpoint.ts        - L4: 会话检查点（持久化 + 激进缩减）
+  l5-new-session-handoff.ts       - L5: 新会话交接（保底重置）
+  safety.ts                       - 安全守卫: 配对验证 + 递归保护 + 断路器
+  telemetry.ts                    - 埋点: CompressionTelemetry + Extension
+  index.ts                        - 复合转换器 + 工厂函数
 ```
 
 ---
 
-## 十一、集成方式
+## 十三、集成方式
 
 在 `transformer/index.ts` 的 `createDefaultTransformers` 工厂中接入：
 
@@ -865,8 +1484,9 @@ packages/agentpack/compression/
 export function createDefaultTransformers(options?: {
   getStateSnapshot?: () => string | null;
   maxResources?: number;
-  model?: Model;               // 新增：传入模型信息
-  streamFn?: StreamFn;         // 新增：传入流式函数（用于 Fork Agent）
+  model?: Model;
+  streamFn?: StreamFn;
+  sessionStorage?: SessionStorage;
   compressionConfig?: Partial<CompressionConfig>;
 }): ContextTransformer[] {
   const transformers: ContextTransformer[] = [
@@ -878,7 +1498,7 @@ export function createDefaultTransformers(options?: {
     transformers.push(new StateSnapshotTransformer(options.getStateSnapshot));
   }
 
-  // ── 新增：上下文压缩 ──
+  // ── 新增：五级上下文压缩 ──
   if (options?.model) {
     const config = loadCompressionConfig(options?.compressionConfig);
     if (config.enabled) {
@@ -886,6 +1506,7 @@ export function createDefaultTransformers(options?: {
         config,
         model: options.model,
         streamFn: options.streamFn,
+        sessionStorage: options.sessionStorage,
         contextWindow: options.model.contextWindow,
       }));
     }
@@ -898,114 +1519,68 @@ export function createDefaultTransformers(options?: {
 
 ---
 
-## 十二、降级流程图
-
-```
-                    ┌─────────────────┐
-                    │  transformMessages()  │
-                    │  每 tool-loop 迭代执行   │
-                    └────────┬────────┘
-                             │
-                    ┌────────▼────────┐
-                    │  estimateTokens()  │
-                    └────────┬────────┘
-                             │
-              ┌──────────────▼──────────────┐
-              │ tokens > ctxWindow × 0.60?  │
-              └──────┬───────────┬──────────┘
-                     │ Yes       │ No -> 直接返回
-              ┌──────▼──────┐
-              │  Level 0     │
-              │  MicroComp   │
-              │  (无损,缓存安全) │
-              └──────┬──────┘
-                     │
-              ┌──────▼──────────────────┐
-              │ tokens > ctxWindow × 0.75?│
-              └──────┬───────────┬──────┘
-                     │ Yes       │ No -> 返回微压缩结果
-              ┌──────▼──────┐
-              │  Level 1     │
-              │  SummaryComp │
-              │  (Fork Agent) │
-              └──────┬──────┘
-                     │
-              ┌──────▼──────────────────┐
-              │ tokens > ctxWindow × 0.90?│
-              └──────┬───────────┬──────┘
-                     │ Yes       │ No -> 返回摘要结果
-              ┌──────▼──────┐
-              │  Level 2     │
-              │  PTL Recovery│
-              │  (保底丢弃)   │
-              └──────┬──────┘
-                     │
-              ┌──────▼──────────────┐
-              │  断路器检查           │
-              │  仍超限 -> 硬截断     │
-              │  + 标记 circuitBreak  │
-              │  + 冷却 5 轮          │
-              └─────────────────────┘
-```
-
----
-
-## 十三、安全保证总结
+## 十四、安全保证总结
 
 | 安全规则 | 实现位置 | 机制 |
 |---------|---------|------|
-| **不切断 tool_use/tool_result 配对** | `PTLRecovery.findPairIds()` | 丢弃时同时移除配对的两个资源 |
+| **不切断 tool_use/tool_result 配对** | L4/L5 `findPairIds()` | 丢弃时同时移除配对的两个资源 |
 | **不分离共享 message.id 的块** | `SafetyGuard.validateMessageIntegrity()` | 后验证，不通过则回退 |
-| **防止递归压缩** | `SummaryCompaction` 入口检查 `compressionDepth >= maxDepth` | 深度计数器，默认 maxDepth=3 |
-| **断路器** | `SafetyGuard.canCompress()` + `PTLRecovery` 硬截断 | maxAttempts=3，触发后冷却 5 轮 |
-| **最小上下文保证** | `PTLRecovery.buildProtectedSet()` | 永远保留最近 4 条 + 所有 pinned + compaction_summary |
-| **缓存前缀保护** | `MicroCompaction` 尾部优先 + `SummaryCompaction` 前缀保留 | 所有操作从尾部向头部扫描 |
+| **防止递归压缩** | L2 入口检查 `compressionDepth >= maxDepth` | 深度计数器，默认 maxDepth=3 |
+| **断路器** | `SafetyGuard.canCompress()` + L5 触发 | maxAttempts=5，触发后冷却 5 轮 |
+| **最小上下文保证** | L4 `buildMinimalWorkingSet()` | 永远保留 system + task_state + 最近 2 条 |
+| **信息可恢复** | L4 检查点持久化 | 完整消息快照写入 SessionStorage |
+| **缓存前缀保护** | L1 尾部优先 + L2 前缀保留 | L1/L2 不破坏缓存；L3+ 标记 `cachePreserved: false` |
 
 ---
 
-## 十四、设计哲学映射
+## 十五、设计哲学映射
 
 ### 1. 渐进式降级（Progressive Degradation）
 
-| 层级 | 操作 | 损耗 | 代价 |
-|------|------|------|------|
-| Level 0 | thinking 剥离 + tool_result 裁剪 + 空白规范化 | 无损/极低 | O(n) 字符扫描 |
-| Level 1 | Fork Agent 摘要替换旧消息块 | 有损（语义保留） | 一次 LLM 调用 |
-| Level 2 | 按优先级丢弃资源块 | 有损（信息丢失） | O(n) 过滤 |
-| 断路器 | 硬截断 + 冷却 | 高损耗 | O(1) 截断 |
+| 级别 | 操作 | 信息损耗 | 代价 | 可恢复性 |
+|------|------|---------|------|---------|
+| L1 | thinking 剥离 + tool_result 裁剪 | 无损 | O(n) 字符扫描 | N/A（无损） |
+| L2 | Fork Agent 摘要替换旧消息 | 有损（语义保留） | 1 次 LLM 调用 | 不可恢复 |
+| L3 | 结构化任务状态提取 | 有损（叙事丢失） | 1 次 LLM 调用 | 不可恢复 |
+| L4 | 检查点持久化 + 激进缩减 | 有损（可恢复） | 1 次写入 + 0 LLM | **可恢复**（检查点） |
+| L5 | 新会话交接 + 旧会话归档 | 高损耗 | 1 次 LLM + 1 次写入 | **可恢复**（归档） |
 
 ### 2. 缓存优先（Cache-First）
 
-- **Level 0**：所有操作从尾部向头部扫描，前缀缓存完全不变
-- **Level 1**：Fork Agent 与主对话共享 provider/baseUrl；摘要插入位置在缓存前缀之后
-- **Level 2**：从尾部丢弃，前缀保留；硬截断时标记 `cachePreserved: false`
+- **L1**：所有操作从尾部向头部扫描，前缀缓存完全不变
+- **L2**：Fork Agent 与主对话共享 provider/baseUrl；摘要插入在缓存前缀之后
+- **L3**：上下文重建，标记 `cachePreserved: false`
+- **L4/L5**：缓存完全失效，但已通过检查点/归档保证信息不丢
 
 ### 3. 严格的安全性与配对保证
 
 - `tool_use` / `tool_result` 逻辑配对通过 `dependencies` 字段追踪，丢弃时成对移除
 - 共享 `message.id` 的消息块通过 `validateMessageIntegrity()` 后验证
-- 断路器：`maxAttempts=3`，触发后冷却 `cooldownTurns=5` 轮
-- 递归保护：`compressionDepth` 计数器，`maxCompressionDepth=3` 时拒绝进一步摘要
+- 断路器：`maxAttempts=5`，触发后冷却 `cooldownTurns=5` 轮
+- 递归保护：`compressionDepth` 计数器，`maxCompressionDepth=3`
+- L4 检查点确保即使激进缩减，信息也可恢复
 
 ### 4. 高度的可观测性与可配置性
 
-- **所有阈值**支持环境变量覆盖（`AGENTPACK_COMPRESSION_*` 前缀）
-- **动态调整**可通过 `compressionConfig` 参数运行时注入（GrowthBook 远程配置接入点）
-- **每个压缩动作埋点**：包含 `beforeTokens` / `afterTokens` / `triggerReason` / `retryCount` / `cachePreserved` / `compressionDepth`
-- 通过 `afterTransform` hook 自动上报，无需修改 Runtime 核心
+- **所有阈值**支持环境变量覆盖（`AGENTPACK_L1_*` ~ `AGENTPACK_L5_*` 前缀）
+- **动态调整**可通过 `compressionConfig` 参数运行时注入
+- **每个压缩动作埋点**：包含 `level` / `beforeTokens` / `afterTokens` / `triggerReason` / `cachePreserved` / `compressionDepth`
+- L4/L5 额外记录 `checkpointId` / `handoffId` 用于可恢复性追踪
 
 ---
 
-## 十五、与现有架构的契合点
+## 十六、与现有架构的契合点
 
 | 现有基础设施 | 压缩策略复用方式 |
 |------------|----------------|
-| `ContextResource.pinned` | 标记 compaction_summary、state_snapshot 为不可移除 |
+| `ContextResource.pinned` | 标记 compaction_summary、task_state、checkpoint_ref、handoff 为不可移除 |
 | `ContextResource.dependencies` | 追踪 tool_call ↔ tool_result 配对关系 |
-| `ContextResource.type: 'compaction_summary'` | 已定义未使用，正是 Level 1 摘要的落点 |
+| `ContextResource.type: 'compaction_summary'` | L2 摘要的落点（已定义未使用） |
+| `ContextResource.type: 'custom'` + `role` | L3 task_state、L4 checkpoint_ref、L5 handoff 均使用 custom 类型 |
 | `BaseTransformer` + `Pipeline` | 复合转换器以 priority=40 插入 |
 | `Model.contextWindow` | 提供 token 上限基准 |
-| `StreamFn` | Fork Agent 复用同一流式接口 |
-| `Extension.afterTransform` hook | 遥测上报的天然集成点 |
+| `StreamFn` | L2/L3/L5 Fork Agent 复用同一流式接口 |
+| `SessionStorage` | L4 检查点持久化的天然存储层 |
+| `Extension.afterTransform` hook | 遥测上报的集成点 |
 | `TransformContext.runtime.config` | 传递安全状态（绕过 meta round-trip 丢失） |
 | `TruncationTransformer`（priority=90） | 作为最终兜底，位于所有压缩之后 |

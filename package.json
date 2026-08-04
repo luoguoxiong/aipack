@@ -8,6 +8,7 @@
     "agent": "tsx packages/agentpack/test/start.js",
     "example:deepseek": "tsx examples/deepseek.ts",
     "example:agent-memory": "tsx examples/agent-memory.ts",
+    "example:compression": "tsx examples/compression-demo.ts",
     "lint": "tsc --noEmit",
     "example:coding": "tsx packages/agentpack-coding/examples/round-trip.ts",
     "example:coding:llm": "tsx packages/agentpack-coding/examples/real-llm.ts"
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@types/node": "^20.12.0",
     "agentpack-coding": "workspace:*",
+    "agentpack-compression": "workspace:*",
     "agentpack-cli": "workspace:*",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0"
