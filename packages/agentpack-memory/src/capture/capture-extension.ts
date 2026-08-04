@@ -4,17 +4,20 @@
  * 在 Runtime 生命周期中「静默」捕获每轮对话要点并存为可检索记忆。
  * 参考 agentmemory 的 capture 阶段。
  *
- * 机制（详见方案决策 B）：
- *   - beforeRun（waterfall）：stash {message, timestamp} 入 pending Map，sessionKey 入 FIFO 队列。
- *     done 钩子只收 Result、不含 sessionKey（框架限制），故用 FIFO 队列配对。
- *   - done：从队列取出 sessionKey，组装 MemoryEntry 存盘；每 consolidateEvery 次触发合并。
+ * 机制：
+ *   - beforeRun：按 sessionKey 暂存本轮用户消息（Map 键控，非 FIFO）。
+ *   - done：框架现在将最终 Request 作为第二参数传入（agentpack RuntimeHooks.done
+ *     签名扩展），直接用 request.sessionKey 取回暂存消息并与本轮结果配对 ——
+ *     彻底解决旧实现 FIFO 队列在并发多会话下错配/丢失的问题。
+ *     框架保证同一 sessionKey 的 run 串行执行，故 Map 键控安全。
+ *   - failed：本轮失败不捕获（仅成功回合入库），无残留状态需清理。
  *
- * 典型顺序 awaited run 下 FIFO 配对精确；并发多会话下为 best-effort。
+ * 每 consolidateEvery 次捕获触发一次合并。
  */
 
 import { BaseExtension } from 'agentpack';
 import type { RuntimeHooks, ExtensionContext, Request, Result } from 'agentpack';
-import type { MemoryStore } from '../types';
+import type { MemoryEventSink, MemoryStore } from '../types';
 import type { SummarizeFn } from '../types';
 import { runCaptureExtractor } from './extractor';
 
@@ -30,11 +33,10 @@ export interface CaptureOptions {
   maxContentChars?: number;
   /** 每 N 次捕获触发一次 consolidate（0=不自动，默认 0） */
   consolidateEvery?: number;
-}
-
-interface PendingCapture {
-  message: string;
-  timestamp: number;
+  /** 捕获记忆 TTL（ms），过期后 prune 时清理 */
+  ttlMs?: number;
+  /** 事件接收器（捕获失败等） */
+  onEvent?: MemoryEventSink;
 }
 
 export class MemoryCaptureExtension extends BaseExtension {
@@ -46,11 +48,12 @@ export class MemoryCaptureExtension extends BaseExtension {
   private maxConcepts: number;
   private maxContentChars: number;
   private consolidateEvery: number;
+  private ttlMs?: number;
+  private onEvent?: MemoryEventSink;
 
-  /** pending 捕获（sessionKey -> 请求信息） */
-  private pending = new Map<string, PendingCapture>();
-  /** FIFO 队列：与 done 钩子配对（done 不携带 sessionKey） */
-  private queue: string[] = [];
+  /** 本轮待捕获的用户消息（sessionKey -> 请求信息） */
+  private pending = new Map<string, { message: string }>();
+
   /** 捕获计数（用于触发 consolidate） */
   private captureCount = 0;
 
@@ -62,31 +65,28 @@ export class MemoryCaptureExtension extends BaseExtension {
     this.maxConcepts = options.maxConcepts ?? 8;
     this.maxContentChars = options.maxContentChars ?? 2000;
     this.consolidateEvery = options.consolidateEvery ?? 0;
+    this.ttlMs = options.ttlMs;
+    this.onEvent = options.onEvent;
   }
 
   protected setup(hooks: RuntimeHooks, _context: ExtensionContext): void {
-    // beforeRun：stash 请求信息（不改请求）
+    // beforeRun：暂存用户消息（不改请求）
     hooks.beforeRun.tapPromise('memory-capture', async (request: Request) => {
       try {
-        this.pending.set(request.sessionKey, {
-          message: request.message,
-          timestamp: Date.now(),
-        });
-        this.queue.push(request.sessionKey);
+        this.pending.set(request.sessionKey, { message: request.message });
       } catch {
         // 忽略 stash 失败
       }
       return request;
     });
 
-    // done：组装并保存记忆
-    hooks.done.tapPromise('memory-capture', async (result: Result) => {
-      await this.captureFromResult(result);
+    // done：框架传入最终 Request（含 sessionKey），与本轮结果精确配对
+    hooks.done.tapPromise('memory-capture', async (result: Result, request?: Request) => {
+      await this.captureFromResult(result, request?.sessionKey);
     });
   }
 
-  private async captureFromResult(result: Result): Promise<void> {
-    const sessionKey = this.queue.shift();
+  private async captureFromResult(result: Result, sessionKey?: string): Promise<void> {
     if (!sessionKey) return;
 
     // 先取后删（避免 delete 后 get 返回 undefined）
@@ -118,6 +118,7 @@ export class MemoryCaptureExtension extends BaseExtension {
         confidence: extracted.summarized ? 0.8 : 0.6,
         source: 'capture',
         sessionKey,
+        ttlMs: this.ttlMs,
       });
 
       this.captureCount += 1;
@@ -126,13 +127,17 @@ export class MemoryCaptureExtension extends BaseExtension {
       if (this.consolidateEvery > 0 && this.captureCount % this.consolidateEvery === 0) {
         try {
           await this.store.consolidate();
-        } catch {
+        } catch (err) {
+          this.onEvent?.({
+            type: 'consolidate:failed',
+            error: (err as Error).message,
+          });
           // 合并失败不影响捕获
         }
       }
     } catch (err) {
       // 捕获失败不影响运行结果
-      console.warn(`[agentpack-memory] capture failed: ${(err as Error).message}`);
+      this.onEvent?.({ type: 'capture:failed', sessionKey, error: (err as Error).message });
     }
   }
 }

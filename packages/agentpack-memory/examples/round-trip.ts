@@ -155,7 +155,7 @@ async function main(): Promise<void> {
   runtime.setStreamFn(makeFakeStreamFn('根据之前的记忆，你用的是 React + TypeScript。'));
 
   await runtime.run(
-    createRequest('我之前说过用什么技术栈？', { sessionKey: 's2' }),
+    createRequest('我之前说过用什么 React 技术栈？', { sessionKey: 's2' }),
   );
 
   const ctx2 = capturedContexts[0];
@@ -181,7 +181,7 @@ async function main(): Promise<void> {
   runtime.setStreamFn(makeFakeStreamFn('没错，你之前提到过 React + TypeScript。'));
 
   await runtime.run(
-    createRequest('我之前说过用什么技术栈？', { sessionKey: 's2' }),
+    createRequest('我之前说过用什么 React 技术栈？', { sessionKey: 's2' }),
   );
 
   const ctx3 = capturedContexts[0];

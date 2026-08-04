@@ -19,6 +19,7 @@
     "build": "tsup",
     "prebuild": "pnpm --filter agentpack build",
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
     "example": "node --import tsx examples/round-trip.ts"
   },
   "keywords": [

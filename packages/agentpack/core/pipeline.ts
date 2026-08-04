@@ -69,7 +69,11 @@ export class PipelineImpl implements Pipeline {
       try {
         current = await transformer.transform(current, context);
       } catch (err) {
-        // 单个 Transformer 失败时跳过，保持当前资源不变
+        // 单个 Transformer 失败时跳过，保持当前资源不变，但需可观测
+        console.warn(
+          `[Pipeline] 转换器 "${transformer.name}" 失败，已跳过:`,
+          (err as Error)?.message ?? err,
+        );
       }
     }
 

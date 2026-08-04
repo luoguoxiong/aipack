@@ -53,7 +53,7 @@ export interface CodingAgentOptions {
   /** 模型 ID（如 deepseek-chat），缺省按提供商取推荐 */
   model?: string;
   /** 已解析的 ai 模型（优先级高于 provider/model） */
-  aiModel?: import('agentpack/ai').Model;
+  aiModel?: import('agentpack').AiModel;
   /** 自定义 streamFn（优先级高于 aiModel） */
   streamFn?: import('agentpack').StreamFn;
   /** system prompt（默认用 DEFAULT_CODING_SYSTEM_PROMPT） */

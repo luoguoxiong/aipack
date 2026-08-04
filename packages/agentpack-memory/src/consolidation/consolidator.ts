@@ -2,10 +2,12 @@
  * 合并器：去重 / 合并相似记忆 + 修剪过期与低置信度。
  *
  * 参考 agentmemory 的 consolidate 阶段：
- *   - 用每条记忆的 content 作为 query 检索相似记忆（混合检索）。
- *   - 相似度 >= 阈值则合并为一条（content 取较长、concepts 并集、置信度累加截断）。
- *   - 删除被合并项，更新幸存项。
- *   - 修剪过期 / 低置信度记忆；超过 maxMemories 时淘汰置信度最低的。
+ *   - 候选窗口 = 自上次合并以来内容有更新的条目（增量合并，避免每次对全库 N 条
+ *     逐一检索的 O(N²) 塌陷；首次合并或跨进程重启后为全量）。
+ *   - 对每个候选：以其 content 作为 query 检索相似记忆，相似度 >= 阈值则合并。
+ *   - 合并：content 取较长、concepts 并集、置信度取 max + 小奖励（避免旧「累加」
+ *     使置信度快速饱和到 1.0 而丧失排序/修剪信号）。
+ *   - 修剪过期 / 低置信度；超过 maxMemories 时淘汰置信度最低的。
  */
 
 import type { HybridRetriever } from '../retrieval/hybrid-retriever';
@@ -13,6 +15,7 @@ import type {
   ConsolidateOptions,
   ConsolidatorLike,
   MemoryEntry,
+  MemoryEventSink,
   MemoryStore,
 } from '../types';
 
@@ -24,7 +27,9 @@ function mergeTwo(a: MemoryEntry, b: MemoryEntry): MemoryEntry {
   const content =
     newer.content.length >= older.content.length ? newer.content : older.content;
   const concepts = [...new Set([...a.concepts, ...b.concepts])];
-  const confidence = Math.min(1, a.confidence + b.confidence + 0.1);
+  // 置信度取 max + 0.05 小奖励（截断到 1）：累加会让记忆快速顶到 1.0，
+  // 使 confidence 作为 pruning/排序信号失效
+  const confidence = Math.min(1, Math.max(a.confidence, b.confidence) + 0.05);
   const lastRecalledAt = [a.lastRecalledAt, b.lastRecalledAt]
     .filter((t): t is number => t != null)
     .sort()
@@ -42,41 +47,64 @@ function mergeTwo(a: MemoryEntry, b: MemoryEntry): MemoryEntry {
     lastRecalledAt,
     recallCount: a.recallCount + b.recallCount,
     embedding: newer.embedding ?? older.embedding,
+    expiresAt: newer.expiresAt ?? older.expiresAt,
     meta: { ...(older.meta ?? {}), ...(newer.meta ?? {}) },
   };
 }
 
 export interface ConsolidatorOptions {
   similarityThreshold?: number;
+  /** 事件接收器（合并结果/失败） */
+  onEvent?: MemoryEventSink;
 }
 
 export class Consolidator implements ConsolidatorLike {
   private store: MemoryStore;
   private retriever: HybridRetriever;
   private similarityThreshold: number;
+  private onEvent?: MemoryEventSink;
 
-  constructor(store: MemoryStore, retriever: HybridRetriever, options: ConsolidatorOptions = {}) {
+  constructor(
+    store: MemoryStore,
+    retriever: HybridRetriever,
+    options: ConsolidatorOptions = {},
+  ) {
     this.store = store;
     this.retriever = retriever;
     this.similarityThreshold = options.similarityThreshold ?? 0.85;
+    this.onEvent = options.onEvent;
   }
 
   async run(
     options: ConsolidateOptions = {},
   ): Promise<{ merged: number; pruned: number }> {
+    const start = Date.now();
     const threshold = options.similarityThreshold ?? this.similarityThreshold;
     const all = await this.store.list();
+
+    // 增量候选：仅处理上次合并后内容有更新的条目（touchRecall 不再更新 updatedAt，
+    // 因此 updatedAt 稳定表示内容修改时间；首次/跨进程重启 lastConsolidatedAt 为空 → 全量）
+    const stats = await this.store.stats();
+    const since = stats.lastConsolidatedAt;
+    const candidates = (since == null ? all : all.filter((e) => e.updatedAt >= since)).sort(
+      // 显式按 updatedAt 降序（新条目先处理，可吸收旧的相似条目）；
+      // 同毫秒写入时以 createdAt 决胜，保证处理顺序确定
+      (a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt,
+    );
+
     const processed = new Set<string>();
     let merged = 0;
 
     // 按 updatedAt 降序处理（list 已是降序），优先保留较新的幸存者
-    for (const entry of all) {
+    for (const entry of candidates) {
       if (processed.has(entry.id)) continue;
 
-      // 用该记忆 content 作为 query 检索相似记忆
+      // 用该记忆 content 作为 query 检索相似记忆。
+      // raw 模式：保留原始 BM25/cosine 分数，使 similarityThreshold 按「绝对
+      // 相似度」判定 —— min-max 归一化会把次优分数压到 0，导致阈值形同虚设。
       let results: Awaited<ReturnType<HybridRetriever['search']>> = [];
       try {
-        results = await this.retriever.search(entry.content, 10);
+        results = await this.retriever.search(entry.content, 10, { raw: true });
       } catch {
         continue;
       }
@@ -108,7 +136,9 @@ export class Consolidator implements ConsolidatorLike {
         confidence: survivor.confidence,
         source: 'consolidation',
         sessionKey: survivor.sessionKey,
+        createdAt: survivor.createdAt,
         embedding: survivor.embedding,
+        expiresAt: survivor.expiresAt,
         recallCount: survivor.recallCount,
       });
       processed.add(survivor.id);
@@ -121,7 +151,8 @@ export class Consolidator implements ConsolidatorLike {
         maxAgeMs: options.maxAgeMs,
         minConfidence: options.minConfidence ?? 0.1,
       });
-    } catch {
+    } catch (err) {
+      this.onEvent?.({ type: 'consolidate:failed', error: (err as Error).message });
       // 修剪失败忽略
     }
 
@@ -140,6 +171,11 @@ export class Consolidator implements ConsolidatorLike {
       }
     }
 
+    // 记录合并完成时间（驱动下一轮增量窗口）
+    this.store.markConsolidated();
+
+    const ms = Date.now() - start;
+    this.onEvent?.({ type: 'consolidate', merged, pruned, ms });
     return { merged, pruned };
   }
 }

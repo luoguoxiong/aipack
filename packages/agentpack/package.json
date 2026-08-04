@@ -14,10 +14,6 @@
       "types": "./dist/ai/index.d.ts",
       "import": "./dist/ai/index.js"
     },
-    "./adapters/ai": {
-      "types": "./dist/adapters/ai.d.ts",
-      "import": "./dist/adapters/ai.js"
-    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -25,7 +21,8 @@
   ],
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
   },
   "keywords": [
     "agent",
@@ -38,7 +35,8 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@sinclair/typebox": "^0.34.0"
+    "@sinclair/typebox": "^0.34.0",
+    "partial-json": "^0.1.7"
   },
   "devDependencies": {
     "@types/node": "^20.12.0",

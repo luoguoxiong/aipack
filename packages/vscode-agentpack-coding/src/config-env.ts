@@ -2,7 +2,7 @@
  * 配置纯函数模块（不依赖 vscode 与 agentpack），便于单元测试。
  *
  * syncApiKeysToEnv 接受 providers 参数（含 envVar 字段），由调用方（config.ts）
- * 从 agentpack/ai 的 BUILTIN_PROVIDERS 传入。这样本模块可在无 agentpack 运行时
+ * 从 agentpack 的 BUILTIN_PROVIDERS 传入。这样本模块可在无 agentpack 运行时
  * 的环境下被测试。
  */
 

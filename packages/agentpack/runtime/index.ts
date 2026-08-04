@@ -24,7 +24,6 @@ import {
   createPipeline,
   createTaskGraph,
   ResultBuilder,
-  createRequest,
 } from '../core';
 import type {
   Model,
@@ -36,12 +35,13 @@ import type {
   ToolResultMessage,
   ContentBlock,
   ToolCallContent,
-  TextContent,
+  ImageContent,
   Usage,
   Context,
   StreamOptions,
   StreamEvent,
   ThinkingLevel,
+  ToolResult,
 } from '../core';
 import {
   extractText,
@@ -55,19 +55,63 @@ import type {
   StoredSession,
   SessionModel,
 } from '../core';
-import { messagesToResources, resourcesToMessages } from '../context-resource';
+import { validateRequest, normalizeRequest } from '../request';
+import {
+  messagesToResources,
+  resourcesToMessages,
+} from '../context-resource';
 
 // ─── 会话状态 ─────────────────────────────────────────────────────
 
 interface SessionState {
   messages: Message[];
-  tools: Tool[];
   isStreaming: boolean;
   abortController: AbortController | null;
   createdAt: string;   // 会话首次创建时间，持久化时保留
+  hydrated: boolean;   // 是否已从存储恢复（串行化后无竞态）
+  /** 串行队列：同一会话的 run/stream 依次执行，避免消息数组交错与 abort 覆盖 */
+  queue: Promise<void>;
+  /** 等待空闲的 resolver，isStreaming 变 false 时逐个唤醒 */
+  idleResolvers: Array<() => void>;
 }
 
-// ─── KobotRuntime: Runtime 接口的独立实现 ─────────────────────────
+// ─── 工具超时信号（Node 18 无 AbortSignal.any，手动桥接）─────────
+
+function withTimeoutSignal(
+  parent: AbortSignal | undefined,
+  ms: number,
+): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new Error(`Tool execution timeout after ${ms}ms`)),
+    ms,
+  );
+  if (parent) {
+    if (parent.aborted) {
+      controller.abort(parent.reason);
+    } else {
+      parent.addEventListener(
+        'abort',
+        () => controller.abort(parent.reason),
+        { once: true },
+      );
+    }
+  }
+  return { signal: controller.signal, clear: () => clearTimeout(timer) };
+}
+
+// ─── 媒体附件 → ImageContent ──────────────────────────────────────
+
+function buildImageContent(media: string): ImageContent {
+  const dataMatch = media.match(/^data:([^;]+);base64,(.*)$/s);
+  if (dataMatch) {
+    return { type: 'image', mimeType: dataMatch[1], data: dataMatch[2] };
+  }
+  // 非 data URI 视为 URL（ImageContent.data 字段同时接受 base64 与 URL）
+  return { type: 'image', mimeType: 'image/url', data: media };
+}
+
+// ─── AgentRuntime: Runtime 接口的独立实现 ─────────────────────────
 
 export class AgentRuntime implements Runtime {
   private _config: Record<string, unknown>;
@@ -83,7 +127,11 @@ export class AgentRuntime implements Runtime {
 
   private _sessions: Map<string, SessionState> = new Map();
   private _sessionStorage: SessionStorage | undefined;
-  private _hydrated: Set<string> = new Set();  // 已从存储恢复的会话
+
+  private _maxTurns: number;
+  private _toolTimeoutMs: number;
+  private _parallelToolCalls: boolean;
+  private _contextBudgetRatio: number;
 
   private constructor(options: RuntimeOptions) {
     this._config = options.config ?? {};
@@ -105,8 +153,13 @@ export class AgentRuntime implements Runtime {
     });
 
     this._systemPrompt = options.systemPrompt ?? '';
-    this._thinkingLevel = 'off';
+    this._thinkingLevel = options.thinkingLevel ?? 'off';
     this._sessionStorage = options.sessionStorage;
+
+    this._maxTurns = options.maxTurns ?? 50;
+    this._toolTimeoutMs = options.toolTimeoutMs ?? 120_000;
+    this._parallelToolCalls = options.parallelToolCalls ?? true;
+    this._contextBudgetRatio = options.contextBudgetRatio ?? 0.8;
 
     // 注册初始工具
     if (options.tools) {
@@ -160,13 +213,16 @@ export class AgentRuntime implements Runtime {
   // ─── 工具/模型/流管理 ───────────────────────────────────────────
 
   registerTool(tool: Tool): this {
+    if (this._globalTools.has(tool.name)) {
+      console.warn(`[Runtime] 工具 "${tool.name}" 已存在，将被覆盖`);
+    }
     this._globalTools.set(tool.name, tool);
     return this;
   }
 
   registerTools(tools: Tool[]): this {
     for (const tool of tools) {
-      this._globalTools.set(tool.name, tool);
+      this.registerTool(tool);
     }
     return this;
   }
@@ -178,6 +234,11 @@ export class AgentRuntime implements Runtime {
 
   setSystemPrompt(prompt: string): this {
     this._systemPrompt = prompt;
+    return this;
+  }
+
+  setThinkingLevel(level: ThinkingLevel): this {
+    this._thinkingLevel = level;
     return this;
   }
 
@@ -197,12 +258,58 @@ export class AgentRuntime implements Runtime {
   }
 
   getMessages(sessionKey: string = 'default'): Message[] {
-    return this.getSession(sessionKey).messages;
+    // 返回深拷贝，避免外部直接修改会话内部状态
+    const messages = this.getSession(sessionKey).messages;
+    try {
+      return structuredClone(messages);
+    } catch {
+      return JSON.parse(JSON.stringify(messages));
+    }
   }
 
   // ─── 核心运行逻辑 ───────────────────────────────────────────────
 
   async run(request: Request): Promise<Result> {
+    // 0. 校验请求
+    const validation = validateRequest(request);
+    if (!validation.valid) {
+      return new ResultBuilder()
+        .error(`请求校验失败: ${validation.errors.join('; ')}`)
+        .build();
+    }
+    const finalRequest = normalizeRequest(request);
+
+    // 1. 串行化：同一会话的请求依次执行
+    const release = await this.acquire(finalRequest.sessionKey);
+
+    try {
+      return await this._run(finalRequest);
+    } finally {
+      release();
+    }
+  }
+
+  async *stream(request: Request): AsyncGenerator<ResultChunk> {
+    // 0. 校验请求
+    const validation = validateRequest(request);
+    if (!validation.valid) {
+      yield { type: 'error', content: `请求校验失败: ${validation.errors.join('; ')}` };
+      yield { type: 'done' };
+      return;
+    }
+    const finalRequest = normalizeRequest(request);
+
+    // 1. 串行化
+    const release = await this.acquire(finalRequest.sessionKey);
+
+    try {
+      yield* this._stream(finalRequest);
+    } finally {
+      release();
+    }
+  }
+
+  private async _run(request: Request): Promise<Result> {
     // 1. 触发 beforeInitialize / afterInitialize
     await this._hooks.beforeInitialize.promise(request);
     await this._hooks.afterInitialize.promise(request);
@@ -210,19 +317,16 @@ export class AgentRuntime implements Runtime {
     // 2. beforeRun（waterfall，可修改请求）
     const finalRequest = await this._hooks.beforeRun.promise(request);
 
-    // 3. 会话持久化：从存储恢复历史消息
-    await this.hydrateSession(finalRequest.sessionKey);
+    // 3. 会话持久化：从存储恢复历史消息（ephemeral 跳过）
+    if (!finalRequest.ephemeral) {
+      await this.hydrateSession(finalRequest.sessionKey);
+    }
 
     // 4. 创建编译上下文
     const compilation = this.createCompilation(finalRequest);
 
-    // 5. 添加用户消息
-    const userMessage: UserMessage = {
-      role: 'user',
-      content: finalRequest.message,
-      timestamp: Date.now(),
-    };
-    compilation.messages.push(userMessage);
+    // 5. 添加用户消息（含媒体附件）
+    compilation.messages.push(this.buildUserMessage(finalRequest));
 
     // 6. 运行对话循环
     try {
@@ -235,47 +339,50 @@ export class AgentRuntime implements Runtime {
       await this._hooks.beforeEmit.promise(result);
       await this._hooks.afterEmit.promise(result);
 
-      // 9. 触发 done
-      await this._hooks.done.promise(result);
+      // 9. 触发 done（携带最终 Request，供钩子按会话配对）
+      await this._hooks.done.promise(result, finalRequest);
 
       compilation.completed = true;
       return result;
     } catch (err) {
       const error = err as Error;
-
+      // 非中止错误打印栈，便于线上排障（此前 catch 全部静默转 Result.error，丢栈）
+      if (error?.name !== 'AbortError') {
+        console.error('[Runtime] 运行失败:', error?.stack ?? error);
+      }
       await this._hooks.failed.promise(error, finalRequest);
 
       return new ResultBuilder()
         .error(error.message)
         .build();
     } finally {
-      // 10. 每轮结束后整体保存会话（失败不影响运行结果）
-      try {
-        await this.persistSession(finalRequest.sessionKey);
-      } catch {
-        // 忽略持久化错误，运行结果已返回
+      // 10. 每轮结束后整体保存会话（ephemeral 不持久化；失败不影响运行结果）
+      if (!finalRequest.ephemeral) {
+        try {
+          await this.persistSession(finalRequest.sessionKey);
+        } catch (err) {
+          console.warn('[Runtime] 会话持久化失败:', (err as Error)?.message);
+        }
       }
     }
   }
 
-  async *stream(request: Request): AsyncGenerator<ResultChunk> {
+  private async *_stream(request: Request): AsyncGenerator<ResultChunk> {
     // 1. 钩子
     await this._hooks.beforeInitialize.promise(request);
     await this._hooks.afterInitialize.promise(request);
     const finalRequest = await this._hooks.beforeRun.promise(request);
 
-    // 2. 会话持久化：从存储恢复历史消息
-    await this.hydrateSession(finalRequest.sessionKey);
+    // 2. 会话持久化：从存储恢复历史消息（ephemeral 跳过）
+    if (!finalRequest.ephemeral) {
+      await this.hydrateSession(finalRequest.sessionKey);
+    }
 
     // 3. 创建编译上下文
     const compilation = this.createCompilation(finalRequest);
 
-    // 4. 添加用户消息
-    compilation.messages.push({
-      role: 'user',
-      content: finalRequest.message,
-      timestamp: Date.now(),
-    } as UserMessage);
+    // 4. 添加用户消息（含媒体附件）
+    compilation.messages.push(this.buildUserMessage(finalRequest));
 
     // 5. 流式对话循环
     try {
@@ -287,20 +394,24 @@ export class AgentRuntime implements Runtime {
       const result = this.buildResult(compilation);
       await this._hooks.beforeEmit.promise(result);
       await this._hooks.afterEmit.promise(result);
-      await this._hooks.done.promise(result);
+      await this._hooks.done.promise(result, finalRequest);
 
       yield { type: 'done' };
     } catch (err) {
       const error = err as Error;
+      if (error?.name !== 'AbortError') {
+        console.error('[Runtime] 流式运行失败:', error?.stack ?? error);
+      }
       await this._hooks.failed.promise(error, finalRequest);
       yield { type: 'error', content: error.message };
       yield { type: 'done' };
     } finally {
-      // 7. 每轮结束后整体保存会话（失败不影响运行结果）
-      try {
-        await this.persistSession(finalRequest.sessionKey);
-      } catch {
-        // 忽略持久化错误，流式结果已产出
+      if (!finalRequest.ephemeral) {
+        try {
+          await this.persistSession(finalRequest.sessionKey);
+        } catch (err) {
+          console.warn('[Runtime] 会话持久化失败:', (err as Error)?.message);
+        }
       }
     }
   }
@@ -319,8 +430,11 @@ export class AgentRuntime implements Runtime {
   }
 
   async close(): Promise<void> {
+    // 等待所有会话的在途任务完成，再清理
+    const queues = Array.from(this._sessions.values()).map(s => s.queue);
+    await Promise.allSettled(queues);
+
     this._sessions.clear();
-    this._hydrated.clear();
     this._extensions.clear();
     this._pipeline.clear();
   }
@@ -333,63 +447,43 @@ export class AgentRuntime implements Runtime {
     session.abortController = new AbortController();
 
     try {
-      let maxTurns = 200;
+      let maxTurns = this._maxTurns;
 
       while (maxTurns-- > 0) {
         // 1. Pipeline 转换上下文（原地替换，保持 session 引用）
         await this.transformMessages(compilation);
 
-        // 2. beforeTransform / afterTransform 钩子
-        // (消息级转换通过 Pipeline 完成)
-
-        // 3. 构建 LLM 上下文
+        // 2. 构建 LLM 上下文
         const context = this.buildContext(compilation.messages);
 
-        // 4. 调用模型
+        // 3. 调用模型
         const assistantMessage = await this.streamModel(
           context,
-          session.abortController.signal,
+          session.abortController!.signal,
         );
 
         compilation.messages.push(assistantMessage);
 
-        // 5. 检查工具调用
+        // 4. 检查工具调用
         const toolCalls = extractToolCalls(assistantMessage.content);
 
         if (toolCalls.length === 0) {
           break;  // 无工具调用，结束循环
         }
 
-        // 6. 执行工具
-        for (const toolCall of toolCalls) {
-          const result = await this.executeTool(
-            toolCall,
-            session.abortController.signal,
-          );
+        // 5. 执行工具（可选并行）
+        await this.executeToolCalls(compilation, toolCalls, session.abortController!.signal);
 
-          const toolResultMsg: ToolResultMessage = {
-            role: 'toolResult',
-            content: result.content,
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-            isError: !!(result.details && typeof result.details === 'object' && 'error' in result.details),
-            timestamp: Date.now(),
-          };
-
-          compilation.messages.push(toolResultMsg);
-        }
-
-        // 7. 检查终止
+        // 6. 检查终止
         if (toolCalls.every(tc => {
           const result = this.findToolResult(compilation.messages, tc.id);
-          return result?.details && typeof result.details === 'object' && 'terminate' in result.details && result.details.terminate;
+          return result?.terminate;
         })) {
           break;
         }
       }
     } finally {
-      session.isStreaming = false;
-      session.abortController = null;
+      this.markIdle(session);
     }
   }
 
@@ -404,7 +498,7 @@ export class AgentRuntime implements Runtime {
     session.abortController = new AbortController();
 
     try {
-      let maxTurns = 200;
+      let maxTurns = this._maxTurns;
 
       while (maxTurns-- > 0) {
         // 1. Pipeline 转换（原地替换，保持 session 引用）
@@ -417,7 +511,7 @@ export class AgentRuntime implements Runtime {
         let assistantMessage: AssistantMessage | null = null;
 
         for await (const event of this._streamFn(this._model, context, {
-          signal: session.abortController.signal,
+          signal: session.abortController!.signal,
           reasoning: this._thinkingLevel !== 'off' ? this._thinkingLevel : undefined,
         })) {
           const chunk = this.streamEventToChunk(event);
@@ -447,35 +541,140 @@ export class AgentRuntime implements Runtime {
             toolName: toolCall.name,
             toolCallId: toolCall.id,
           };
+        }
 
-          const result = await this.executeTool(
-            toolCall,
-            session.abortController.signal,
-          );
+        const toolResults = await this.executeToolCallsStreaming(
+          compilation,
+          toolCalls,
+          session.abortController!.signal,
+        );
 
+        for (let i = 0; i < toolCalls.length; i++) {
           yield {
             type: 'tool_end',
-            toolName: toolCall.name,
-            toolCallId: toolCall.id,
-            isError: !!(result.details && typeof result.details === 'object' && 'error' in result.details),
+            toolName: toolCalls[i].name,
+            toolCallId: toolCalls[i].id,
+            isError: this.isErrorResult(toolResults[i]),
           };
-
-          const toolResultMsg: ToolResultMessage = {
-            role: 'toolResult',
-            content: result.content,
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-            isError: !!(result.details && typeof result.details === 'object' && 'error' in result.details),
-            timestamp: Date.now(),
-          };
-
-          compilation.messages.push(toolResultMsg);
         }
       }
     } finally {
-      session.isStreaming = false;
-      session.abortController = null;
+      this.markIdle(session);
     }
+  }
+
+  // ─── 工具执行 ───────────────────────────────────────────────────
+
+  /** 同步循环：执行工具调用并将结果消息按原顺序追加 */
+  private async executeToolCalls(
+    compilation: Compilation,
+    toolCalls: ToolCallContent[],
+    signal: AbortSignal,
+  ): Promise<void> {
+    const results = await this.runTools(toolCalls, signal);
+    for (let i = 0; i < toolCalls.length; i++) {
+      compilation.messages.push(
+        this.buildToolResultMessage(toolCalls[i], results[i]),
+      );
+    }
+  }
+
+  /** 流式循环：执行工具调用，返回结果（消息由调用方追加） */
+  private async executeToolCallsStreaming(
+    compilation: Compilation,
+    toolCalls: ToolCallContent[],
+    signal: AbortSignal,
+  ): Promise<ToolResult[]> {
+    const results = await this.runTools(toolCalls, signal);
+    for (let i = 0; i < toolCalls.length; i++) {
+      compilation.messages.push(
+        this.buildToolResultMessage(toolCalls[i], results[i]),
+      );
+    }
+    return results;
+  }
+
+  /** 执行一组工具调用：parallelToolCalls 为 true 时并行，否则串行 */
+  private async runTools(
+    toolCalls: ToolCallContent[],
+    signal: AbortSignal,
+  ): Promise<ToolResult[]> {
+    if (this._parallelToolCalls && toolCalls.length > 1) {
+      return Promise.all(toolCalls.map(tc => this.executeTool(tc, signal)));
+    }
+    const results: ToolResult[] = [];
+    for (const tc of toolCalls) {
+      results.push(await this.executeTool(tc, signal));
+    }
+    return results;
+  }
+
+  private async executeTool(
+    toolCall: ToolCallContent,
+    signal?: AbortSignal,
+  ): Promise<ToolResult> {
+    const tool = this._globalTools.get(toolCall.name);
+
+    if (!tool) {
+      return {
+        content: [createTextContent(`Tool "${toolCall.name}" not found`)],
+        details: { error: `Tool "${toolCall.name}" not found` },
+      };
+    }
+
+    const { signal: timedSignal, clear } = withTimeoutSignal(signal, this._toolTimeoutMs);
+    try {
+      let args: unknown = toolCall.arguments;
+      if (tool.prepareArguments) {
+        args = tool.prepareArguments(toolCall.arguments);
+      }
+      return await tool.execute(toolCall.id, args, timedSignal);
+    } catch (err) {
+      const message = (err as Error)?.message ?? String(err);
+      return {
+        content: [createTextContent(message)],
+        details: { error: message },
+      };
+    } finally {
+      clear();
+    }
+  }
+
+  private isErrorResult(result: ToolResult): boolean {
+    return !!(result.details && typeof result.details === 'object' && 'error' in result.details);
+  }
+
+  private buildToolResultMessage(
+    toolCall: ToolCallContent,
+    result: ToolResult,
+  ): ToolResultMessage {
+    return {
+      role: 'toolResult',
+      content: result.content,
+      toolCallId: toolCall.id,
+      toolName: toolCall.name,
+      isError: this.isErrorResult(result),
+      timestamp: Date.now(),
+    };
+  }
+
+  private buildUserMessage(request: Request): UserMessage {
+    if (request.media && request.media.length > 0) {
+      const blocks: ContentBlock[] = [
+        createTextContent(request.message),
+        ...request.media.filter(Boolean).map(buildImageContent),
+      ];
+      return {
+        role: 'user',
+        content: blocks,
+        timestamp: Date.now(),
+      };
+    }
+    return {
+      role: 'user',
+      content: request.message,
+      timestamp: Date.now(),
+    };
   }
 
   // ─── 内部方法 ───────────────────────────────────────────────────
@@ -484,26 +683,55 @@ export class AgentRuntime implements Runtime {
     if (!this._sessions.has(sessionKey)) {
       this._sessions.set(sessionKey, {
         messages: [],
-        tools: Array.from(this._globalTools.values()),
         isStreaming: false,
         abortController: null,
         createdAt: new Date().toISOString(),
+        hydrated: false,
+        queue: Promise.resolve(),
+        idleResolvers: [],
       });
     }
     return this._sessions.get(sessionKey)!;
   }
 
+  /**
+   * 获取同一会话的执行锁：返回 release 函数，调用后释放。
+   * 同一 sessionKey 的 run/stream 会串行执行，避免消息数组交错、
+   * abortController 互相覆盖、hydrate 竞态。
+   */
+  private async acquire(sessionKey: string): Promise<() => void> {
+    const session = this.getSession(sessionKey);
+    let release!: () => void;
+    const prev = session.queue;
+    session.queue = new Promise<void>(resolve => {
+      release = () => resolve();
+    });
+    await prev;
+    return release;
+  }
+
+  /** 标记会话空闲并唤醒所有 waitForIdle 等待者 */
+  private markIdle(session: SessionState): void {
+    session.isStreaming = false;
+    session.abortController = null;
+    if (session.idleResolvers.length > 0) {
+      const resolvers = session.idleResolvers.splice(0);
+      for (const resolve of resolvers) resolve();
+    }
+  }
+
   // ─── 会话持久化 ─────────────────────────────────────────────────
 
-  /** 从存储懒加载会话（每个会话 key 仅恢复一次） */
+  /** 从存储懒加载会话（串行化后无竞态，每个会话仅恢复一次） */
   private async hydrateSession(sessionKey: string): Promise<void> {
-    if (!this._sessionStorage || this._hydrated.has(sessionKey)) return;
-    this._hydrated.add(sessionKey);
+    if (!this._sessionStorage) return;
+    const session = this.getSession(sessionKey);
+    if (session.hydrated) return;
+    session.hydrated = true;
 
     const stored = await this._sessionStorage.load(sessionKey);
     if (!stored) return;
 
-    const session = this.getSession(sessionKey);
     session.messages = stored.messages;
     session.createdAt = stored.createdAt;
   }
@@ -540,9 +768,10 @@ export class AgentRuntime implements Runtime {
     return null;
   }
 
-  /** 汇总所有 assistant 消息的 token 用量 */
+  /** 汇总所有 assistant 消息的 token 用量（含 cache/cost） */
   private sumUsage(messages: Message[]): Usage {
     const usage = createEmptyUsage();
+    usage.cost = { input: 0, output: 0, total: 0 };
     for (const msg of messages) {
       if (msg.role === 'assistant') {
         const u = (msg as AssistantMessage).usage;
@@ -550,6 +779,14 @@ export class AgentRuntime implements Runtime {
           usage.input += u.input;
           usage.output += u.output;
           usage.total += u.total;
+          usage.cacheRead = (usage.cacheRead ?? 0) + (u.cacheRead ?? 0);
+          usage.cacheWrite = (usage.cacheWrite ?? 0) + (u.cacheWrite ?? 0);
+          usage.reasoning = (usage.reasoning ?? 0) + (u.reasoning ?? 0);
+          if (u.cost) {
+            usage.cost!.input += u.cost.input ?? 0;
+            usage.cost!.output += u.cost.output ?? 0;
+            usage.cost!.total += u.cost.total ?? 0;
+          }
         }
       }
     }
@@ -569,6 +806,9 @@ export class AgentRuntime implements Runtime {
       runtime: {
         sessionKey: compilation.request.sessionKey,
         turn: compilation.messages.length,
+        contextWindow: this._model.contextWindow,
+        maxTokens: this._model.maxTokens,
+        contextBudgetRatio: this._contextBudgetRatio,
       },
     });
 
@@ -619,40 +859,15 @@ export class AgentRuntime implements Runtime {
     return assistantMessage;
   }
 
-  private async executeTool(
-    toolCall: ToolCallContent,
-    signal?: AbortSignal,
-  ): Promise<import('../core').ToolResult> {
-    const tool = this._globalTools.get(toolCall.name);
-
-    if (!tool) {
-      return {
-        content: [createTextContent(`Tool "${toolCall.name}" not found`)],
-        details: { error: `Tool "${toolCall.name}" not found` },
-      };
-    }
-
-    try {
-      let args: unknown = toolCall.arguments;
-      if (tool.prepareArguments) {
-        args = tool.prepareArguments(toolCall.arguments);
-      }
-      return await tool.execute(toolCall.id, args, signal);
-    } catch (err) {
-      return {
-        content: [createTextContent((err as Error).message)],
-        details: { error: (err as Error).message },
-      };
-    }
-  }
-
   private findToolResult(
     messages: Message[],
     toolCallId: string,
-  ): import('../core').ToolResult | null {
+  ): ToolResult | null {
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
       if (msg.role === 'toolResult' && (msg as ToolResultMessage).toolCallId === toolCallId) {
+        // toolResult 消息本身不携带 details/terminate，需在 executeTool 阶段处理终止；
+        // 此处仅返回占位用于配对检查。
         return {
           content: msg.content as ContentBlock[],
           details: {},
@@ -680,6 +895,8 @@ export class AgentRuntime implements Runtime {
           usage.input = (usage.input ?? 0) + assistant.usage.input;
           usage.output = (usage.output ?? 0) + assistant.usage.output;
           usage.total = (usage.total ?? 0) + assistant.usage.total;
+          if (assistant.usage.cacheRead) usage.cacheRead = (usage.cacheRead ?? 0) + assistant.usage.cacheRead;
+          if (assistant.usage.cacheWrite) usage.cacheWrite = (usage.cacheWrite ?? 0) + assistant.usage.cacheWrite;
         }
       }
       if (msg.role === 'toolResult') {
@@ -690,12 +907,16 @@ export class AgentRuntime implements Runtime {
       }
     }
 
+    // 填充资源快照（此前 Result.resources 永远 undefined）
+    const resources = messagesToResources(messages);
+
     return new ResultBuilder()
       .content(content)
       .toolsUsed(toolsUsed)
       .usage(usage)
       .stopReason(stopReason)
       .error(error)
+      .resources(resources)
       .build();
   }
 
@@ -708,7 +929,6 @@ export class AgentRuntime implements Runtime {
       case 'error':
         // 模型调用错误（无 API Key / 鉴权失败 / 网络错误 / HTTP 4xx-5xx 等）
         // 以 error 事件流入，errorMessage 已由 stream-openai/anthropic 填好。
-        // 此前默认分支返回 null，导致错误被静默吞掉、前端只收到 done。
         return {
           type: 'error',
           content: event.message.errorMessage || '模型调用出错',
@@ -731,17 +951,22 @@ export class AgentRuntime implements Runtime {
     return this.getSession(sessionKey).isStreaming;
   }
 
-  /** 等待会话空闲 */
+  /** 等待会话空闲（基于 promise，无轮询） */
   async waitForIdle(sessionKey: string = 'default'): Promise<void> {
-    while (this.isBusy(sessionKey)) {
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
+    const session = this.getSession(sessionKey);
+    if (!session.isStreaming) return;
+    await new Promise<void>(resolve => {
+      session.idleResolvers.push(resolve);
+    });
   }
 
   /** 清除会话消息（仅内存；下次 run 会从存储恢复该会话） */
   clearSession(sessionKey: string = 'default'): void {
-    this._sessions.delete(sessionKey);
-    this._hydrated.delete(sessionKey);
+    const session = this._sessions.get(sessionKey);
+    if (session) {
+      session.messages = [];
+      session.hydrated = false;
+    }
   }
 
   /** 列出所有会话 key（内存 + 存储） */
@@ -753,8 +978,12 @@ export class AgentRuntime implements Runtime {
 
   /** 删除指定会话（内存 + 存储），返回是否删除成功 */
   async deleteSession(sessionKey: string = 'default'): Promise<boolean> {
-    this._sessions.delete(sessionKey);
-    this._hydrated.delete(sessionKey);
+    const session = this._sessions.get(sessionKey);
+    if (session) {
+      // 等待在途任务完成后再清理
+      await session.queue;
+      this._sessions.delete(sessionKey);
+    }
     if (this._sessionStorage) {
       return this._sessionStorage.delete(sessionKey);
     }

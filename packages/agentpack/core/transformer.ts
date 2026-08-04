@@ -28,6 +28,12 @@ export interface TransformRuntime {
   workspace?: string;
   /** 运行时配置 */
   config?: Record<string, unknown>;
+  /** 当前模型的上下文窗口（token），供 token 级截断转换器使用 */
+  contextWindow?: number;
+  /** 当前模型最大输出 token */
+  maxTokens?: number;
+  /** token 预算占 contextWindow 的比例（默认 0.8） */
+  contextBudgetRatio?: number;
 }
 
 // ─── 转换器接口 ───────────────────────────────────────────────────

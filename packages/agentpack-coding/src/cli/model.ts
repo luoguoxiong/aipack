@@ -6,8 +6,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { getBuiltinModel, getBuiltinModels, getEnvApiKey } from 'agentpack/ai';
-import type { Model as AiModel } from 'agentpack/ai';
+import { getBuiltinModel, getBuiltinModels, getEnvApiKey, type AiModel } from 'agentpack';
 
 /**
  * 加载 .env 文件（~/.agentpack/.env 与 <cwd>/.env）。

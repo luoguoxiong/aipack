@@ -1,31 +1,32 @@
 /**
- * 可选适配器：复用 packages/ai 标准化模型层
+ * 可选适配器:复用 agentpack/ai 标准化模型层
  *
- * 为什么存在：
- *   packages/ai 实现了完整的模型标准化（模型目录 Models、streamOpenAI /
- *   streamAnthropic、认证解析、SSE 解析、用量统计等），这些能力已从 packages/ai
- *   迁移过来、与 src 完全解耦。拿到标准化的 Model
- *   （例如 getBuiltinModel() / createModels() 得到），就不需要再手写 streamFn。
+ * 为什么存在:
+ *   agentpack/ai 子模块实现了完整的模型标准化(模型目录 Models、streamOpenAI /
+ *   streamAnthropic、认证解析、SSE 解析、用量统计等),与核心框架类型解耦。
+ *   拿到标准化的 Model(例如 getBuiltinModel() / createModels() 得到),
+ *   就不需要再手写 streamFn。
  *
- * 用法：
+ * 用法:
  * ```typescript
- * import { createRuntime } from '../index';
- * import { adaptAiModel, createStreamFnFromAi } from './adapters/ai';
- * import { getBuiltinModel } from '../ai';
+ * import {
+ *   createRuntime,
+ *   adaptAiModel,
+ *   createStreamFnFromAi,
+ *   getBuiltinModel,
+ * } from 'agentpack';
  *
  * const aiModel = getBuiltinModel('openai', 'gpt-4o-mini');
  * const runtime = await createRuntime({
- *   model: adaptAiModel(aiModel),        // packages/ai Model -> 框架 Model
+ *   model: adaptAiModel(aiModel),        // ai Model -> 框架 Model
  *   streamFn: createStreamFnFromAi(aiModel), // 自动对接 OpenAI / Anthropic
  * });
  * ```
  *
- * 注意：模型调用能力已从 packages/ai 迁移到 packages/ai（独立实现），
- * 本适配器不依赖 src/ 任何代码。
+ * 注意:模型调用能力由 agentpack/ai 提供;本适配器仅依赖 core 的类型与
+ * extractText,不做运行时执行逻辑。
  */
-import { streamOpenAI } from '../ai/stream-openai';
-import { streamAnthropic } from '../ai/stream-anthropic';
-import { hasApi } from '../ai';
+import { streamOpenAI, streamAnthropic, hasApi } from '../ai';
 import type {
   Model as AiModel,
   Context as AiContext,
@@ -36,21 +37,20 @@ import type {
   AssistantMessage as AiAssistantMessage,
   ToolCallContent as AiToolCallContent,
   ContentBlock as AiContentBlock,
+  TSchema,
 } from '../ai';
-import type { TSchema } from '../ai';
 import type {
   Model,
   StreamFn,
   StreamEvent,
   StreamOptions,
   ContentBlock,
-  ToolCallContent,
 } from '../core';
 import { extractText } from '../core';
 
 // ─── 模型适配 ───────────────────────────────────────────────────────
 
-/** 将 packages/ai 的标准 Model 转为框架 Model（id/name/provider/窗口/token 等信息） */
+/** 将 agentpack/ai 的标准 Model 转为框架 Model（id/name/provider/窗口/token 等信息） */
 export function adaptAiModel(aiModel: AiModel): Model {
   return {
     id: aiModel.id,
@@ -59,14 +59,14 @@ export function adaptAiModel(aiModel: AiModel): Model {
     contextWindow: aiModel.contextWindow,
     maxTokens: aiModel.maxTokens,
     reasoning: aiModel.reasoning,
-    // 透传 packages/ai 的扩展字段（baseUrl、cost、headers、api 等），保留灵活性
+    // 透传 agentpack/ai 的扩展字段（baseUrl、cost、headers、api 等），保留灵活性
     ...(aiModel as unknown as Record<string, unknown>),
   };
 }
 
 // ─── 事件映射 ───────────────────────────────────────────────────────
 
-/** 将 packages/ai 的 content 块规范化为框架 content 块（thinking 块字段不同） */
+/** 将 agentpack/ai 的 content 块规范化为框架 content 块（thinking 块字段不同） */
 function normalizeBlocks(blocks: AiContentBlock[]): ContentBlock[] {
   return blocks.map(b => {
     if (b.type === 'thinking') {
@@ -76,7 +76,7 @@ function normalizeBlocks(blocks: AiContentBlock[]): ContentBlock[] {
   });
 }
 
-/** 将 packages/ai 的 assistant 消息规范化为框架消息 */
+/** 将 agentpack/ai 的 assistant 消息规范化为框架消息 */
 function normalizeAssistantMessage(
   msg: AiAssistantMessage,
   stopReason?: string,
@@ -94,7 +94,7 @@ function normalizeAssistantMessage(
   };
 }
 
-/** 从 packages/ai 的 partial message 中提取 contentIndex 对应的工具调用块 */
+/** 从 agentpack/ai 的 partial message 中提取 contentIndex 对应的工具调用块 */
 function findToolCall(
   partial: AiAssistantMessage,
   contentIndex: number,
@@ -114,10 +114,14 @@ function findToolCall(
 // ─── streamFn 适配 ──────────────────────────────────────────────────
 
 /**
- * 创建 StreamFn：内部使用 packages/ai 的 streamOpenAI / streamAnthropic
- * 处理模型调用，并把 packages/ai 的流式事件自动转换为框架事件。
+ * 创建 StreamFn：内部使用 agentpack/ai 的 streamOpenAI / streamAnthropic
+ * 处理模型调用，并把 agentpack/ai 的流式事件自动转换为框架事件。
  *
- * @param aiModel 来自 packages/ai 的标准化模型（含 api/baseUrl/cost 等元数据）
+ * 注意：StreamFn 入参的 `model` 会被实际使用（而非闭包捕获的 aiModel），
+ * 这样 `runtime.setModel(adaptAiModel(otherAiModel))` 才能生效。
+ * `adaptAiModel` 会透传 ai 的全部字段（api/baseUrl/cost 等），因此可安全回退为 ai Model。
+ *
+ * @param aiModel 来自 agentpack/ai 的标准化模型（含 api/baseUrl/cost 等元数据）
  * @param options 透传给底层流式实现的选项（apiKey、env、headers、baseUrl 等）
  */
 export function createStreamFnFromAi(
@@ -125,13 +129,19 @@ export function createStreamFnFromAi(
   options: SimpleStreamOptions = {},
 ): StreamFn {
   return async function* (
-    _model: Model,
+    model: Model,
     context: Parameters<StreamFn>[1],
     streamOptions?: StreamOptions,
   ): AsyncGenerator<StreamEvent> {
-    // ── 组装 packages/ai Context ──
-    // 框架 Message 与 packages/ai Message 结构同源，直接映射；
-    // 唯一差异：packages/ai 没有 system 角色消息（systemPrompt 单独传），这里合并。
+    // 使用 runtime 传入的 model（setModel 后会更新）；其携带 ai 的扩展字段。
+    // 回退到闭包 aiModel 以兼容调用方直接传入裸 core Model 的情况。
+    const activeModel: AiModel = (model && (model as unknown as AiModel).api)
+      ? (model as unknown as AiModel)
+      : aiModel;
+
+    // ── 组装 agentpack/ai Context ──
+    // 框架 Message 与 agentpack/ai Message 结构同源，直接映射；
+    // 唯一差异：agentpack/ai 没有 system 角色消息（systemPrompt 单独传），这里合并。
     const systemParts: string[] = [];
     if (context.systemPrompt) systemParts.push(context.systemPrompt);
 
@@ -160,13 +170,13 @@ export function createStreamFnFromAi(
       merged.reasoningEffort = merged.reasoningEffort ?? streamOptions.reasoning;
     }
 
-    // ── 按 model.api 分派（与 packages/ai Models.dispatchStream 保持一致） ──
-    const stream = hasApi(aiModel, 'anthropic-messages')
-      ? streamAnthropic(aiModel, aiContext, merged)
-      : streamOpenAI(aiModel, aiContext, merged);
+    // ── 按 model.api 分派(与 agentpack/ai Models.dispatchStream 保持一致) ──
+    const stream = hasApi(activeModel, 'anthropic-messages')
+      ? streamAnthropic(activeModel, aiContext, merged)
+      : streamOpenAI(activeModel, aiContext, merged);
 
     // ── 事件转换 ──
-    // packages/ai 的 toolcall_start 事件没有 id/name（只有 contentIndex），
+    // agentpack/ai 的 toolcall_start 事件没有 id/name（只有 contentIndex），
     // 因此用 contentIndex 跟踪活跃工具，从 partial 中补齐 id/name。
     const known = new Map<number, AiToolCallContent>();
 

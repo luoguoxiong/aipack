@@ -17,13 +17,13 @@
     "lib": ["ES2022"],
     "types": ["node"],
     "paths": {
-      "@/*": ["./src/*"],
       "agentpack": ["./packages/agentpack/index.ts"],
       "agentpack/*": ["./packages/agentpack/*"],
       "agentpack-memory": ["./packages/agentpack-memory/index.ts"],
-      "agentpack-coding": ["./packages/agentpack-coding/index.ts"]
+      "agentpack-coding": ["./packages/agentpack-coding/index.ts"],
+      "agentpack-compression": ["./packages/agentpack-compression/index.ts"]
     }
   },
-  "include": ["src/**/*", "packages/**/*", "examples/**/*"],
-  "exclude": ["node_modules", "dist", "webui", "tests"]
+  "include": ["packages/**/*", "examples/**/*"],
+  "exclude": ["node_modules", "dist", "webui"]
 }

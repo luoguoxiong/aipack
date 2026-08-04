@@ -44,11 +44,14 @@ export interface SessionStorage {
 export interface FileSessionStorageOptions {
   /** 存储根目录，默认 <pwd>/.agentpack/sessions */
   baseDir?: string;
-  /** 过期时间（毫秒），超过 updatedAt 的会话在加载时清理 */
+  /** 过期时间（毫秒），超过 updatedAt 的会话在加载/列举时清理 */
   maxAge?: number;
+  /** 持久化消息条数上限（保留最新 N 条，0 表示不限，默认 0） */
+  maxStoredMessages?: number;
 }
 
 /** 内存存储选项 */
 export interface MemorySessionStorageOptions {
+  /** 过期时间（毫秒），超过 updatedAt 的会话在加载时清理 */
   maxAge?: number;
 }

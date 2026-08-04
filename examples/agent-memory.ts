@@ -65,8 +65,7 @@ async function maybeCreateRealStreamFn(): Promise<{ model: Model; streamFn: Stre
   const useReal = process.env.USE_REAL_LLM === '1' || process.env.DEEPSEEK_API_KEY;
   if (!useReal) return null;
   try {
-    const { getBuiltinModel, hasProviderConfigured } = await import('agentpack/ai');
-    const { adaptAiModel, createStreamFnFromAi } = await import('agentpack/adapters/ai');
+    const { getBuiltinModel, hasProviderConfigured, adaptAiModel, createStreamFnFromAi } = await import('agentpack');
     const aiModel = getBuiltinModel('deepseek', 'deepseek-chat');
     if (!aiModel || !hasProviderConfigured('deepseek')) return null;
     console.log('✅ 检测到 DEEPSEEK_API_KEY，使用真实 DeepSeek 模型\n');
