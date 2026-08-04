@@ -21,6 +21,7 @@ interface ParsedArgs {
   provider?: string;
   model?: string;
   workspace?: string;
+  memory?: boolean;
   message?: string;
 }
 
@@ -28,6 +29,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   let provider: string | undefined;
   let model: string | undefined;
   let workspace: string | undefined;
+  let memory = false;
   const positional: string[] = [];
 
   for (let i = 0; i < argv.length; i++) {
@@ -44,6 +46,10 @@ function parseArgs(argv: string[]): ParsedArgs {
       workspace = argv[++i];
       continue;
     }
+    if (a === '--memory') {
+      memory = true;
+      continue;
+    }
     if (a === '-h' || a === '--help') {
       return { command: 'help' };
     }
@@ -56,7 +62,7 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   const command = positional[0] ?? 'chat';
   const message = positional.slice(command === 'run' ? 1 : 0).join(' ');
-  return { command, provider, model, workspace, message: message || undefined };
+  return { command, provider, model, workspace, memory, message: message || undefined };
 }
 
 function showHelp(): void {
@@ -70,6 +76,7 @@ function showHelp(): void {
   console.log('  -p, --provider <id>    模型提供商（deepseek/openai/anthropic）');
   console.log('  -m, --model <id>       模型 ID（deepseek-chat/gpt-4o-mini）');
   console.log('  -w, --workspace <path> 工作区路径（默认当前目录）');
+  console.log('  --memory               启用 agentpack-memory 记忆集成');
   console.log('  -h, --help             显示帮助');
   console.log('');
   console.log('环境变量:');
@@ -101,12 +108,14 @@ async function main(): Promise<void> {
       provider: parsed.provider,
       model: parsed.model,
       workspace: parsed.workspace,
+      memory: parsed.memory,
     });
   } else if (parsed.command === 'chat') {
     await startChat({
       provider: parsed.provider,
       model: parsed.model,
       workspace: parsed.workspace,
+      memory: parsed.memory,
     });
   } else {
     console.error(`未知命令: ${parsed.command}`);

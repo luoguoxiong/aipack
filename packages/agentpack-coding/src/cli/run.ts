@@ -12,6 +12,7 @@ export interface RunOptions {
   provider?: string;
   model?: string;
   workspace?: string;
+  memory?: boolean;
 }
 
 export async function runOnce(opts: RunOptions): Promise<void> {
@@ -19,6 +20,7 @@ export async function runOnce(opts: RunOptions): Promise<void> {
     provider: opts.provider,
     model: opts.model,
     workspace: opts.workspace ?? process.cwd(),
+    memory: opts.memory,
     // 非 TTY：不提供 confirmFn，confirm 类命令将被拒绝
   });
 
