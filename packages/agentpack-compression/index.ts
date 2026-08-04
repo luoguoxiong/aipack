@@ -34,22 +34,26 @@ export type { CompressionTransformerOptions } from './src/compression-transforme
 // ─── 配置 ─────────────────────────────────────────────────────────
 export {
   loadCompressionConfig,
+  validateConfig,
   DEFAULT_DROP_ORDER,
 } from './src/config';
-export type { CompressionConfig, DeepPartial } from './src/config';
+export type { CompressionConfig, DeepPartial, ConfigValidationError } from './src/config';
 
 // ─── Token 估算 ───────────────────────────────────────────────────
 export {
   CharHeuristicEstimator,
   createTokenEstimator,
 } from './src/token-estimator';
-export type { TokenEstimator } from './src/token-estimator';
+export type { TokenEstimator, TokenizerLike, EstimationSnapshot } from './src/token-estimator';
 
 // ─── 安全机制 ─────────────────────────────────────────────────────
 export {
   CompressionSafetyGuard,
   createSafetyState,
   abortSafetyState,
+  createForkAbortController,
+  runFork,
+  hasInFlightForks,
   buildToolPairMap,
   isToolPairComplete,
 } from './src/safety';
@@ -58,6 +62,21 @@ export type {
   SafetyConfig,
   CreateSafetyStateOptions,
 } from './src/safety';
+
+// ─── Fork 重试 ────────────────────────────────────────────────────
+export {
+  ForkStreamError,
+  isRetryableStreamError,
+  computeBackoffDelay,
+  retryWithBackoff,
+  runForkWithRetry,
+  DEFAULT_FORK_RETRY,
+} from './src/retry';
+export type {
+  RetryConfig,
+  ForkResult,
+  ForkCallbackResult,
+} from './src/retry';
 
 // ─── 遥测 ─────────────────────────────────────────────────────────
 export {

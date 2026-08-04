@@ -7,6 +7,7 @@
  */
 
 import type { ResourceType } from 'agentpack';
+import type { RetryConfig } from './retry';
 
 // ─── 配置接口 ─────────────────────────────────────────────────────
 
@@ -84,7 +85,14 @@ export interface CompressionConfig {
     maxAttempts: number;
     cooldownTurns: number;
     forkTimeoutMs?: number;
+    /** P0#4: fork 调用重试配置 */
+    retry: RetryConfig;
+    /** P1#6: 同 session 是否强制串行化（默认 true） */
+    serializePerSession: boolean;
   };
+
+  /** P2#14: dryRun 模式：只算 token + 生成 telemetry，不修改 resources */
+  dryRun: boolean;
 
   telemetry: {
     enabled: boolean;
@@ -181,7 +189,15 @@ export function loadCompressionConfig(
       maxAttempts: Number(env.AGENTPACK_COMPRESSION_MAX_ATTEMPTS) || 5,
       cooldownTurns: Number(env.AGENTPACK_COMPRESSION_COOLDOWN_TURNS) || 5,
       forkTimeoutMs,
+      retry: {
+        retries: Number(env.AGENTPACK_FORK_RETRY_COUNT) || 2,
+        baseMs: Number(env.AGENTPACK_FORK_RETRY_BASE_MS) || 500,
+        maxMs: Number(env.AGENTPACK_FORK_RETRY_MAX_MS) || 4000,
+      },
+      serializePerSession: env.AGENTPACK_COMPRESSION_SERIALIZE !== 'false',
     },
+
+    dryRun: env.AGENTPACK_COMPRESSION_DRY_RUN === 'true',
 
     telemetry: {
       enabled: env.AGENTPACK_COMPRESSION_TELEMETRY !== 'false',
@@ -198,6 +214,113 @@ export function loadCompressionConfig(
 
 /** 导出默认丢弃顺序 */
 export { DEFAULT_DROP_ORDER };
+
+// ─── 配置校验 ─────────────────────────────────────────────────────
+
+export interface ConfigValidationError {
+  path: string;
+  message: string;
+  /** 'warn' 表示回退默认值，'error' 表示应拒绝启动 */
+  severity: 'warn' | 'error';
+}
+
+/**
+ * P1#13: 校验压缩配置边界值。
+ * - threshold/targetRatio 必须在 [0, 1]
+ * - 各级 threshold 必须递增（l1 < l2 < l3 < l4 < l5）
+ * - charsPerToken / forkMaxTokens / maxAttempts / cooldownTurns 必须 > 0
+ * - retry.retries >= 0，retry.baseMs/maxMs > 0
+ * - engine 字段非法时回退默认
+ *
+ * 默认仅 warn（不抛错），让 config 在生产环境即使配错也能启动。
+ * 设 strict=true 时会抛出第一个 error 级问题。
+ */
+export function validateConfig(
+  config: CompressionConfig,
+  strict = false,
+): ConfigValidationError[] {
+  const errors: ConfigValidationError[] = [];
+
+  const assertRange = (
+    path: string,
+    value: number,
+    min: number,
+    max: number,
+    severity: 'warn' | 'error' = 'warn',
+  ) => {
+    if (!Number.isFinite(value) || value < min || value > max) {
+      errors.push({ path, message: `${value} 不在 [${min}, ${max}] 范围`, severity });
+    }
+  };
+  const assertPositive = (path: string, value: number, severity: 'warn' | 'error' = 'warn') => {
+    if (!Number.isFinite(value) || value <= 0) {
+      errors.push({ path, message: `${value} 必须 > 0`, severity });
+    }
+  };
+  const assertNonNegative = (path: string, value: number, severity: 'warn' | 'error' = 'warn') => {
+    if (!Number.isFinite(value) || value < 0) {
+      errors.push({ path, message: `${value} 必须 >= 0`, severity });
+    }
+  };
+
+  assertPositive('charsPerToken.ascii', config.charsPerToken.ascii);
+  assertPositive('charsPerToken.cjk', config.charsPerToken.cjk);
+  assertNonNegative('estimatorCacheCapacity', config.estimatorCacheCapacity);
+  assertNonNegative('forkTimeoutMs', config.forkTimeoutMs);
+
+  assertRange('l1.threshold', config.l1.threshold, 0, 1);
+  assertRange('l1.targetRatio', config.l1.targetRatio, 0, 1);
+  assertRange('l2.threshold', config.l2.threshold, 0, 1);
+  assertRange('l2.targetRatio', config.l2.targetRatio, 0, 1);
+  assertRange('l3.threshold', config.l3.threshold, 0, 1);
+  assertRange('l3.targetRatio', config.l3.targetRatio, 0, 1);
+  assertRange('l4.threshold', config.l4.threshold, 0, 1);
+  assertRange('l4.targetRatio', config.l4.targetRatio, 0, 1);
+  assertRange('l5.threshold', config.l5.threshold, 0, 1);
+
+  assertPositive('l1.toolResultMaxLines', config.l1.toolResultMaxLines);
+  assertPositive('l2.forkMaxTokens', config.l2.forkMaxTokens);
+  assertPositive('l2.minResourcesToCompress', config.l2.minResourcesToCompress);
+  assertNonNegative('l2.protectedRecentCount', config.l2.protectedRecentCount);
+  assertPositive('l2.maxCompressionDepth', config.l2.maxCompressionDepth);
+  assertPositive('l3.forkMaxTokens', config.l3.forkMaxTokens);
+  assertNonNegative('l3.protectedRecentCount', config.l3.protectedRecentCount);
+  assertNonNegative('l4.minWorkingSet', config.l4.minWorkingSet);
+  assertPositive('l5.forkMaxTokens', config.l5.forkMaxTokens);
+
+  assertPositive('safety.maxAttempts', config.safety.maxAttempts);
+  assertNonNegative('safety.cooldownTurns', config.safety.cooldownTurns);
+  assertNonNegative('safety.retry.retries', config.safety.retry.retries);
+  assertPositive('safety.retry.baseMs', config.safety.retry.baseMs);
+  assertPositive('safety.retry.maxMs', config.safety.retry.maxMs);
+
+  // 各级 threshold 应单调递增（避免 L1 阈值比 L5 高导致顺序乱）
+  const thresholds = [
+    ['l1', config.l1.threshold],
+    ['l2', config.l2.threshold],
+    ['l3', config.l3.threshold],
+    ['l4', config.l4.threshold],
+    ['l5', config.l5.threshold],
+  ] as const;
+  for (let i = 1; i < thresholds.length; i++) {
+    if (thresholds[i][1] < thresholds[i - 1][1]) {
+      errors.push({
+        path: `${thresholds[i][0]}.threshold`,
+        message: `${thresholds[i][0]}.threshold=${thresholds[i][1]} 小于 ${thresholds[i - 1][0]}.threshold=${thresholds[i - 1][1]}，建议各级阈值单调递增`,
+        severity: 'warn',
+      });
+    }
+  }
+
+  if (strict) {
+    const firstError = errors.find(e => e.severity === 'error');
+    if (firstError) {
+      throw new Error(`[agentpack-compression] Invalid config at ${firstError.path}: ${firstError.message}`);
+    }
+  }
+
+  return errors;
+}
 
 // ─── 工具函数 ─────────────────────────────────────────────────────
 

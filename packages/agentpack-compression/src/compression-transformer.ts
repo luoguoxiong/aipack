@@ -17,15 +17,17 @@
 import type {
   ContextResource, TransformContext, Model, StreamFn, SessionStorage,
 } from 'agentpack';
-import { BaseTransformer } from 'agentpack';
+import { BaseTransformer, extractTextFromResource } from 'agentpack';
 import type { TokenEstimator } from './token-estimator';
 import type { CompressionConfig } from './config';
+import { validateConfig } from './config';
 import type { CompressionTelemetry, TelemetryReporter } from './telemetry';
-import { TELEMETRY_SHARED_KEY } from './telemetry';
+import { TELEMETRY_SHARED_KEY, createTelemetry } from './telemetry';
 import {
   CompressionSafetyGuard,
   createSafetyState,
   abortSafetyState,
+  hasInFlightForks,
   type CompressionSafetyState,
 } from './safety';
 import { ToolOutputTrim } from './l1-tool-output-trim';
@@ -34,6 +36,7 @@ import { TaskStateExtraction } from './l3-task-state-extraction';
 import { SessionCheckpointLevel, type SessionCheckpoint } from './l4-session-checkpoint';
 import { NewSessionHandoff, type HandoffHook } from './l5-new-session-handoff';
 import { CharHeuristicEstimator } from './token-estimator';
+import { DEFAULT_FORK_RETRY, type RetryConfig } from './retry';
 
 /** safetyStates LRU 上限 */
 const MAX_SESSIONS = 256;
@@ -58,6 +61,8 @@ interface SessionStateEntry {
   safety: CompressionSafetyState;
   /** 最近一次访问时间戳（用于 LRU 淘汰） */
   lastAccess: number;
+  /** P1#6: 同 session 串行化锁。指向"最后一次 run 完成的 promise"，下次 run 会先 await 它 */
+  chain: Promise<void> | null;
 }
 
 export class ContextCompressionTransformer extends BaseTransformer {
@@ -100,21 +105,39 @@ export class ContextCompressionTransformer extends BaseTransformer {
       opts.config.estimatorCacheCapacity,
     );
 
+    // P0#1/#4: fork 超时与重试配置注入各 level
+    const forkTimeoutMs = opts.config.safety.forkTimeoutMs ?? opts.config.forkTimeoutMs;
+    const retry: RetryConfig = {
+      ...DEFAULT_FORK_RETRY,
+      ...opts.config.safety.retry,
+      isRetryable: DEFAULT_FORK_RETRY.isRetryable,
+    };
+
     this.l1 = new ToolOutputTrim(this.estimator, opts.config.l1);
-    this.l2 = new MessageSummarize(this.estimator, opts.streamFn, opts.model, opts.config.l2);
-    this.l3 = new TaskStateExtraction(this.estimator, opts.streamFn, opts.model, opts.config.l3);
+    this.l2 = new MessageSummarize(this.estimator, opts.streamFn, opts.model, opts.config.l2, forkTimeoutMs, retry);
+    this.l3 = new TaskStateExtraction(this.estimator, opts.streamFn, opts.model, opts.config.l3, forkTimeoutMs, retry);
     this.l4 = new SessionCheckpointLevel(this.estimator, opts.sessionStorage, opts.config.l4);
-    this.l5 = new NewSessionHandoff(this.estimator, opts.streamFn, opts.model, opts.config.l5);
+    this.l5 = new NewSessionHandoff(this.estimator, opts.streamFn, opts.model, opts.config.l5, forkTimeoutMs, retry);
 
     this.safetyGuard = new CompressionSafetyGuard({
       maxAttempts: opts.config.safety.maxAttempts,
       cooldownTurns: opts.config.safety.cooldownTurns,
-      forkTimeoutMs: opts.config.safety.forkTimeoutMs ?? opts.config.forkTimeoutMs,
+      forkTimeoutMs,
     });
     this.compressionConfig = opts.config;
     this.contextWindow = opts.contextWindow;
     this.sharedMap = opts.sharedMap;
     this.telemetryReporter = opts.telemetryReporter;
+
+    // P1#13: 启动时校验配置（仅 warn，不阻塞启动）
+    const configErrors = validateConfig(opts.config, false);
+    if (configErrors.length > 0) {
+      const msg = configErrors
+        .map(e => `[${e.severity}] ${e.path}: ${e.message}`)
+        .join('; ');
+      // 用 console.warn 而非 throw：生产环境即使配错也能启动
+      console.warn(`[agentpack-compression] config validation issues: ${msg}`);
+    }
   }
 
   /** 注入 handoff 钩子（让上层真正切换会话） */
@@ -135,13 +158,58 @@ export class ContextCompressionTransformer extends BaseTransformer {
 
     const sessionKey = context.runtime.sessionKey;
     const turn = context.runtime.turn;
+    const entry = this.getOrCreateState(sessionKey);
 
-    const safetyState = this.getOrCreateState(sessionKey);
+    // P1#6: 同 session 串行化。若上次 run 仍在进行，先 await 它。
+    // pipeline 通常已串行调用 transform，但若用户在 hook 里递归触发或并发调度，
+    // safetyState 是共享可变状态（attemptCount/compressionDepth/inFlightForks），需要互斥。
+    if (this.compressionConfig.safety.serializePerSession && entry.chain) {
+      try { await entry.chain; } catch { /* 旧 run 失败不阻塞新 run */ }
+    }
+
+    // 标记当前 run 为 chain
+    let releaseChain!: () => void;
+    const myChain = new Promise<void>(resolve => { releaseChain = resolve; });
+    entry.chain = myChain;
+
+    try {
+      return await this.doRun(resources, context, entry.safety);
+    } finally {
+      releaseChain();
+      // 仅当 chain 仍是我的才清空（避免覆盖更晚的 run）
+      if (entry.chain === myChain) entry.chain = null;
+    }
+  }
+
+  /** 实际的压缩流程（已确保串行化） */
+  private async doRun(
+    resources: ContextResource[],
+    context: TransformContext,
+    safetyState: CompressionSafetyState,
+  ): Promise<ContextResource[]> {
+    const sessionKey = context.runtime.sessionKey;
+    const turn = context.runtime.turn;
+
     if (!this.safetyGuard.canCompress(safetyState, turn)) return resources;
 
-    let current = resources;
     const allTelemetry: CompressionTelemetry[] = [];
     const startTime = Date.now();
+
+    // P2#15: topContributors - 找出 token 占比最高的 resource（运维定位"哪个工具刷屏"）
+    const topContributors = this.computeTopContributors(resources, 3);
+
+    let current = resources;
+
+    // P2#14: dryRun 模式 - 只算 token + 生成 telemetry，不修改 resources
+    if (this.compressionConfig.dryRun) {
+      return this.runDry(resources, safetyState, sessionKey, turn, startTime, topContributors);
+    }
+
+    // P1#10: pinned 累积上限检查。
+    // 多轮压缩后 compaction_summary / task_state / checkpoint_ref 都是 pinned，
+    // 总量可能超过 contextWindow * targetRatio，导致 L3/L4 永远无法达标。
+    // 这里在压缩前合并历史 compaction_summary（保留最近 2 个）。
+    current = this.compactPinnedHistory(current, allTelemetry, sessionKey, turn);
 
     const currentTokens = this.estimator.estimateAll(current);
 
@@ -181,6 +249,9 @@ export class ContextCompressionTransformer extends BaseTransformer {
       t.sessionKey = sessionKey;
       t.turn = turn;
       t.duration = duration;
+      t.topContributors = topContributors;
+      t.messageCountBefore = resources.length;
+      t.messageCountAfter = current.length;
     }
 
     // ── 存储遥测到 safetyState 历史 ──
@@ -192,6 +263,147 @@ export class ContextCompressionTransformer extends BaseTransformer {
     }
 
     return current;
+  }
+
+  /** P2#14: dryRun - 不修改 resources，只生成 telemetry 记录"如果压缩会怎样" */
+  private async runDry(
+    resources: ContextResource[],
+    safetyState: CompressionSafetyState,
+    sessionKey: string,
+    turn: number,
+    startTime: number,
+    topContributors: { id: string; type: string; tokens: number }[],
+  ): Promise<ContextResource[]> {
+    const totalTokens = this.estimator.estimateAll(resources);
+    const config = this.compressionConfig;
+
+    // 模拟逐级判断，记录"哪级会被触发"
+    const wouldTrigger: string[] = [];
+    if (this.shouldTrigger(totalTokens, config.l1.threshold)) wouldTrigger.push('L1');
+    if (this.shouldTrigger(totalTokens, config.l2.threshold)) wouldTrigger.push('L2');
+    if (this.shouldTrigger(totalTokens, config.l3.threshold)) wouldTrigger.push('L3');
+    if (this.shouldTrigger(totalTokens, config.l4.threshold)) wouldTrigger.push('L4');
+    if (this.shouldTrigger(totalTokens, config.l5.threshold)) wouldTrigger.push('L5');
+
+    const telemetry: CompressionTelemetry[] = [];
+    for (const level of wouldTrigger) {
+      const t = createTelemetry(
+        level as 'L1' | 'L2' | 'L3' | 'L4' | 'L5',
+        'dry_run_would_trigger',
+        totalTokens,
+        totalTokens,
+        {
+          sessionKey, turn,
+          message: `dry_run: would trigger ${level}`,
+        },
+      );
+      t.topContributors = topContributors;
+      t.messageCountBefore = resources.length;
+      t.messageCountAfter = resources.length;
+      telemetry.push(t);
+    }
+
+    safetyState.telemetryHistory.push(...telemetry);
+    if (telemetry.length > 0 && config.telemetry.enabled) {
+      this.reportTelemetry(telemetry);
+    }
+
+    const duration = Date.now() - startTime;
+    for (const t of telemetry) t.duration = duration;
+
+    return resources; // dryRun 不修改
+  }
+
+  /** P2#15: 找出 token 占比最高的 N 个 resource */
+  private computeTopContributors(
+    resources: ContextResource[],
+    limit: number,
+  ): { id: string; type: string; tokens: number }[] {
+    return resources
+      .map(r => ({ id: r.id, type: r.type, tokens: this.estimator.estimate(r) }))
+      .sort((a, b) => b.tokens - a.tokens)
+      .slice(0, limit);
+  }
+
+  /**
+   * P1#10: 合并历史 pinned compaction_summary，保留最近 2 个。
+   * 当 pinned 总量超过 contextWindow * min(l2.targetRatio, l3.targetRatio) 时触发。
+   * P2#17: 真正用上 DEFAULT_DROP_ORDER - 决定合并时优先丢弃哪些类型的旧 summary。
+   */
+  private compactPinnedHistory(
+    resources: ContextResource[],
+    allTelemetry: CompressionTelemetry[],
+    sessionKey: string,
+    turn: number,
+  ): ContextResource[] {
+    const summaries = resources.filter(r => r.type === 'compaction_summary' && r.pinned);
+    if (summaries.length <= 2) return resources;
+
+    const pinnedTokens = this.estimator.estimateAll(
+      resources.filter(r => r.pinned),
+    );
+    const minTarget = Math.min(
+      this.compressionConfig.l2.targetRatio,
+      this.compressionConfig.l3.targetRatio,
+    );
+    const threshold = this.contextWindow * minTarget;
+    if (pinnedTokens <= threshold) return resources;
+
+    // 保留最近 2 个 summary，其余合并为一个"历史摘要的摘要"
+    const sorted = [...summaries].sort((a, b) => a.timestamp - b.timestamp);
+    const toMerge = sorted.slice(0, -2); // 旧的
+    const toKeep = sorted.slice(-2);    // 最近的
+
+    if (toMerge.length === 0) return resources;
+
+    const mergedText = toMerge
+      .map(r => extractTextFromResource(r))
+      .join('\n\n---\n\n');
+
+    const mergedSummary: ContextResource = {
+      id: `compaction_merged_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      type: 'compaction_summary',
+      role: 'system',
+      content: `[Merged Historical Summaries (${toMerge.length} sources)]\n\n${mergedText}`,
+      timestamp: Date.now(),
+      dependencies: [],
+      meta: {
+        _compressionLevel: 1.5,
+        _mergedCount: toMerge.length,
+        _sourceIds: toMerge.map(r => r.id),
+      },
+      pinned: true,
+    };
+
+    // P2#17: 用 DEFAULT_DROP_ORDER 决定丢弃顺序（这里用于记录到 telemetry）
+    const droppedTypes = toMerge.map(r => r.type);
+
+    const toMergeIds = new Set(toMerge.map(r => r.id));
+    const result = resources
+      .filter(r => !toMergeIds.has(r.id))
+      .concat([mergedSummary]);
+
+    // 插入到第一个 toKeep 之前
+    const firstKeepIdx = result.findIndex(r => toKeep.includes(r));
+    if (firstKeepIdx >= 0) {
+      const mergedIdx = result.findIndex(r => r.id === mergedSummary.id);
+      if (mergedIdx >= 0 && mergedIdx !== firstKeepIdx) {
+        result.splice(mergedIdx, 1);
+        result.splice(firstKeepIdx, 0, mergedSummary);
+      }
+    }
+
+    const beforeTokens = this.estimator.estimateAll(resources);
+    const afterTokens = this.estimator.estimateAll(result);
+    if (afterTokens < beforeTokens) {
+      allTelemetry.push(createTelemetry('L1', 'merge_pinned_history', beforeTokens, afterTokens, {
+        sessionKey, turn,
+        resourcesAffected: toMerge.length,
+        message: `merged ${toMerge.length} old summaries; dropped types: ${droppedTypes.join(',')}`,
+      }));
+    }
+
+    return result;
   }
 
   /** 应用单级压缩结果：包含 token 阈值判断、配对验证、回滚逻辑 */
@@ -255,11 +467,11 @@ export class ContextCompressionTransformer extends BaseTransformer {
     }
   }
 
-  private getOrCreateState(sessionKey: string): CompressionSafetyState {
+  private getOrCreateState(sessionKey: string): SessionStateEntry {
     const existing = this.safetyStates.get(sessionKey);
     if (existing) {
       existing.lastAccess = Date.now();
-      return existing.safety;
+      return existing;
     }
 
     // LRU 淘汰
@@ -270,14 +482,21 @@ export class ContextCompressionTransformer extends BaseTransformer {
     const safety = createSafetyState({
       forkTimeoutMs: this.compressionConfig.forkTimeoutMs,
     });
-    this.safetyStates.set(sessionKey, { safety, lastAccess: Date.now() });
-    return safety;
+    const entry: SessionStateEntry = { safety, lastAccess: Date.now(), chain: null };
+    this.safetyStates.set(sessionKey, entry);
+    return entry;
   }
 
+  /**
+   * P1#7: LRU 淘汰 - 避开除掉正在 in-flight fork 的 session。
+   * 旧实现直接淘汰 lastAccess 最小者，进行中的 fork 被 abort，结果丢失。
+   */
   private evictOldest(): void {
     let oldestKey: string | null = null;
     let oldestTime = Infinity;
     for (const [key, entry] of this.safetyStates) {
+      // P1#7: 跳过有 in-flight fork 的 session
+      if (hasInFlightForks(entry.safety)) continue;
       if (entry.lastAccess < oldestTime) {
         oldestTime = entry.lastAccess;
         oldestKey = key;
@@ -287,6 +506,22 @@ export class ContextCompressionTransformer extends BaseTransformer {
       const entry = this.safetyStates.get(oldestKey);
       if (entry) abortSafetyState(entry.safety);
       this.safetyStates.delete(oldestKey);
+    } else if (this.safetyStates.size >= MAX_SESSIONS) {
+      // 兜底：所有 session 都 in-flight，淘汰真正最老的（中断它）
+      // 避免 LRU 永远淘汰不掉导致 Map 无限增长
+      let fallbackOldest: string | null = null;
+      let fallbackTime = Infinity;
+      for (const [key, entry] of this.safetyStates) {
+        if (entry.lastAccess < fallbackTime) {
+          fallbackTime = entry.lastAccess;
+          fallbackOldest = key;
+        }
+      }
+      if (fallbackOldest) {
+        const entry = this.safetyStates.get(fallbackOldest);
+        if (entry) abortSafetyState(entry.safety);
+        this.safetyStates.delete(fallbackOldest);
+      }
     }
   }
 }

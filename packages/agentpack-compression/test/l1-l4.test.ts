@@ -17,8 +17,13 @@ import { ToolOutputTrim } from '../src/l1-tool-output-trim';
 import { MessageSummarize } from '../src/l2-message-summarize';
 import { TaskStateExtraction } from '../src/l3-task-state-extraction';
 import { SessionCheckpointLevel } from '../src/l4-session-checkpoint';
+import { NewSessionHandoff } from '../src/l5-new-session-handoff';
 import { CharHeuristicEstimator } from '../src/token-estimator';
 import { createSafetyState } from '../src/safety';
+import { DEFAULT_FORK_RETRY } from '../src/retry';
+
+/** P0#1/#4: 测试统一注入的单次 fork 超时与重试配置 */
+const FORK_TIMEOUT_MS = 30000;
 
 // ─── 工具 ─────────────────────────────────────────────────────────
 
@@ -145,7 +150,7 @@ test('L2 切分: 保留夹在中间的 system_message', async () => {
     enabled: true, threshold: 0.75, targetRatio: 0.6,
     forkModel: undefined, forkMaxTokens: 512,
     minResourcesToCompress: 2, protectedRecentCount: 1, maxCompressionDepth: 3,
-  });
+  }, FORK_TIMEOUT_MS, DEFAULT_FORK_RETRY);
 
   // resources = [u1, system_msg(中间), a1, tr1, u2(recent 保护)]
   const resources = [
@@ -173,7 +178,7 @@ test('L2 fork 失败: 不修改 resources，记失败遥测', async () => {
     enabled: true, threshold: 0.75, targetRatio: 0.6,
     forkModel: undefined, forkMaxTokens: 512,
     minResourcesToCompress: 2, protectedRecentCount: 1, maxCompressionDepth: 3,
-  });
+  }, FORK_TIMEOUT_MS, DEFAULT_FORK_RETRY);
 
   const resources = [
     makeResource('u1', 'user_message', 'r1'),
@@ -205,7 +210,7 @@ test('L2 forkModel: 克隆 Model 并覆盖 id 和 maxTokens', async () => {
     enabled: true, threshold: 0.75, targetRatio: 0.6,
     forkModel: 'fork-model-id', forkMaxTokens: 333,
     minResourcesToCompress: 2, protectedRecentCount: 1, maxCompressionDepth: 3,
-  });
+  }, FORK_TIMEOUT_MS, DEFAULT_FORK_RETRY);
 
   const resources = [
     makeResource('u1', 'user_message', 'r1'),
@@ -231,7 +236,7 @@ test('L3: 保留 pinned 资源（compaction_summary）', async () => {
     enabled: true, threshold: 0.85, targetRatio: 0.4,
     forkModel: undefined, forkMaxTokens: 1024,
     protectedRecentCount: 2,
-  });
+  }, FORK_TIMEOUT_MS, DEFAULT_FORK_RETRY);
 
   // resources 含一个 pinned compaction_summary（模拟 L2 已跑过）
   const compactionSummary = makeResource('cs1', 'compaction_summary', 'previous summary', { pinned: true, role: 'system' });
@@ -370,4 +375,172 @@ test('L4: 无 sessionStorage 时记失败遥测并跳过', async () => {
 
   assert.equal(result.resources, resources);
   assert.ok(result.telemetry.some(t => t.failed && t.message?.includes('no_session_storage')));
+});
+
+// ─── P2#18 补充测试 ──────────────────────────────────────────────
+
+test('L3 JSON 解析失败: 记失败遥测，不替换 resources', async () => {
+  const est = new CharHeuristicEstimator();
+  // fork 返回非 JSON 自由文本（模拟模型没按 prompt 输出）
+  const l3 = new TaskStateExtraction(est, makeMockStreamFn('I cannot extract state because...'), mockModel, {
+    enabled: true, threshold: 0.85, targetRatio: 0.4,
+    forkModel: undefined, forkMaxTokens: 1024,
+    protectedRecentCount: 2,
+  }, FORK_TIMEOUT_MS, DEFAULT_FORK_RETRY);
+
+  const resources = [
+    makeResource('u1', 'user_message', 'r1'),
+    makeResource('a1', 'assistant_message', 'a1'),
+  ];
+
+  const safety = createSafetyState({ forkTimeoutMs: 0 });
+  const result = await l3.compress(resources, 1000, safety, 's1', 1);
+
+  // P1#12 修复：解析失败必须返回原 resources，不能把自由文本塞进 originalRequest
+  assert.equal(result.resources, resources);
+  assert.equal(result.telemetry.length, 1);
+  assert.equal(result.telemetry[0].failed, true);
+  // compressionDepth 不应增加
+  assert.equal(safety.compressionDepth, 0);
+});
+
+test('L4 recover: 保留 taskState 结构化字段', async () => {
+  const est = new CharHeuristicEstimator();
+  const storage = new MockSessionStorage();
+  const l4 = new SessionCheckpointLevel(est, storage, {
+    enabled: true, threshold: 0.92, targetRatio: 0.25,
+    checkpointStorage: 'memory', minWorkingSet: 1,
+    failOnPersistError: true,
+  });
+
+  const taskState = {
+    originalRequest: 'build feature X',
+    currentPhase: 'implementing',
+    completedSteps: ['setup'],
+    pendingSteps: ['test'],
+    keyDecisions: ['use ts'],
+    constraints: [],
+    toolResults: [],
+    errors: [],
+    variables: {},
+  };
+  const taskStateResource = makeResource('ts1', 'custom', taskState, {
+    pinned: true, role: 'taskState',
+  });
+  const resources = [
+    taskStateResource,
+    makeResource('u1', 'user_message', 'r1'),
+  ];
+
+  const safety = createSafetyState({ forkTimeoutMs: 0 });
+  await l4.compress(resources, 1000, safety, 's1', 1);
+
+  const checkpointId = safety.checkpointId;
+  assert.ok(checkpointId, '应生成 checkpointId');
+
+  const recovered = await l4.recover(checkpointId!);
+  assert.ok(recovered, '应能恢复');
+  // P0#2 修复：taskState 不再丢失
+  assert.ok(recovered!.taskState, 'recover 应保留 taskState');
+  assert.equal(recovered!.taskState!.originalRequest, 'build feature X');
+  assert.equal(recovered!.resourceCount, 2);
+
+  // meta message 应存在于持久化存储中
+  const stored = storage.saved.get(`checkpoint_${checkpointId}`);
+  assert.ok(stored, 'checkpoint 应已持久化');
+  const storedLast = stored!.messages[stored!.messages.length - 1];
+  assert.equal(
+    JSON.parse(String(storedLast.content)).__checkpointMeta,
+    true,
+    '存储末尾应有 __checkpointMeta message',
+  );
+
+  // recover 返回的 fullMessages 不应含 meta message
+  const hasMeta = recovered!.fullMessages.some(m => {
+    if (typeof m.content !== 'string') return false;
+    try { return JSON.parse(m.content).__checkpointMeta === true; } catch { return false; }
+  });
+  assert.equal(hasMeta, false, 'recover 应移除 meta message');
+});
+
+// ─── L5 测试 ──────────────────────────────────────────────────────
+
+/** L5 测试用的快速重试配置（避免 500ms 退避拖慢测试） */
+const FAST_RETRY = { ...DEFAULT_FORK_RETRY, retries: 1, baseMs: 5, maxMs: 20 };
+
+test('L5 fork 失败: 使用 fallback 文档并标记 fallback=true', async () => {
+  const est = new CharHeuristicEstimator();
+  const l5 = new NewSessionHandoff(est, makeFailingStreamFn(), mockModel, {
+    enabled: true, threshold: 0.95,
+    forkModel: undefined, forkMaxTokens: 512,
+  }, FORK_TIMEOUT_MS, FAST_RETRY);
+
+  const resources = [
+    makeResource('u1', 'user_message', 'build a calculator app'),
+  ];
+
+  const safety = createSafetyState({ forkTimeoutMs: 0 });
+  const result = await l5.compress(resources, 1000, safety, 's1', 1);
+
+  assert.ok(result.handoff, '应生成 handoff');
+  assert.equal(result.handoff!.fallback, true, 'fork 失败应标记 fallback');
+  // fallback 文档应包含原始请求
+  assert.match(result.handoff!.handoffDocument, /build a calculator app/);
+  // 输出应包含 handoff resource
+  assert.ok(result.resources.some(r => r.meta._isHandoff), '结果应含 handoff 资源');
+  assert.equal(result.resources.some(r => r.meta._fallback), true);
+  // handoff 完成后 safety 标记
+  assert.equal(safety.handoffCompleted, true);
+});
+
+test('L5 fork 成功: 生成真实 handoff 文档', async () => {
+  const est = new CharHeuristicEstimator();
+  const l5 = new NewSessionHandoff(est, makeMockStreamFn('HANDOFF: continue building the calculator'), mockModel, {
+    enabled: true, threshold: 0.95,
+    forkModel: 'fork-model', forkMaxTokens: 512,
+  }, FORK_TIMEOUT_MS, DEFAULT_FORK_RETRY);
+
+  const resources = [
+    makeResource('u1', 'user_message', 'build a calculator app'),
+  ];
+
+  const safety = createSafetyState({ forkTimeoutMs: 0 });
+  const result = await l5.compress(resources, 1000, safety, 's1', 1);
+
+  assert.ok(result.handoff, '应生成 handoff');
+  assert.equal(result.handoff!.fallback, false, 'fork 成功不应标记 fallback');
+  assert.match(result.handoff!.handoffDocument, /HANDOFF: continue/);
+  // handoffId / newSessionId 应有随机后缀（P1#8）
+  assert.match(result.handoff!.handoffId, /^handoff_/);
+  assert.ok(result.handoff!.newSessionId.length > result.handoff!.originalSessionId.length);
+});
+
+test('L5 超窗: handoff 文档被硬截断（P1#9）', async () => {
+  const est = new CharHeuristicEstimator();
+  // 返回超长 handoff doc，contextWindow 极小强制触发硬截断
+  const l5 = new NewSessionHandoff(est, makeMockStreamFn('X'.repeat(2000)), mockModel, {
+    enabled: true, threshold: 0.95,
+    forkModel: undefined, forkMaxTokens: 512,
+  }, FORK_TIMEOUT_MS, DEFAULT_FORK_RETRY);
+
+  const resources = [
+    makeResource('u1', 'user_message', 'build a calculator app'),
+  ];
+
+  const safety = createSafetyState({ forkTimeoutMs: 0 });
+  // contextWindow=100，handoff doc 2000 chars 必然超窗
+  const result = await l5.compress(resources, 100, safety, 's1', 1);
+
+  // 结果应仍 <= contextWindow（硬截断生效），或至少在截断标记
+  const handoffResource = result.resources.find(r => r.meta._isHandoff);
+  assert.ok(handoffResource, '应有 handoff 资源');
+  const content = typeof handoffResource!.content === 'string'
+    ? handoffResource!.content
+    : JSON.stringify(handoffResource!.content);
+  // 要么截断标记出现，要么整体仍超窗但文档已缩短
+  const totalTokens = est.estimateAll(result.resources);
+  assert.ok(
+    content.includes('[... handoff truncated') || totalTokens <= 100,
+    '超窗 handoff 应被截断或结果已在窗内',
+  );
 });

@@ -10,6 +10,8 @@ import {
   abortSafetyState,
   buildToolPairMap,
   isToolPairComplete,
+  createForkAbortController,
+  runFork,
 } from '../src/safety';
 import type { ContextResource } from 'agentpack';
 
@@ -79,38 +81,90 @@ test('canCompress: handoffCompleted 后永远拒绝', () => {
   assert.equal(guard.canCompress(state, 2), false);
 });
 
-test('createSafetyState: forkTimeoutMs > 0 时创建 AbortController', () => {
+test('createSafetyState: sessionAbortController 总是存在且不自动 abort', () => {
+  // P0#1 修复：createSafetyState 不再启动超时 timer（那会导致 30s 后永久 abort 整个 session）。
+  // sessionAbortController 仅用于外部主动取消（LRU 淘汰 / 用户中断）。
   const state = createSafetyState({ forkTimeoutMs: 100 });
-  assert.ok(state.abortController, 'abortController 应被创建');
-  assert.equal(state.abortController?.signal.aborted, false);
-  // 等待超时触发
+  assert.ok(state.sessionAbortController, 'sessionAbortController 应被创建');
+  assert.equal(state.sessionAbortController?.signal.aborted, false);
+  assert.equal(state.inFlightForks, 0);
+
+  // 等待超过 forkTimeoutMs：session 级 controller 不应被自动 abort
   return new Promise<void>((resolve) => {
     setTimeout(() => {
-      assert.equal(state.abortController?.signal.aborted, true, '超时后应 abort');
+      assert.equal(state.sessionAbortController?.signal.aborted, false, 'session 级不应自动 abort');
       resolve();
     }, 150);
   });
 });
 
-test('createSafetyState: forkTimeoutMs=0 仍创建 AbortController（但不设超时）', () => {
+test('createForkAbortController: 单次 fork 超时自动 abort', () => {
   const state = createSafetyState({ forkTimeoutMs: 0 });
-  // forkTimeoutMs=0 表示不自动超时，但 AbortController 仍存在（可主动 abort）
-  assert.ok(state.abortController, 'abortController 应被创建（用于主动 abort）');
-  assert.equal(state.abortController?.signal.aborted, false);
+  const { signal, cleanup } = createForkAbortController(state, 50);
+  assert.ok(signal, '应返回 signal');
 
-  // 验证不会自动 abort：等待一段时间后仍未 aborted
   return new Promise<void>((resolve) => {
     setTimeout(() => {
-      assert.equal(state.abortController?.signal.aborted, false, 'forkTimeoutMs=0 时不应自动 abort');
+      assert.equal(signal!.aborted, true, '单次 fork 超过 50ms 应被 abort');
+      cleanup();
+      resolve();
+    }, 80);
+  });
+});
+
+test('createForkAbortController: cleanup 后不再触发 abort', () => {
+  const state = createSafetyState({ forkTimeoutMs: 0 });
+  const { signal, cleanup } = createForkAbortController(state, 50);
+  assert.equal(signal!.aborted, false);
+  cleanup(); // 模拟 fork 正常结束
+
+  return new Promise<void>((resolve) => {
+    setTimeout(() => {
+      assert.equal(signal!.aborted, false, 'cleanup 后不应再触发 abort');
+      resolve();
+    }, 80);
+  });
+});
+
+test('createForkAbortController: forkTimeoutMs=0 不自动超时', () => {
+  const state = createSafetyState({ forkTimeoutMs: 0 });
+  const { signal, cleanup } = createForkAbortController(state, 0);
+  return new Promise<void>((resolve) => {
+    setTimeout(() => {
+      assert.equal(signal!.aborted, false, 'forkTimeoutMs=0 不应自动 abort');
+      cleanup();
       resolve();
     }, 50);
   });
 });
 
-test('abortSafetyState: 主动 abort', () => {
-  const state = createSafetyState({ forkTimeoutMs: 1000 });
+test('createForkAbortController: session abort 时 fork signal 同步 abort', () => {
+  const state = createSafetyState({ forkTimeoutMs: 0 });
+  const { signal, cleanup } = createForkAbortController(state, 5000);
+  assert.equal(signal!.aborted, false);
   abortSafetyState(state);
-  assert.equal(state.abortController?.signal.aborted, true);
+  assert.equal(signal!.aborted, true, 'session abort 后 fork signal 应同步 abort');
+  cleanup();
+});
+
+test('runFork: 自动管理 inFlightForks 计数', async () => {
+  const state = createSafetyState({ forkTimeoutMs: 0 });
+  const result = await runFork(state, 5000, async () => 'ok');
+  assert.equal(result, 'ok');
+  assert.equal(state.inFlightForks, 0, 'fork 结束后 inFlightForks 应归零');
+});
+
+test('runFork: fork 抛错时 inFlightForks 仍归零', async () => {
+  const state = createSafetyState({ forkTimeoutMs: 0 });
+  await assert.rejects(runFork(state, 5000, async () => { throw new Error('boom'); }));
+  assert.equal(state.inFlightForks, 0, '异常路径 inFlightForks 也应归零');
+});
+
+test('abortSafetyState: 主动 abort session', () => {
+  const state = createSafetyState({ forkTimeoutMs: 1000 });
+  assert.equal(state.sessionAbortController?.signal.aborted, false);
+  abortSafetyState(state);
+  assert.equal(state.sessionAbortController?.signal.aborted, true);
 });
 
 test('validateToolPairing: 完整配对通过', () => {
@@ -165,4 +219,67 @@ test('isToolPairComplete: assistant_message 无对应 tool_result 返回 false',
   ];
   const map = buildToolPairMap(resources);
   assert.equal(isToolPairComplete(resources[0], resources, map), false);
+});
+
+// ─── P0#3 双向校验补充 ───────────────────────────────────────────
+
+/** 构造带 meta.toolCallId 的资源（模拟框架权威标记） */
+function makeResourceWithMeta(
+  id: string,
+  type: ContextResource['type'],
+  toolCallId: string,
+): ContextResource {
+  return {
+    id,
+    type,
+    role: 'system',
+    content: '',
+    timestamp: 0,
+    dependencies: [], // 故意留空，验证 meta 权威
+    meta: { toolCallId },
+    pinned: false,
+  };
+}
+
+test('validateToolPairing: assistant_message 有 toolCallId 依赖但无 tool_result 失败（悬空 tool_call）', () => {
+  const guard = new CompressionSafetyGuard({ maxAttempts: 5, cooldownTurns: 1 });
+  const resources = [
+    makeResource('a1', 'assistant_message', ['call_1']), // 发起方，但无对应 tool_result
+  ];
+  assert.equal(guard.validateToolPairing(resources), false);
+});
+
+test('validateToolPairing: meta.toolCallId 权威标记 - 完整配对通过', () => {
+  const guard = new CompressionSafetyGuard({ maxAttempts: 5, cooldownTurns: 1 });
+  // assistant_message 与 tool_result 都用 meta.toolCallId 标记同一 call
+  const resources = [
+    makeResourceWithMeta('a1', 'assistant_message', 'call_1'),
+    makeResourceWithMeta('tr1', 'tool_result', 'call_1'),
+  ];
+  assert.equal(guard.validateToolPairing(resources), true);
+});
+
+test('validateToolPairing: meta.toolCallId 权威标记 - tool_result 无发起方失败', () => {
+  const guard = new CompressionSafetyGuard({ maxAttempts: 5, cooldownTurns: 1 });
+  const resources = [
+    makeResourceWithMeta('tr1', 'tool_result', 'call_1'), // tool_result 无对应发起方
+  ];
+  assert.equal(guard.validateToolPairing(resources), false);
+});
+
+test('validateToolPairing: meta.toolCallId 权威标记 - 悬空发起方失败', () => {
+  const guard = new CompressionSafetyGuard({ maxAttempts: 5, cooldownTurns: 1 });
+  const resources = [
+    makeResourceWithMeta('a1', 'assistant_message', 'call_1'), // 发起方无 tool_result
+  ];
+  assert.equal(guard.validateToolPairing(resources), false);
+});
+
+test('validateToolPairing: assistant_message 纯文本（无 toolCallId）通过', () => {
+  const guard = new CompressionSafetyGuard({ maxAttempts: 5, cooldownTurns: 1 });
+  const resources = [
+    makeResource('u1', 'user_message'),
+    makeResource('a1', 'assistant_message'), // 纯文本回复
+  ];
+  assert.equal(guard.validateToolPairing(resources), true);
 });
