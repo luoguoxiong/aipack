@@ -3,20 +3,11 @@
   "version": "0.0.2",
   "description": "A lightweight personal AI assistant framework",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "bin": {
-    "kobot": "dist/cli.js"
-  },
   "scripts": {
-    "build": "tsup",
     "build:agentpack": "pnpm --filter agentpack build",
-    "dev": "tsx src/cli.ts",
-    "start": "node --import tsx dist/cli.js",
     "agent": "tsx packages/agentpack/test/start.js",
     "example:deepseek": "tsx examples/deepseek.ts",
     "example:agent-memory": "tsx examples/agent-memory.ts",
-    "test": "node --import tsx --test tests/*.test.ts",
     "lint": "tsc --noEmit",
     "example:coding": "tsx packages/agentpack-coding/examples/round-trip.ts",
     "example:coding:llm": "tsx packages/agentpack-coding/examples/real-llm.ts"
@@ -31,28 +22,12 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "agentpack": "workspace:*",
-    "@types/express": "^5.0.6",
-    "axios": "^1.7.0",
-    "commander": "^12.1.0",
-    "cron-parser": "^4.9.0",
-    "express": "^5.2.1",
-    "js-yaml": "^4.1.0",
-    "open": "^10.0.0",
-    "partial-json": "^0.1.7",
-    "pino": "^9.0.0",
-    "pino-pretty": "^11.0.0",
-    "pino-roll": "^4.0.0",
-    "@sinclair/typebox": "^0.34.0",
-    "ws": "^8.18.0"
+    "agentpack": "workspace:*"
   },
   "devDependencies": {
-    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.12.0",
-    "@types/ws": "^8.5.12",
     "agentpack-coding": "workspace:*",
     "agentpack-cli": "workspace:*",
-    "tsup": "^8.5.1",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0"
   }

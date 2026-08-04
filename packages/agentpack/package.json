@@ -38,7 +38,8 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@sinclair/typebox": "^0.34.0"
+    "@sinclair/typebox": "^0.34.0",
+    "partial-json": "^0.1.7"
   },
   "devDependencies": {
     "@types/node": "^20.12.0",
