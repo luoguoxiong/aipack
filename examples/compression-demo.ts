@@ -1,189 +1,196 @@
 /**
- * 根目录示例：使用 agentpack-compression 实现多级上下文压缩
+ * 根目录示例：使用 agentpack-compression + DeepSeek 模型实现多级上下文压缩
  *
  * 演示五级渐进式降级：
  *   L1: ToolOutputTrim       工具输出裁剪（thinking 剥离 + tool_result 裁剪）
- *   L2: MessageSummarize     旧消息摘要（Fork Agent）
+ *   L2: MessageSummarize     旧消息摘要（Fork Agent 调用真实 DeepSeek）
  *   L3: TaskStateExtraction  任务状态提取（结构化 JSON）
  *   L4: SessionCheckpoint     会话检查点（持久化 + 激进缩减）
  *   L5: NewSessionHandoff    新会话交接（保底重置）
  *
- * 运行（零依赖、零 API Key，用假 streamFn 模拟）：
- *   npx tsx examples/compression-demo.ts
- *
- * 接入真实 LLM（可选，参考 deepseek.ts 的 streamFn 构造）：
+ * 运行:
  *   DEEPSEEK_API_KEY=sk-xxx npx tsx examples/compression-demo.ts
+ * 换用推理模型:
+ *   DEEPSEEK_API_KEY=sk-xxx DEEPSEEK_MODEL=deepseek-reasoner npx tsx examples/compression-demo.ts
+ * 自定义模拟窗口大小（用于快速触发压缩，不传则用模型真实 contextWindow）:
+ *   DEEPSEEK_API_KEY=sk-xxx DEMO_CONTEXT_WINDOW=4000 npx tsx examples/compression-demo.ts
  */
 
 import {
   createRuntime,
   createRequest,
   extractText,
-  createEmptyUsage,
   createMemorySessionStorage,
   createDefaultTransformers,
 } from 'agentpack';
-import type {
-  StreamFn,
-  Context,
-  Model,
-  AssistantMessage,
-  ContentBlock,
-  Tool,
-} from 'agentpack';
+import type { Model, ContentBlock, Tool } from 'agentpack';
+import { adaptAiModel, createStreamFnFromAi } from 'agentpack/adapters/ai';
+import { getBuiltinModel, hasProviderConfigured } from 'agentpack/ai';
 import {
   createCompressionTransformer,
   loadCompressionConfig,
 } from 'agentpack-compression';
 
-// ─── 假模型：极小 contextWindow 以快速触发压缩 ─────────────────────
+async function main() {
+  // ── 1. 从 agentpack/ai 内置目录获取 DeepSeek 模型 ──────────────
+  const modelId = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+  const aiModel = getBuiltinModel('deepseek', modelId);
+  if (!aiModel) {
+    console.error(`找不到内置模型 deepseek/${modelId}`);
+    console.error('可选: deepseek-chat / deepseek-reasoner / deepseek-v4-flash');
+    process.exit(1);
+  }
 
-const FAKE_MODEL: Model = {
-  id: 'demo-model',
-  name: 'Demo Model',
-  provider: 'demo',
-  contextWindow: 800,   // 小窗口：~3200 字符即满
-  maxTokens: 1024,
-  reasoning: false,
-};
+  // ── 2. 启动前检查 API Key ───────────────────────────────────────
+  if (!hasProviderConfigured('deepseek')) {
+    console.error('⚠️  未检测到 DEEPSEEK_API_KEY，无法调用真实模型。');
+    console.error('   设置环境变量后重试: DEEPSEEK_API_KEY=sk-xxx npx tsx examples/compression-demo.ts');
+    process.exit(1);
+  }
 
-// ─── 假 streamFn：区分 Fork Agent 调用与正常对话 ───────────────────
+  // ── 3. 适配为框架 Model ─────────────────────────────────────────
+  const realModel = adaptAiModel(aiModel);
 
-function makeFakeStreamFn(): StreamFn {
-  let toolCallCounter = 0;
+  // 演示用：允许通过环境变量覆盖 contextWindow，用小窗口快速触发压缩
+  // 不设置 DEMO_CONTEXT_WINDOW 则使用模型真实 contextWindow（如 deepseek-chat 的 64K）
+  const demoContextWindow = process.env.DEMO_CONTEXT_WINDOW
+    ? Number(process.env.DEMO_CONTEXT_WINDOW)
+    : realModel.contextWindow;
 
-  return (_model: Model, ctx: Context) => {
-    return (async function* () {
-      const sysPrompt = ctx.systemPrompt;
+  const model: Model = { ...realModel, contextWindow: demoContextWindow };
 
-      // ── 检测 L2 Fork Agent（摘要请求） ──
-      if (sysPrompt.includes('context compression agent')) {
-        const summary = [
-          '## Context Summary',
-          `User is running a demo to test context compression.`,
-          `Previous interactions involved reading files and getting tool results.`,
-          '',
-          '## Key Decisions',
-          '- Demo is working correctly',
-          '',
-          '## Tool Results',
-          '- read_file: returned file content successfully',
-          '',
-          '## Pending Actions',
-          '- Continue testing compression levels',
-        ].join('\n');
-        yield { type: 'start' as const, partial: { content: [{ type: 'text' as const, text: '' }] } };
-        yield { type: 'text_delta' as const, delta: summary };
-        yield { type: 'done' as const, message: makeAssistant(_model, summary) };
-        return;
-      }
+  console.log('╔════════════════════════════════════════════════════╗');
+  console.log('║   agentpack-compression + DeepSeek 多级压缩演示    ║');
+  console.log('╚════════════════════════════════════════════════════╝');
+  console.log(`  模型: ${model.name} (${model.id})`);
+  console.log(`  contextWindow: ${model.contextWindow} tokens${demoContextWindow !== realModel.contextWindow ? ` (覆盖自 ${realModel.contextWindow})` : ''}`);
+  console.log(`  工具: read_file（返回 30 行内容，约 250 tokens/次）`);
+  console.log(`  预期: 多轮对话后逐步触发 L1 → L2 → L3+ 压缩\n`);
 
-      // ── 检测 L3 Fork Agent（任务状态提取） ──
-      if (sysPrompt.includes('task state extraction')) {
-        const taskState = JSON.stringify({
-          originalRequest: 'User is testing agentpack-compression multi-level context compression',
-          currentPhase: 'demonstration',
-          completedSteps: ['Started runtime', 'Executed tool calls', 'Triggered L1 and L2 compression'],
-          pendingSteps: ['Complete the demo'],
-          keyDecisions: ['Using fake model with small contextWindow'],
-          constraints: ['No real API key available'],
-          toolResults: [
-            { tool: 'read_file', status: 'success', summary: 'Returned file content' },
-          ],
-          errors: [],
-          variables: {},
-        }, null, 2);
-        yield { type: 'start' as const, partial: { content: [{ type: 'text' as const, text: '' }] } };
-        yield { type: 'text_delta' as const, delta: taskState };
-        yield { type: 'done' as const, message: makeAssistant(_model, taskState) };
-        return;
-      }
+  // ── 4. 加载压缩配置 ────────────────────────────────────────────
+  const compressionConfig = loadCompressionConfig({
+    l1: { threshold: 0.50, targetRatio: 0.40, toolResultMaxLines: 10, toolResultHeadLines: 3, toolResultTailLines: 3 },
+    l2: { threshold: 0.65, targetRatio: 0.50, protectedRecentCount: 4, minResourcesToCompress: 3 },
+    l3: { threshold: 0.78, targetRatio: 0.40, protectedRecentCount: 3 },
+    l4: { threshold: 0.88, targetRatio: 0.30, minWorkingSet: 2 },
+    l5: { threshold: 0.95 },
+  });
 
-      // ── 检测 L5 Fork Agent（会话交接） ──
-      if (sysPrompt.includes('session handoff')) {
-        const handoff = [
-          '## Original Task',
-          'Testing agentpack-compression package with 5-level progressive degradation.',
-          '',
-          '## What Was Done',
-          '- Created runtime with compression transformer',
-          '- Executed multiple tool calls to fill context',
-          '- Triggered L1 (tool output trim) and L2 (message summarize)',
-          '- Context still exceeded limits, triggering L3+',
-          '',
-          '## Current State',
-          'Context window exhausted after multiple compression attempts.',
-          '',
-          '## What Remains',
-          '- Continue the demo in a fresh session',
-          '',
-          '## Critical Context',
-          '- Using fake model with 800 token contextWindow',
-          '- All tool calls returned successfully',
-        ].join('\n');
-        yield { type: 'start' as const, partial: { content: [{ type: 'text' as const, text: '' }] } };
-        yield { type: 'text_delta' as const, delta: handoff };
-        yield { type: 'done' as const, message: makeAssistant(_model, handoff) };
-        return;
-      }
+  console.log(`  配置: L1>${(compressionConfig.l1.threshold * 100).toFixed(0)}% L2>${(compressionConfig.l2.threshold * 100).toFixed(0)}% L3>${(compressionConfig.l3.threshold * 100).toFixed(0)}% L4>${(compressionConfig.l4.threshold * 100).toFixed(0)}% L5>${(compressionConfig.l5.threshold * 100).toFixed(0)}%\n`);
 
-      // ── 正常对话：检查上一条消息是否为 toolResult ──
-      const lastMsg = ctx.messages[ctx.messages.length - 1];
-      const isAfterTool = lastMsg && (lastMsg as any).role === 'toolResult';
+  // ── 5. 创建压缩转换器 ───────────────────────────────────────────
+  // streamFn 复用真实 DeepSeek 适配器，Fork Agent 也会调用真实模型生成摘要
+  const streamFn = createStreamFnFromAi(aiModel);
+  const compressionTransformer = createCompressionTransformer({
+    config: compressionConfig,
+    model,
+    streamFn,
+    sessionStorage: createMemorySessionStorage(),
+    contextWindow: model.contextWindow,
+  });
 
-      if (isAfterTool) {
-        // 工具执行后：返回纯文本回复（无更多工具调用）
-        const reply = '好的，文件内容已读取完毕。';
-        yield { type: 'start' as const, partial: { content: [{ type: 'text' as const, text: '' }] } };
-        yield { type: 'text_delta' as const, delta: reply };
-        yield { type: 'done' as const, message: makeAssistant(_model, reply) };
-      } else {
-        // 首次回复：返回 toolCall 触发 read_file
-        const callId = `call_${++toolCallCounter}`;
-        const content: ContentBlock[] = [
-          { type: 'text' as const, text: '让我读取文件内容。' },
-          { type: 'toolCall' as const, id: callId, name: 'read_file', arguments: { path: `file_${toolCallCounter}.txt` } },
-        ];
-        yield { type: 'start' as const, partial: { content } };
-        yield { type: 'text_delta' as const, delta: '让我读取文件内容。' };
-        yield {
-          type: 'done' as const,
-          message: makeAssistantWithToolCall(_model, content, callId),
-        };
-      }
-    })();
-  };
-}
+  // ── 6. 创建 Runtime ─────────────────────────────────────────────
+  const transformers = [
+    ...createDefaultTransformers(),
+    compressionTransformer,
+  ];
 
-function makeAssistant(model: Model, text: string): AssistantMessage {
-  return {
-    role: 'assistant',
-    content: [{ type: 'text', text }],
-    stopReason: 'stop',
-    usage: createEmptyUsage(),
-    model: model.id,
-    provider: model.provider,
-    timestamp: Date.now(),
-  };
-}
+  console.log(`  转换器列表: ${transformers.map(t => `${t.name}(${t.priority})`).join(', ')}\n`);
 
-function makeAssistantWithToolCall(model: Model, content: ContentBlock[], _callId: string): AssistantMessage {
-  return {
-    role: 'assistant',
-    content,
-    stopReason: 'toolUse',
-    usage: createEmptyUsage(),
-    model: model.id,
-    provider: model.provider,
-    timestamp: Date.now(),
-  };
+  const runtime = createRuntime({
+    model,
+    streamFn,
+    systemPrompt: '你是一个文件分析助手，使用 read_file 工具读取文件并简要分析内容。',
+    transformers,
+    tools: [readFileTool],
+  });
+
+  // ── 7. 模拟多轮对话，逐步填满上下文 ────────────────────────────
+  const turns = [
+    '请读取 file_1.txt 的内容',
+    '请读取 file_2.txt 的内容',
+    '请读取 file_3.txt 的内容',
+    '请读取 file_4.txt 的内容',
+    '请读取 file_5.txt 的内容',
+    '请读取 file_6.txt 的内容',
+    '请读取 file_7.txt 的内容',
+    '请读取 file_8.txt 的内容',
+  ];
+
+  for (let i = 0; i < turns.length; i++) {
+    logSeparator(`Turn ${i + 1}: ${turns[i]}`);
+
+    // 流式输出本轮回复
+    process.stdout.write('  AI: ');
+    const request = createRequest(turns[i], { sessionKey: 'demo' });
+
+    for await (const chunk of runtime.stream(request)) {
+      if (chunk.type === 'text' && chunk.content) process.stdout.write(chunk.content);
+      if (chunk.type === 'tool_start') console.log(`\n  [调用工具] ${chunk.toolName}`);
+      if (chunk.type === 'tool_end') console.log(`  [工具完成] ${chunk.toolName}`);
+    }
+    console.log('\n');
+
+    // 估算压缩后的上下文大小
+    const messages = runtime.getMessages('demo');
+    const totalText = messages
+      .map(m => {
+        const c = (m as any).content;
+        if (typeof c === 'string') return c;
+        if (Array.isArray(c)) return extractText(c as ContentBlock[]);
+        if (typeof m === 'string') return m;
+        return '';
+      })
+      .join('\n');
+    const estTokens = estimateTokens(totalText);
+    const ratio = ((estTokens / model.contextWindow) * 100).toFixed(1);
+
+    console.log(`  消息数: ${messages.length}`);
+    console.log(`  估算 Token: ~${estTokens} / ${model.contextWindow} (${ratio}%)`);
+
+    // 检查是否出现压缩产物
+    const markers = detectCompressionArtifacts(messages);
+    if (markers.length > 0) {
+      console.log(`  压缩产物: ${markers.join(', ')}`);
+    }
+
+    // 如果触发了 L5 交接，停止循环
+    if (markers.includes('L5-Handoff')) {
+      console.log('\n  ⚡ L5 会话交接已触发，演示完成。');
+      break;
+    }
+  }
+
+  // ── 8. 最终状态报告 ─────────────────────────────────────────────
+  logSeparator('最终上下文状态');
+
+  const finalMessages = runtime.getMessages('demo');
+  console.log(`  最终消息数: ${finalMessages.length}`);
+  console.log('  消息列表:');
+  for (let i = 0; i < finalMessages.length; i++) {
+    const msg = finalMessages[i] as any;
+    const role = msg.role ?? (typeof msg === 'string' ? 'string' : 'unknown');
+    let text: string;
+    if (typeof msg === 'string') text = msg;
+    else if (typeof msg.content === 'string') text = msg.content;
+    else if (Array.isArray(msg.content)) text = extractText(msg.content as ContentBlock[]);
+    else text = JSON.stringify(msg).slice(0, 80);
+    const preview = text.replace(/\n/g, ' ').slice(0, 80);
+    console.log(`    [${i}] ${role}: ${preview}...`);
+  }
+
+  console.log('\n╔════════════════════════════════════════════════════╗');
+  console.log('║   ✅ 压缩演示完成                                   ║');
+  console.log('╚════════════════════════════════════════════════════╝');
+
+  await runtime.close();
 }
 
 // ─── 自定义工具：返回超长内容以快速填满上下文 ──────────────────────
 
 const readFileTool: Tool = {
   name: 'read_file',
-  description: '读取文件内容（演示用，返回超长内容）',
+  description: '读取文件内容（演示用，返回多行内容）',
   parameters: {
     type: 'object' as const,
     properties: {
@@ -193,11 +200,11 @@ const readFileTool: Tool = {
   },
   async execute(_toolCallId: string, args: unknown) {
     const { path } = (args ?? {}) as { path?: string };
-    // 生成 25 行内容，约 ~180 token，3-4 次调用逐步填满 800 token 窗口
+    // 生成 30 行内容，约 ~250 token，多次调用逐步填满上下文窗口
     const lines: string[] = [];
     lines.push(`File: ${path}`);
     lines.push('========================================');
-    for (let i = 1; i <= 25; i++) {
+    for (let i = 1; i <= 30; i++) {
       lines.push(`Line ${i}: Data row ${i} from ${path}. Contains configuration values for testing compression.`);
     }
     lines.push('========================================');
@@ -221,161 +228,36 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-// ─── 主流程 ────────────────────────────────────────────────────────
-
-async function main() {
-  console.log('╔════════════════════════════════════════════════════╗');
-  console.log('║   agentpack-compression 多级压缩演示               ║');
-  console.log('╚════════════════════════════════════════════════════╝');
-  console.log(`  模型: ${FAKE_MODEL.name} (contextWindow: ${FAKE_MODEL.contextWindow} tokens)`);
-  console.log(`  工具: read_file（每次返回 25 行内容 ~180 tokens）`);
-  console.log(`  预期: 第 1 轮触发 L1，第 6 轮触发 L2`);
-
-  // 1. 加载压缩配置（使用小 contextWindow 友好的阈值）
-  const compressionConfig = loadCompressionConfig({
-    l1: { threshold: 0.50, targetRatio: 0.40, toolResultMaxLines: 12, toolResultHeadLines: 3, toolResultTailLines: 3 },
-    l2: { threshold: 0.65, targetRatio: 0.50, protectedRecentCount: 4, minResourcesToCompress: 3 },
-    l3: { threshold: 0.78, targetRatio: 0.40, protectedRecentCount: 3 },
-    l4: { threshold: 0.88, targetRatio: 0.30, minWorkingSet: 2 },
-    l5: { threshold: 0.95 },
+function detectCompressionArtifacts(messages: any[]): string[] {
+  const markers: string[] = [];
+  const hasCompaction = messages.some(m => {
+    const r = m.role;
+    const c = m.content;
+    const text = typeof m === 'string' ? m : typeof c === 'string' ? c : '';
+    return r === 'compactionSummary' || text.includes('Context Summary');
+  });
+  const hasTaskState = messages.some(m => {
+    const r = m.role;
+    const c = m.content;
+    const text = typeof m === 'string' ? m : typeof c === 'string' ? c : '';
+    return r === 'taskState' || text.includes('originalRequest');
+  });
+  const hasCheckpoint = messages.some(m => {
+    const c = m.content;
+    const text = typeof m === 'string' ? m : typeof c === 'string' ? c : '';
+    return text.includes('Session Checkpoint');
+  });
+  const hasHandoff = messages.some(m => {
+    const c = m.content;
+    const text = typeof m === 'string' ? m : typeof c === 'string' ? c : '';
+    return text.includes('Session Handoff');
   });
 
-  console.log(`  配置: L1>${(compressionConfig.l1.threshold * 100).toFixed(0)}% L2>${(compressionConfig.l2.threshold * 100).toFixed(0)}% L3>${(compressionConfig.l3.threshold * 100).toFixed(0)}% L4>${(compressionConfig.l4.threshold * 100).toFixed(0)}% L5>${(compressionConfig.l5.threshold * 100).toFixed(0)}%\n`);
-
-  // 2. 创建压缩转换器
-  const compressionTransformer = createCompressionTransformer({
-    config: compressionConfig,
-    model: FAKE_MODEL,
-    streamFn: makeFakeStreamFn(),
-    sessionStorage: createMemorySessionStorage(),
-    contextWindow: FAKE_MODEL.contextWindow,
-  });
-
-  // 3. 创建 Runtime：默认转换器 + 压缩转换器
-  const transformers = [
-    ...createDefaultTransformers(),
-    compressionTransformer,
-  ];
-
-  console.log(`  转换器列表: ${transformers.map(t => `${t.name}(${t.priority})`).join(', ')}\n`);
-
-  const runtime = createRuntime({
-    model: FAKE_MODEL,
-    streamFn: makeFakeStreamFn(),
-    systemPrompt: '你是一个文件分析助手，使用 read_file 工具读取文件并分析。',
-    transformers,
-    tools: [readFileTool],
-  });
-
-  // 4. 模拟多轮对话，逐步填满上下文
-  const turns = [
-    '请读取 file_1.txt 的内容',
-    '请读取 file_2.txt 的内容',
-    '请读取 file_3.txt 的内容',
-    '请读取 file_4.txt 的内容',
-    '请读取 file_5.txt 的内容',
-    '请读取 file_6.txt 的内容',
-    '请读取 file_7.txt 的内容',
-    '请读取 file_8.txt 的内容',
-  ];
-
-  for (let i = 0; i < turns.length; i++) {
-    logSeparator(`Turn ${i + 1}: ${turns[i].slice(0, 30)}...`);
-
-    const result = await runtime.run(
-      createRequest(turns[i], { sessionKey: 'demo' }),
-    );
-
-    // 估算压缩后的上下文大小
-    const messages = runtime.getMessages('demo');
-    const totalText = messages
-      .map(m => {
-        const c = (m as any).content;
-        if (typeof c === 'string') return c;
-        if (Array.isArray(c)) return extractText(c as ContentBlock[]);
-        if (typeof m === 'string') return m;
-        return '';
-      })
-      .join('\n');
-    const estTokens = estimateTokens(totalText);
-    const ratio = ((estTokens / FAKE_MODEL.contextWindow) * 100).toFixed(1);
-
-    console.log(`  助手: ${result.content.slice(0, 80)}`);
-    console.log(`  消息数: ${messages.length}`);
-    console.log(`  估算 Token: ~${estTokens} / ${FAKE_MODEL.contextWindow} (${ratio}%)`);
-
-    // 检查是否出现压缩产物
-    const hasCompaction = messages.some(m => {
-      const r = (m as any).role;
-      const c = (m as any).content;
-      const text = typeof m === 'string' ? m
-        : typeof c === 'string' ? c
-        : '';
-      return r === 'compactionSummary' || text.includes('Context Summary');
-    });
-    const hasTaskState = messages.some(m => {
-      const r = (m as any).role;
-      const c = (m as any).content;
-      const text = typeof m === 'string' ? m
-        : typeof c === 'string' ? c
-        : '';
-      return r === 'taskState' || text.includes('originalRequest');
-    });
-    const hasHandoff = messages.some(m => {
-      const c = (m as any).content;
-      const text = typeof m === 'string' ? m
-        : typeof c === 'string' ? c
-        : '';
-      return text.includes('Session Handoff');
-    });
-    const hasCheckpoint = messages.some(m => {
-      const c = (m as any).content;
-      const text = typeof m === 'string' ? m
-        : typeof c === 'string' ? c
-        : '';
-      return text.includes('Session Checkpoint');
-    });
-
-    const compressionMarkers: string[] = [];
-    if (hasCompaction) compressionMarkers.push('L2-Summary');
-    if (hasTaskState) compressionMarkers.push('L3-TaskState');
-    if (hasCheckpoint) compressionMarkers.push('L4-Checkpoint');
-    if (hasHandoff) compressionMarkers.push('L5-Handoff');
-
-    if (compressionMarkers.length > 0) {
-      console.log(`  压缩产物: ${compressionMarkers.join(', ')}`);
-    }
-
-    // 如果触发了 L5 交接，停止循环
-    if (hasHandoff) {
-      console.log('\n  ⚡ L5 会话交接已触发，演示完成。');
-      break;
-    }
-  }
-
-  // 5. 最终状态报告
-  logSeparator('最终上下文状态');
-
-  const finalMessages = runtime.getMessages('demo');
-  console.log(`  最终消息数: ${finalMessages.length}`);
-  console.log('  消息列表:');
-  for (let i = 0; i < finalMessages.length; i++) {
-    const msg = finalMessages[i] as any;
-    const role = msg.role ?? (typeof msg === 'string' ? 'string' : 'unknown');
-    let text: string;
-    if (typeof msg === 'string') text = msg;
-    else if (typeof msg.content === 'string') text = msg.content;
-    else if (Array.isArray(msg.content)) text = extractText(msg.content as ContentBlock[]);
-    else text = JSON.stringify(msg).slice(0, 80);
-    const preview = text.replace(/\n/g, ' ').slice(0, 80);
-    console.log(`    [${i}] ${role}: ${preview}...`);
-  }
-
-  console.log('\n╔════════════════════════════════════════════════════╗');
-  console.log('║   ✅ 压缩演示完成                                   ║');
-  console.log('╚════════════════════════════════════════════════════╝');
-
-  await runtime.close();
+  if (hasCompaction) markers.push('L2-Summary');
+  if (hasTaskState) markers.push('L3-TaskState');
+  if (hasCheckpoint) markers.push('L4-Checkpoint');
+  if (hasHandoff) markers.push('L5-Handoff');
+  return markers;
 }
 
 main().catch((err) => {
