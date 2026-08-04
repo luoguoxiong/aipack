@@ -5,8 +5,7 @@
  */
 
 import { createRequest } from 'agentpack';
-import type { AssistantMessage } from 'agentpack';
-import type { Model as AiModel } from 'agentpack/ai';
+import type { AssistantMessage, AiModel } from 'agentpack';
 import type { AgentpackConfig } from './config';
 import { createAgentpackRuntime } from './runtime';
 

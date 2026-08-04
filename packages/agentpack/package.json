@@ -14,10 +14,6 @@
       "types": "./dist/ai/index.d.ts",
       "import": "./dist/ai/index.js"
     },
-    "./adapters/ai": {
-      "types": "./dist/adapters/ai.d.ts",
-      "import": "./dist/adapters/ai.js"
-    },
     "./package.json": "./package.json"
   },
   "files": [

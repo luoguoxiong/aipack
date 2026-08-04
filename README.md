@@ -31,9 +31,10 @@ import {
   createRuntime,
   createRequest,
   createFileSessionStorage,
+  getBuiltinModel,
+  adaptAiModel,
+  createStreamFnFromAi,
 } from 'agentpack';
-import { getBuiltinModel } from 'agentpack/ai';
-import { adaptAiModel, createStreamFnFromAi } from 'agentpack/adapters/ai';
 
 const aiModel = getBuiltinModel('deepseek', 'deepseek-chat'); // 需配置 DEEPSEEK_API_KEY
 

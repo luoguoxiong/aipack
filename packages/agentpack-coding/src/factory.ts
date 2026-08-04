@@ -12,11 +12,16 @@
  *   await agent.close();
  */
 
-import { createRuntime, createFileSessionStorage } from 'agentpack';
-import type { Runtime, Tool, Extension, ContextTransformer, StreamFn } from 'agentpack';
-import { getBuiltinModel, getBuiltinModels, getEnvApiKey } from 'agentpack/ai';
-import type { Model as AiModel } from 'agentpack/ai';
-import { adaptAiModel, createStreamFnFromAi } from 'agentpack/adapters/ai';
+import {
+  createRuntime,
+  createFileSessionStorage,
+  getBuiltinModel,
+  getBuiltinModels,
+  getEnvApiKey,
+  adaptAiModel,
+  createStreamFnFromAi,
+} from 'agentpack';
+import type { Runtime, Tool, Extension, ContextTransformer, StreamFn, AiModel } from 'agentpack';
 import { createCodingTools } from './tools';
 import { PermissionManager } from './permission';
 import { DEFAULT_CODING_SYSTEM_PROMPT } from './prompt';

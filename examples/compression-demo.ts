@@ -22,10 +22,12 @@ import {
   extractText,
   createMemorySessionStorage,
   createDefaultTransformers,
+  adaptAiModel,
+  createStreamFnFromAi,
+  getBuiltinModel,
+  hasProviderConfigured,
 } from 'agentpack';
 import type { Model, ContentBlock, Tool } from 'agentpack';
-import { adaptAiModel, createStreamFnFromAi } from 'agentpack/adapters/ai';
-import { getBuiltinModel, hasProviderConfigured } from 'agentpack/ai';
 import {
   createCompressionTransformer,
   loadCompressionConfig,

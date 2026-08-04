@@ -11,8 +11,7 @@
 import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
-import { getBuiltinModels, getBuiltinProviders } from 'agentpack/ai';
-import type { Model as AiModel } from 'agentpack/ai';
+import { getBuiltinModels, getBuiltinProviders, type AiModel } from 'agentpack';
 import type { RawFileConfig } from './config';
 import { getConfigPath } from './config';
 
