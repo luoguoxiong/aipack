@@ -44,6 +44,7 @@ export class MemoryInjectionTransformer extends BaseTransformer {
 
   private retriever: HybridRetriever;
   private maxMemories: number;
+  private minScore: number;
   private queryTransform?: (text: string) => string;
   private onRecall?: (ids: string[]) => void | Promise<void>;
 
@@ -54,12 +55,11 @@ export class MemoryInjectionTransformer extends BaseTransformer {
     });
     this.retriever = retriever;
     this.maxMemories = options.maxMemories ?? 5;
+    this.minScore = options.minScore ?? 0.1;
     this.queryTransform = options.queryTransform;
     this.onRecall = options.onRecall;
-    // minScore 由 retriever 内部过滤；这里同步更新 retriever 阈值
-    if (options.minScore != null) {
-      this.retriever.minScore = options.minScore;
-    }
+    // 注意：不再写回共享 retriever.minScore（构造函数不应篡改他人持有的对象），
+    // 阈值在每次检索时以参数覆盖传入。
   }
 
   protected async run(
@@ -87,20 +87,23 @@ export class MemoryInjectionTransformer extends BaseTransformer {
 
     const query = this.queryTransform ? this.queryTransform(queryText) : queryText;
 
-    // 3. 检索 top-K
-    const results = await this.retriever.search(query, this.maxMemories);
+    // 3. 检索 top-K（携带本转换器阈值，不影响共享 retriever 的默认值）
+    const results = await this.retriever.search(query, this.maxMemories, {
+      minScore: this.minScore,
+    });
     if (results.length === 0) return cleaned;
 
-    // 更新检索统计（best-effort，不阻塞注入）
+    // 4. 更新检索统计（fire-and-forget，不阻塞注入首 token 延迟）
     if (this.onRecall) {
-      try {
-        await this.onRecall(results.map((r) => r.entry.id));
-      } catch {
-        // 忽略统计失败
-      }
+      const ids = results.map((r) => r.entry.id);
+      Promise.resolve()
+        .then(() => this.onRecall!(ids))
+        .catch(() => {
+          // 统计失败忽略
+        });
     }
 
-    // 4. 构造记忆块并前插进最新 user 消息内容
+    // 5. 构造记忆块并前插进最新 user 消息内容
     const block = buildMemoryBlock(results);
     const injected = this.injectIntoResource(latest, block);
 

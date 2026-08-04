@@ -28,8 +28,22 @@ function truncate(text: string, max: number): string {
   return `${text.slice(0, max - 1)}…`;
 }
 
+/** 取首句（按中英文句末标点切分），并截断到 max */
+function firstSentence(text: string, max: number): string {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  const match = trimmed.match(/^[^。！？!?.…\n]+[。！？!?.…]?/);
+  const first = match ? match[0].trim() : trimmed;
+  return truncate(first, max);
+}
+
 /**
- * 零-LLM 抽取：content = `Q: <message>\nA: <answer>`（截断），concepts = 关键词 top-N。
+ * 零-LLM 抽取（要点压缩）：content = 用户首句 + 助手首句 + 工具（截断）。
+ *
+ * 相比直接转储整轮对话：
+ *   - 只保留「提问主体 + 回答主旨」，避免整段原文进索引（防止索引膨胀、
+ *     问题文本干扰检索命中）；
+ *   - concepts = 关键词 top-N（供 BM25 与展示）。
  */
 export function extractFromTurn(
   userMessage: string,
@@ -41,9 +55,9 @@ export function extractFromTurn(
   const maxConcepts = options.maxConcepts ?? 8;
 
   const parts: string[] = [];
-  if (userMessage) parts.push(`Q: ${userMessage.trim()}`);
-  if (toolsUsed.length > 0) parts.push(`tools: ${toolsUsed.join(', ')}`);
-  if (assistantContent) parts.push(`A: ${assistantContent.trim()}`);
+  if (userMessage) parts.push(`Q: ${firstSentence(userMessage, 160)}`);
+  if (assistantContent) parts.push(`A: ${firstSentence(assistantContent, 320)}`);
+  if (toolsUsed.length > 0) parts.push(`tools: ${toolsUsed.slice(0, 5).join(', ')}`);
   const content = truncate(parts.join('\n'), maxChars);
 
   const conceptSource = `${userMessage} ${assistantContent} ${toolsUsed.join(' ')}`;
