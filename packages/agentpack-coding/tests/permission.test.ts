@@ -217,13 +217,14 @@ describe('PermissionManager - allow-always 集合', () => {
     assert.equal(callCount, 2); // 清空后需重新确认
   });
 
-  it('可通过 allowedAlways 选项预置允许集合', async () => {
+  it('可通过 allowedAlways 选项预置允许集合（整条命令精确匹配）', async () => {
     const pm = new PermissionManager({
-      allowedAlways: new Set(['git']),
+      allowedAlways: new Set(['git push']),
     });
-    // git 命中 allow-always，即使是 mutating 也直接放行
+    // 精确匹配放行
     assert.equal(await pm.check('git push'), 'allow');
-    assert.equal(await pm.check('git commit'), 'allow');
+    // 其他 git 子命令不受影响（confirm 规则无 confirmFn → deny）
+    assert.equal(await pm.check('git commit'), 'deny');
   });
 });
 
