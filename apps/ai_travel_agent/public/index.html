@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Travel Planner · agentpack</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__overlay">
+      <h1>🛫 AI Travel Planner</h1>
+      <p class="hero__sub">基于 agentpack 的双 Agent 旅行规划 · Researcher 检索 + Planner 排程 · 可导出日历</p>
+      <div id="status" class="status">读取服务状态…</div>
+    </div>
+    <img class="hero__img" alt="旅行主题配图" src="https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=1600&q=80" onerror="this.style.display='none'" />
+  </header>
+
+  <main class="container">
+    <section class="card form-card">
+      <h2>规划你的旅程</h2>
+      <div class="form-row">
+        <label class="field field--grow">
+          <span>目的地</span>
+          <input id="destination" type="text" placeholder="例如:东京、巴黎、曼谷" value="东京" />
+        </label>
+        <label class="field field--sm">
+          <span>天数</span>
+          <input id="days" type="number" min="1" max="30" value="7" />
+        </label>
+      </div>
+      <div class="form-row">
+        <label class="field field--sm">
+          <span>出发日期(用于日历)</span>
+          <input id="startDate" type="date" />
+        </label>
+        <div class="actions">
+          <button id="generateBtn" class="btn btn--primary">生成行程</button>
+          <button id="downloadBtn" class="btn btn--ghost" disabled>下载日历 (.ics)</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="progress" class="card progress-card hidden">
+      <h2 id="progressTitle">准备中…</h2>
+      <div id="stageList" class="stages"></div>
+    </section>
+
+    <section id="result" class="card result-card hidden">
+      <div class="result-head">
+        <h2>你的行程</h2>
+        <button id="copyBtn" class="btn btn--ghost btn--sm">复制</button>
+      </div>
+      <pre id="itinerary" class="itinerary"></pre>
+    </section>
+
+    <section id="errorBox" class="card error-card hidden">
+      <h2>⚠️ 出错了</h2>
+      <pre id="errorText"></pre>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>Powered by <a href="https://github.com/luoguoxiong/agentpack" target="_blank" rel="noopener">agentpack</a></span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

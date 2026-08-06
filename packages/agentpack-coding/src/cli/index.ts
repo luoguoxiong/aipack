@@ -53,8 +53,15 @@ function parseArgs(argv: string[]): ParsedArgs {
     if (a === '-h' || a === '--help') {
       return { command: 'help' };
     }
-    if (a.startsWith('--')) {
-      i++; // 跳过未知 flag 的值
+    if (a === '--') {
+      // 显式分隔符：后续全部视为位置参数
+      positional.push(...argv.slice(i + 1));
+      break;
+    }
+    if (a.startsWith('-')) {
+      // 未知 flag（含单横线）：跳过它；下一个非 flag token 视为其值一并跳过
+      const next = argv[i + 1];
+      if (next !== undefined && !next.startsWith('-')) i++;
       continue;
     }
     positional.push(a);

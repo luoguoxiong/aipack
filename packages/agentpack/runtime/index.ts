@@ -473,14 +473,6 @@ export class AgentRuntime implements Runtime {
 
         // 5. 执行工具（可选并行）
         await this.executeToolCalls(compilation, toolCalls, session.abortController!.signal);
-
-        // 6. 检查终止
-        if (toolCalls.every(tc => {
-          const result = this.findToolResult(compilation.messages, tc.id);
-          return result?.terminate;
-        })) {
-          break;
-        }
       }
     } finally {
       this.markIdle(session);
@@ -857,24 +849,6 @@ export class AgentRuntime implements Runtime {
     }
 
     return assistantMessage;
-  }
-
-  private findToolResult(
-    messages: Message[],
-    toolCallId: string,
-  ): ToolResult | null {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg.role === 'toolResult' && (msg as ToolResultMessage).toolCallId === toolCallId) {
-        // toolResult 消息本身不携带 details/terminate，需在 executeTool 阶段处理终止；
-        // 此处仅返回占位用于配对检查。
-        return {
-          content: msg.content as ContentBlock[],
-          details: {},
-        };
-      }
-    }
-    return null;
   }
 
   private buildResult(compilation: Compilation): Result {

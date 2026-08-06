@@ -84,6 +84,8 @@ export interface CodingAgent {
   permission: PermissionManager;
   /** 工具列表（已注册到 runtime） */
   tools: Tool[];
+  /** 实际解析到的模型（供 /model 等展示用） */
+  model: import('agentpack').AiModel;
   /** 关闭 runtime 释放资源 */
   close(): Promise<void>;
 }
