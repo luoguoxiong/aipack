@@ -1,0 +1,345 @@
+/* apps/ai_travel_agent/public/style.css —— 极简现代样式 */
+:root {
+  --bg: #0f1419;
+  --card: #1a2028;
+  --card-2: #232b35;
+  --text: #e6e9ec;
+  --muted: #8a93a0;
+  --accent: #3b82f6;
+  --accent-hover: #2b6fd6;
+  --success: #22c55e;
+  --warn: #f59e0b;
+  --error: #ef4444;
+  --border: #2d3744;
+  --radius: 14px;
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Hero ─────────────────────────────────────────── */
+.hero {
+  position: relative;
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  /* 渐变兜底:图片加载失败时(onerror 隐藏 img)仍呈现暖色旅行氛围 */
+  background: linear-gradient(
+    135deg,
+    #1e3a5f 0%,
+    #2d5a87 35%,
+    #e8956a 75%,
+    #d97757 100%
+  );
+}
+.hero__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+  filter: brightness(0.55) saturate(1.1);
+}
+.hero__overlay {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+.hero h1 {
+  margin: 0 0 8px;
+  font-size: 38px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.hero__sub {
+  margin: 0 0 16px;
+  color: rgba(230, 233, 236, 0.85);
+  font-size: 15px;
+}
+.status {
+  display: inline-block;
+  padding: 6px 14px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--muted);
+  backdrop-filter: blur(8px);
+}
+.status--warn {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+/* ── Container ────────────────────────────────────── */
+.container {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+}
+.card h2 {
+  margin: 0 0 20px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+/* ── Form ─────────────────────────────────────────── */
+.form-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+.field > span {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+}
+.field--sm {
+  flex: 0 0 180px;
+}
+.field--grow {
+  flex: 2 1 260px;
+}
+.field input {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px 14px;
+  color: var(--text);
+  font-size: 15px;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  align-self: flex-end;
+}
+.btn {
+  padding: 11px 22px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    opacity 0.15s,
+    transform 0.05s;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn:not(:disabled):active {
+  transform: translateY(1px);
+}
+.btn--primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn--primary:not(:disabled):hover {
+  background: var(--accent-hover);
+}
+.btn--ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+.btn--ghost:not(:disabled):hover {
+  background: var(--card-2);
+}
+.btn--sm {
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+/* ── Progress ─────────────────────────────────────── */
+.progress-card h2 {
+  margin-bottom: 16px;
+}
+.stages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.stage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  font-size: 14px;
+}
+.stage::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.stage--pending {
+  color: var(--muted);
+}
+.stage--pending::before {
+  background: var(--border);
+}
+.stage--active {
+  color: var(--text);
+}
+.stage--active::before {
+  background: var(--accent);
+  animation: pulse 1.2s infinite;
+}
+.stage--done {
+  color: var(--success);
+}
+.stage--done::before {
+  background: var(--success);
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.research-details {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.research-details summary {
+  cursor: pointer;
+  padding: 6px 0;
+}
+.research-details pre {
+  margin-top: 8px;
+  max-height: 220px;
+  overflow: auto;
+  background: var(--bg);
+  padding: 12px;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Result ───────────────────────────────────────── */
+.result-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.result-head h2 {
+  margin: 0;
+}
+.itinerary {
+  margin: 0;
+  max-height: 600px;
+  overflow: auto;
+  background: var(--bg);
+  padding: 20px;
+  border-radius: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'SF Mono', 'Menlo', Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* ── Error ────────────────────────────────────────── */
+.error-card {
+  border-color: var(--error);
+}
+.error-card h2 {
+  color: var(--error);
+}
+.error-card pre {
+  margin: 0;
+  white-space: pre-wrap;
+  color: #ffb4b4;
+  font-size: 14px;
+}
+
+/* ── Footer ───────────────────────────────────────── */
+.footer {
+  text-align: center;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.footer a:hover {
+  text-decoration: underline;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ── 响应式 ───────────────────────────────────────── */
+@media (max-width: 640px) {
+  .hero h1 {
+    font-size: 28px;
+  }
+  .form-row {
+    flex-direction: column;
+  }
+  .field--sm {
+    flex: 1 1 auto;
+  }
+  .actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

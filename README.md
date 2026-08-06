@@ -113,6 +113,12 @@ pnpm --filter agentpack-cli typecheck
 - [agentpack-memory 文档](packages/agentpack-memory/README.md)
 - [agentpack 压缩策略](agentpack-compression-strategy.md)（agentpack-compression 设计文档）
 
+## 应用示例（apps/）
+
+基于 agentpack 构建的端到端应用：
+
+- [ai_travel_agent](apps/ai_travel_agent/README.md) — 🛫 AI 旅行行程规划 Web 应用（Researcher + Planner 双 Agent + SSE 流式 + ICS 日历导出）
+
 ## 许可证
 
 MIT

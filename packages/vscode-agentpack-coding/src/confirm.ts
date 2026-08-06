@@ -5,8 +5,8 @@
  * 变更性命令（git commit / npm install 等）执行前弹出三选项，
  * 返回值对齐 ConfirmResult = true | false | 'allow-always'。
  *
- * 返回 'allow-always' 时，PermissionManager 会自动把命令首 token（如 git）加入
- * allowedAlways 集合（见 agentpack-coding/src/permission.ts:90），扩展侧无需手动管理。
+ * 返回 'allow-always' 时，PermissionManager 会自动把该条命令（整条归一化命令）
+ * 加入 allowedAlways 集合（见 agentpack-coding/src/permission.ts:90），扩展侧无需手动管理。
  */
 
 import * as vscode from 'vscode';
