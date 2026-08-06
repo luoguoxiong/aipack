@@ -1,14 +1,12 @@
 /**
  * apps/ai_travel_agent/src/runtime.ts
  *
- * 忠实映射 awesome-llm-apps ai_travel_agent 的双 Agent 设计:
+ * 双 Agent 设计:
  *   - Researcher:用搜索工具检索目的地活动/住宿,返回研究结果
  *   - Planner:基于研究结果生成结构化行程草稿
  *
  * agentpack 是单 Runtime 框架,故用两个独立 Runtime 实例 + 链式编排。
  * Planner 用 stream() 流式输出,通过 onProgress 回调把增量推给 SSE。
- *
- * prompt 移植自 awesome-llm-apps/starter_ai_agents/ai_travel_agent/travel_agent.py。
  */
 import {
   createRuntime,
