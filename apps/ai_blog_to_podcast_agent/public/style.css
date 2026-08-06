@@ -1,4 +1,4 @@
-/* apps/ai_travel_agent/public/style.css —— 极简现代样式 */
+/* apps/ai_blog_to_podcast_agent/public/style.css —— 极简现代样式(对齐 ai_travel_agent) */
 :root {
   color-scheme: dark;
   --bg: #0f1419;
@@ -6,8 +6,8 @@
   --card-2: #232b35;
   --text: #e6e9ec;
   --muted: #8a93a0;
-  --accent: #3b82f6;
-  --accent-hover: #2b6fd6;
+  --accent: #8b5cf6;
+  --accent-hover: #7340d6;
   --success: #22c55e;
   --warn: #f59e0b;
   --error: #ef4444;
@@ -39,13 +39,13 @@ body {
   display: flex;
   align-items: center;
   overflow: hidden;
-  /* 渐变兜底:图片加载失败时(onerror 隐藏 img)仍呈现暖色旅行氛围 */
+  /* 渐变兜底:图片加载失败时(onerror 隐藏 img)仍呈现播客氛围 */
   background: linear-gradient(
     135deg,
-    #1e3a5f 0%,
-    #2d5a87 35%,
-    #e8956a 75%,
-    #d97757 100%
+    #2d1b4e 0%,
+    #4c2a85 35%,
+    #7c3aed 70%,
+    #db2777 100%
   );
 }
 .hero__img {
@@ -55,7 +55,7 @@ body {
   height: 100%;
   object-fit: cover;
   z-index: 0;
-  filter: brightness(0.55) saturate(1.1);
+  filter: brightness(0.5) saturate(1.2);
 }
 .hero__overlay {
   position: relative;
@@ -152,7 +152,7 @@ body {
 .field select:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
 }
 .field select {
   cursor: pointer;
@@ -280,26 +280,6 @@ body {
   }
 }
 
-.research-details {
-  margin-top: 12px;
-  font-size: 13px;
-  color: var(--muted);
-}
-.research-details summary {
-  cursor: pointer;
-  padding: 6px 0;
-}
-.research-details pre {
-  margin-top: 8px;
-  max-height: 220px;
-  overflow: auto;
-  background: var(--bg);
-  padding: 12px;
-  border-radius: 8px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
 /* ── Result ───────────────────────────────────────── */
 .result-head {
   display: flex;
@@ -322,6 +302,21 @@ body {
   font-family: 'SF Mono', 'Menlo', Consolas, monospace;
   font-size: 14px;
   line-height: 1.7;
+}
+
+/* ── Audio ────────────────────────────────────────── */
+.audio-card h2 {
+  margin-bottom: 16px;
+}
+#audioPlayer {
+  width: 100%;
+  border-radius: 10px;
+  background: var(--card-2);
+}
+.audio-meta {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 /* ── Error ────────────────────────────────────────── */
