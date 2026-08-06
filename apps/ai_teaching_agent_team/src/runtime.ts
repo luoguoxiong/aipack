@@ -117,12 +117,8 @@ const STAGE_DONE: Record<AgentRole, CourseProgress['type']> = {
 
 // ─── Runtime 工厂 ───────────────────────────────────────────────
 
-// 会话目录:本地开发用项目内目录;Netlify Functions(Lambda)的 cwd 只读,写入 /tmp。
-// 可用 SESSION_DIR 环境变量显式覆盖;AWS_LAMBDA_FUNCTION_NAME 由 Netlify 函数运行时注入。
-const SESSION_BASE_DIR =
-  process.env.SESSION_DIR ||
-  (process.env.AWS_LAMBDA_FUNCTION_NAME ? '/tmp/teaching-sessions' : '.agentpack/teaching-sessions');
-const SESSION_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 天(serverless 下会话随实例销毁,仅单次生成内有效)
+const SESSION_BASE_DIR = '.agentpack/teaching-sessions';
+const SESSION_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 天
 
 /** 构建 Professor Runtime:带搜索工具 */
 export function createProfessorRuntime(model: Model, streamFn: StreamFn, serpapiKey?: string): Runtime {
