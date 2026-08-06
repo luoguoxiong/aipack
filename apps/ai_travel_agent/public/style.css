@@ -1,5 +1,6 @@
 /* apps/ai_travel_agent/public/style.css —— 极简现代样式 */
 :root {
+  color-scheme: dark;
   --bg: #0f1419;
   --card: #1a2028;
   --card-2: #232b35;
@@ -135,7 +136,8 @@ body {
 .field--grow {
   flex: 2 1 260px;
 }
-.field input {
+.field input,
+.field select {
   background: var(--card-2);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -146,10 +148,38 @@ body {
     border-color 0.15s,
     box-shadow 0.15s;
 }
-.field input:focus {
+.field input:focus,
+.field select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+.field select {
+  cursor: pointer;
+  appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path fill='%238a93a0' d='M6 8L2 4h8z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+.field select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.input-with-toggle {
+  display: flex;
+  gap: 8px;
+}
+.input-with-toggle input {
+  flex: 1;
+}
+.hint {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.hint--ok {
+  color: var(--success);
 }
 .actions {
   display: flex;
