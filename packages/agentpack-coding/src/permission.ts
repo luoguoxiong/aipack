@@ -10,7 +10,8 @@
  *   - confirm：git push/commit、npm install、mv/cp 等写入但常规的命令
  *   - 无规则匹配 → deny（保守，避免未知命令绕过）
  *
- * 确认回调 confirmFn 返回 'allow-always' 时，该命令会加入允许集合，后续免确认。
+ * 确认回调 confirmFn 返回 'allow-always' 时，该条命令会加入允许集合，后续免确认
+ * （按整条归一化命令精确匹配，避免放行整类命令）。
  */
 
 /** 单次检查决策 */
@@ -44,7 +45,7 @@ export interface PermissionOptions {
   rules?: PermissionRule[];
   /** 确认回调（命中 confirm 规则时调用；未提供则 confirm → deny） */
   confirmFn?: (ctx: ConfirmContext) => Promise<ConfirmResult>;
-  /** allow-always 命令集合（确认回调返回 allow-always 时累加） */
+  /** allow-always 命令集合（确认回调返回 allow-always 时累加，按整条命令匹配） */
   allowedAlways?: Set<string>;
 }
 
@@ -61,7 +62,7 @@ export class PermissionManager {
 
   /**
    * 检查命令是否允许执行。
-   * 1. allow-always 集合命中 → allow
+   * 1. allow-always 集合命中（整条归一化命令精确匹配）→ allow
    * 2. 规则顺序匹配 → allow / deny
    * 3. confirm → 调 confirmFn（无 fn 则 deny）
    * 4. 无规则匹配 → deny
@@ -70,8 +71,8 @@ export class PermissionManager {
     // 归一化：剥离前导环境变量赋值（如 FOO=bar git status → git status）
     const normalized = this.stripEnvPrefix(command);
 
-    // 1. allow-always 集合命中（按首个 token 匹配）
-    if (this.allowedAlways.has(this.firstToken(normalized))) return 'allow';
+    // 1. allow-always 集合命中（按整条命令匹配）
+    if (this.allowedAlways.has(normalized)) return 'allow';
 
     // 2. 规则顺序匹配（用归一化后的命令）
     const rule = this.rules.find((r) => r.match(normalized));
@@ -88,7 +89,7 @@ export class PermissionManager {
       matchedRule: rule.name,
     });
     if (result === 'allow-always') {
-      this.allowedAlways.add(this.firstToken(normalized));
+      this.allowedAlways.add(normalized);
       return 'allow';
     }
     return result ? 'allow' : 'deny';
@@ -111,13 +112,6 @@ export class PermissionManager {
       result.push(t);
     }
     return result.join(' ');
-  }
-
-  /** 取命令的首个 token（用于 allow-always 集合 key，如 "git push origin" → "git"） */
-  private firstToken(cmd: string): string {
-    const trimmed = cmd.trim();
-    if (!trimmed) return '';
-    return trimmed.split(/\s+/)[0];
   }
 
   /** 动态追加规则 */

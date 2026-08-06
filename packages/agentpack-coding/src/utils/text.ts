@@ -41,12 +41,21 @@ export function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
-/** 将文本截断到 maxBytes 以内，尾部追加 hint（不计入字节限制） */
+/**
+ * 将文本截断到 maxBytes 字节以内，尾部追加 hint（不计入字节限制）。
+ * 用二分查找最大可保留的字符数，避免逐字节递减的 O(n²) 退化。
+ */
 export function truncateWithHint(text: string, maxBytes: number, hint: string): string {
   if (Buffer.byteLength(text, 'utf-8') <= maxBytes) return text;
-  let cut = maxBytes;
-  while (cut > 0 && Buffer.byteLength(text.slice(0, cut), 'utf-8') > maxBytes) cut--;
-  return text.slice(0, cut) + hint;
+  // 不变式：byteLength(text.slice(0, lo)) <= maxBytes，答案落在 [lo, hi]
+  let lo = 0;
+  let hi = maxBytes;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (Buffer.byteLength(text.slice(0, mid), 'utf-8') <= maxBytes) lo = mid;
+    else hi = mid - 1;
+  }
+  return text.slice(0, lo) + hint;
 }
 
 /**

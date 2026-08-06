@@ -94,7 +94,7 @@ agentpack-coding --memory run "总结项目结构"
 - **confirm**：变更性命令（`git push/commit`、`npm install`、`mv/cp/mkdir`）需确认回调批准
 - **无规则匹配 → deny**（保守）
 
-确认回调返回 `allow-always` 时，该命令永久放行（加入 allow-always 集合）。
+确认回调返回 `allow-always` 时，该条命令永久放行（按整条归一化命令精确匹配加入 allow-always 集合，不会放行整类命令）。
 
 ```ts
 import { createCodingAgent, PermissionManager } from 'agentpack-coding';

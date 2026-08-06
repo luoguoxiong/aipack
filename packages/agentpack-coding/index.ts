@@ -19,6 +19,7 @@
 // ─── 插件 / 工厂 ────────────────────────────────────────────────────
 export { createCodingPlugin } from './src/plugin';
 export { createCodingAgent } from './src/factory';
+export { resolveModel } from './src/model';
 
 // ─── 工具集 ──────────────────────────────────────────────────────────
 export { createCodingTools } from './src/tools';

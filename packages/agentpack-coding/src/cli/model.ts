@@ -6,7 +6,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import { getBuiltinModel, getBuiltinModels, getEnvApiKey, type AiModel } from 'agentpack';
+import { getBuiltinModels, getEnvApiKey } from 'agentpack';
+import type { AiModel } from 'agentpack';
+import { resolveModel } from '../model';
 
 /**
  * 加载 .env 文件（~/.agentpack/.env 与 <cwd>/.env）。
@@ -44,23 +46,14 @@ export function hasAnyApiKey(): boolean {
 }
 
 /**
- * 解析模型（分层兜底）。无可用模型时打印可读错误并退出。
+ * 解析模型（分层兜底，逻辑见 src/model.ts）。无可用模型时打印可读错误并退出。
  */
 export function resolveModelFromArgs(opts: {
   provider?: string;
   model?: string;
 }): AiModel {
-  const { provider, model } = opts;
-  if (provider && model) {
-    const m = getBuiltinModel(provider, model);
-    if (m) return m;
-  }
-  if (model) {
-    const byId = getBuiltinModels().find((m) => m.id === model);
-    if (byId) return byId;
-  }
-  const fallback = getBuiltinModels().find((m) => !!getEnvApiKey(m.provider));
-  if (fallback) return fallback;
+  const m = resolveModel(opts.provider, opts.model);
+  if (m) return m;
 
   console.error('❌ 未检测到任何 API Key。');
   console.error('   请配置环境变量，例如：export DEEPSEEK_API_KEY="your-key"');
