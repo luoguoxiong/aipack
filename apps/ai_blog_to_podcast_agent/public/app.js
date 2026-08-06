@@ -1,17 +1,17 @@
-// apps/ai_travel_agent/public/app.js
-// 前端逻辑:拉取 /api/config、POST /api/plan(SSE 消费)、下载 /api/ics
+// apps/ai_blog_to_podcast_agent/public/app.js
+// 前端逻辑:拉取 /api/config、POST /api/podcast(SSE 消费摘要)、POST /api/tts(获取 mp3 Blob)
 
 const $ = (id) => document.getElementById(id);
 
 const els = {
   status: $('status'),
   model: $('model'),
-  destination: $('destination'),
-  days: $('days'),
-  startDate: $('startDate'),
+  url: $('url'),
   apiKey: $('apiKey'),
   apiKeyHint: $('apiKeyHint'),
   apiKeyToggle: $('apiKeyToggle'),
+  voice: $('voice'),
+  rate: $('rate'),
   generateBtn: $('generateBtn'),
   downloadBtn: $('downloadBtn'),
   copyBtn: $('copyBtn'),
@@ -19,18 +19,27 @@ const els = {
   progressTitle: $('progressTitle'),
   stageList: $('stageList'),
   result: $('result'),
-  itinerary: $('itinerary'),
+  summary: $('summary'),
+  audioBox: $('audioBox'),
+  audioPlayer: $('audioPlayer'),
+  audioMeta: $('audioMeta'),
   errorBox: $('errorBox'),
   errorText: $('errorText'),
 };
 
-// 默认出发日期 = 今天
-els.startDate.valueAsDate = new Date();
+// 语音与语速持久化(localStorage)
+const savedVoice = localStorage.getItem('blog_podcast_voice') || '';
+const savedRate = localStorage.getItem('blog_podcast_rate') || '+0%';
+if (savedRate) els.rate.value = savedRate;
+els.rate.addEventListener('change', () => {
+  localStorage.setItem('blog_podcast_rate', els.rate.value);
+});
 
 // ── 拉取服务状态 ──────────────────────────────────────────────────
 let statusInfo = null;
 let providerAvailable = new Map();
 let providerEnvVar = new Map();
+let currentAudioUrl = null;
 
 async function loadStatus() {
   try {
@@ -38,6 +47,7 @@ async function loadStatus() {
     const cfg = await res.json();
     statusInfo = cfg;
     renderModelSelect(cfg);
+    renderVoiceSelect(cfg);
     updateStatus();
     updateApiKeyField();
   } catch (e) {
@@ -45,6 +55,38 @@ async function loadStatus() {
   }
 }
 loadStatus();
+
+// ── 语音选择下拉(按语言分组)─────────────────────────────────────
+function renderVoiceSelect(cfg) {
+  const sel = els.voice;
+  sel.innerHTML = '';
+  const groups = new Map();
+  for (const v of cfg.voices || []) {
+    if (!groups.has(v.lang)) groups.set(v.lang, []);
+    groups.get(v.lang).push(v);
+  }
+  for (const [lang, items] of groups) {
+    const og = document.createElement('optgroup');
+    og.label = lang;
+    for (const v of items) {
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = v.name;
+      og.appendChild(opt);
+    }
+    sel.appendChild(og);
+  }
+  // 回填上次选择,否则默认第一个中文语音
+  if (savedVoice && [...sel.options].some((o) => o.value === savedVoice)) {
+    sel.value = savedVoice;
+  } else {
+    sel.value = 'zh-CN-XiaoxiaoNeural';
+  }
+}
+
+els.voice.addEventListener('change', () => {
+  localStorage.setItem('blog_podcast_voice', els.voice.value);
+});
 
 // ── 模型选择下拉(按 provider 分组;未配置 Key 的可在下方输入)────────
 function buildProviderMaps(cfg) {
@@ -83,7 +125,7 @@ function renderModelSelect(cfg) {
 function updateStatus() {
   if (!statusInfo) return;
   const llm = statusInfo.llmReady ? '✅ 已就绪' : '❌ 未配置(请设置 API Key)';
-  els.status.textContent = `模型 ${currentModelLabel()} · LLM ${llm} · 搜索:${statusInfo.searchBackend}`;
+  els.status.textContent = `模型 ${currentModelLabel()} · LLM ${llm} · 抓取:${statusInfo.scrapeBackend} · TTS:${statusInfo.ttsBackend || 'edge-tts'}`;
   els.status.classList.toggle('status--warn', !statusInfo.llmReady);
 }
 
@@ -101,7 +143,7 @@ function currentModelLabel() {
 
 // ── API Key 字段联动(已配 provider 禁用,未配启用 + localStorage 记忆)──
 function lsKey(provider) {
-  return `travel_agent_apikey_${provider}`;
+  return `blog_podcast_apikey_${provider}`;
 }
 
 function updateApiKeyField() {
@@ -142,41 +184,41 @@ els.apiKeyToggle.addEventListener('click', () => {
 
 // ── 阶段渲染 ──────────────────────────────────────────────────────
 const STAGES = {
-  research_start: { label: '🔎 研究目的地', state: 'active' },
-  research_done: { label: '🔎 研究目的地', state: 'done' },
-  plan_start: { label: '🗺️ 生成行程', state: 'active' },
+  scrape_start: { label: '📰 抓取博客正文' },
+  summary_start: { label: '✍️ 生成播客摘要' },
 };
 
-function renderStages(activeStage, research) {
+function renderStages(activeStage) {
   els.stageList.innerHTML = '';
-  const order = ['research_start', 'research_done', 'plan_start'];
-  const reached = order.indexOf(activeStage);
-  for (const key of ['research_start', 'plan_start']) {
+  // 两个阶段:抓取 → 摘要
+  const order = ['scrape_start', 'summary_start'];
+  const activeIdx = order.indexOf(activeStage);
+  for (let i = 0; i < order.length; i++) {
+    const key = order[i];
     const meta = STAGES[key];
-    const idx = order.indexOf(key);
     const div = document.createElement('div');
-    div.className = `stage stage--${idx <= reached ? (idx === reached && activeStage.endsWith('start') ? 'active' : 'done') : 'pending'}`;
+    let state;
+    if (activeIdx === -1) state = 'pending';
+    else if (i < activeIdx) state = 'done';
+    else if (i === activeIdx) state = 'active';
+    else state = 'pending';
+    // scrape_done 时把抓取阶段标 done
+    if (activeStage === 'scrape_done' && key === 'scrape_start') state = 'done';
+    div.className = `stage stage--${state}`;
     div.textContent = meta.label;
     els.stageList.appendChild(div);
   }
-  if (research) {
-    const det = document.createElement('details');
-    det.className = 'research-details';
-    det.innerHTML = `<summary>查看研究结果</summary><pre>${escapeHtml(research)}</pre>`;
-    els.stageList.appendChild(det);
-  }
 }
 
-// ── 生成行程(SSE)──────────────────────────────────────────────────
+// ── 生成播客(SSE 摘要 + TTS)───────────────────────────────────────
 els.generateBtn.addEventListener('click', async () => {
-  const destination = els.destination.value.trim();
-  const days = Number(els.days.value) || 7;
-  if (!destination) {
-    showError('请输入目的地');
+  const url = els.url.value.trim();
+  if (!url) {
+    showError('请输入博客 URL');
     return;
   }
 
-  // 未在服务器配 Key 的 provider,要求用户输入 API Key
+  // 未在服务器配 Key 的 provider,要求用户输入 LLM API Key
   const choice = currentModelChoice();
   const needKey = choice && !providerAvailable.get(choice.provider);
   const apiKey = needKey ? els.apiKey.value.trim() : undefined;
@@ -186,21 +228,29 @@ els.generateBtn.addEventListener('click', async () => {
   }
 
   setGenerating(true);
-  els.itinerary.textContent = '';
+  els.summary.textContent = '';
   els.result.classList.add('hidden');
+  els.audioBox.classList.add('hidden');
   els.errorBox.classList.add('hidden');
   els.progress.classList.remove('hidden');
   els.progressTitle.textContent = '准备中…';
-  renderStages('research_start');
+  renderStages('scrape_start');
   els.downloadBtn.disabled = true;
+  els.copyBtn.disabled = true;
+  // 清理上一轮音频 URL
+  if (currentAudioUrl) {
+    URL.revokeObjectURL(currentAudioUrl);
+    currentAudioUrl = null;
+  }
+  els.audioPlayer.src = '';
 
-  let itinerary = '';
+  let summary = '';
 
   try {
-    const res = await fetch('/api/plan', {
+    const res = await fetch('/api/podcast', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ destination, days, model: choice, apiKey }),
+      body: JSON.stringify({ url, model: choice, apiKey }),
     });
 
     if (!res.ok) {
@@ -228,27 +278,57 @@ els.generateBtn.addEventListener('click', async () => {
 
         if (evt.event === 'stage') {
           const d = evt.data;
-          els.progressTitle.textContent = d.stage === 'research_start' ? '正在研究目的地…' : d.stage === 'plan_start' ? '正在生成行程…' : '研究完成';
-          renderStages(d.stage, d.research);
+          els.progressTitle.textContent =
+            d.stage === 'scrape_start'
+              ? '正在抓取博客正文…'
+              : d.stage === 'scrape_done'
+                ? '抓取完成,准备生成摘要…'
+                : d.stage === 'summary_start'
+                  ? '正在生成播客摘要…'
+                  : '处理中';
+          renderStages(d.stage);
         } else if (evt.event === 'delta') {
-          itinerary += evt.data.delta;
+          summary += evt.data.delta;
           els.result.classList.remove('hidden');
-          els.itinerary.textContent = itinerary;
+          els.summary.textContent = summary;
           scrollToBottom();
         } else if (evt.event === 'done') {
-          itinerary = evt.data.itinerary || itinerary;
-          els.itinerary.textContent = itinerary;
+          summary = evt.data.summary || summary;
+          els.summary.textContent = summary;
         } else if (evt.event === 'error') {
           throw new Error(evt.data.message || '生成失败');
         }
       }
     }
 
-    if (!itinerary) throw new Error('未收到行程内容');
-    els.progressTitle.textContent = '✅ 完成';
-    renderStages('plan_start');
-    els.downloadBtn.disabled = false;
+    if (!summary) throw new Error('未收到摘要内容');
+    els.progressTitle.textContent = '✅ 摘要完成,正在合成语音…';
     els.copyBtn.disabled = false;
+
+    // ── 摘要完成后调用 /api/tts 获取音频(Edge TTS 免费,无需 Key)────────
+    const voice = els.voice.value || undefined;
+    const rate = els.rate.value || undefined;
+    const ttsRes = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: summary, voice, rate }),
+    });
+    if (!ttsRes.ok) {
+      const err = await ttsRes.json().catch(() => ({}));
+      throw new Error(err.error || err.message || `TTS HTTP ${ttsRes.status}`);
+    }
+    const blob = await ttsRes.blob();
+    currentAudioUrl = URL.createObjectURL(blob);
+    els.audioPlayer.src = currentAudioUrl;
+    const voiceUsed = ttsRes.headers.get('X-TTS-Voice') || voice || '?';
+    const sizeMb = (blob.size / 1024 / 1024).toFixed(2);
+    els.audioMeta.textContent = `语音:${voiceUsed} · 大小:${sizeMb} MB`;
+    els.audioBox.classList.remove('hidden');
+    els.progressTitle.textContent = '✅ 完成';
+    renderStages('summary_start'); // 标记摘要阶段为 active(随后由完成态展示)
+    // 标记全部完成
+    [...els.stageList.children].forEach((c) => (c.className = 'stage stage--done'));
+    els.downloadBtn.disabled = false;
   } catch (e) {
     showError(e.message);
   } finally {
@@ -256,35 +336,21 @@ els.generateBtn.addEventListener('click', async () => {
   }
 });
 
-// ── 下载 ICS ──────────────────────────────────────────────────────
-els.downloadBtn.addEventListener('click', async () => {
-  const itinerary = els.itinerary.textContent;
-  if (!itinerary) return;
-  const startDate = els.startDate.value || undefined;
-  const res = await fetch('/api/ics', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ itinerary, startDate }),
-  });
-  if (!res.ok) {
-    showError('生成 ICS 失败');
-    return;
-  }
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
+// ── 下载播客(复用 currentAudioUrl,避免二次请求)──────────────────
+els.downloadBtn.addEventListener('click', () => {
+  if (!currentAudioUrl) return;
   const a = document.createElement('a');
-  a.href = url;
-  a.download = 'travel_itinerary.ics';
+  a.href = currentAudioUrl;
+  a.download = 'podcast.mp3';
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
 });
 
-// ── 复制 ──────────────────────────────────────────────────────────
+// ── 复制摘要 ──────────────────────────────────────────────────────
 els.copyBtn.addEventListener('click', async () => {
   try {
-    await navigator.clipboard.writeText(els.itinerary.textContent || '');
+    await navigator.clipboard.writeText(els.summary.textContent || '');
     els.copyBtn.textContent = '已复制 ✓';
     setTimeout(() => (els.copyBtn.textContent = '复制'), 1500);
   } catch {
@@ -295,9 +361,11 @@ els.copyBtn.addEventListener('click', async () => {
 // ── 辅助 ──────────────────────────────────────────────────────────
 function setGenerating(on) {
   els.generateBtn.disabled = on;
-  els.generateBtn.textContent = on ? '生成中…' : '生成行程';
-  // 生成执行期间禁止切换模型 / 改 API Key,避免与进行中的请求不一致
+  els.generateBtn.textContent = on ? '生成中…' : '生成播客';
+  // 生成执行期间禁止切换模型 / 改 API Key / 改语音,避免与进行中的请求不一致
   els.model.disabled = on;
+  els.voice.disabled = on;
+  els.rate.disabled = on;
   if (on) {
     els.apiKey.disabled = true;
   } else {
@@ -312,7 +380,7 @@ function showError(msg) {
 }
 
 function scrollToBottom() {
-  els.itinerary.scrollTop = els.itinerary.scrollHeight;
+  els.summary.scrollTop = els.summary.scrollHeight;
 }
 
 function parseSse(raw) {
@@ -328,8 +396,4 @@ function parseSse(raw) {
   } catch {
     return { event, data: { raw: dataLines.join('\n') } };
   }
-}
-
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

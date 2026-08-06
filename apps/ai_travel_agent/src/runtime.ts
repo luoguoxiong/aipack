@@ -1,14 +1,12 @@
 /**
  * apps/ai_travel_agent/src/runtime.ts
  *
- * 忠实映射 awesome-llm-apps ai_travel_agent 的双 Agent 设计:
+ * 双 Agent 设计:
  *   - Researcher:用搜索工具检索目的地活动/住宿,返回研究结果
  *   - Planner:基于研究结果生成结构化行程草稿
  *
  * agentpack 是单 Runtime 框架,故用两个独立 Runtime 实例 + 链式编排。
  * Planner 用 stream() 流式输出,通过 onProgress 回调把增量推给 SSE。
- *
- * prompt 移植自 awesome-llm-apps/starter_ai_agents/ai_travel_agent/travel_agent.py。
  */
 import {
   createRuntime,
@@ -19,6 +17,8 @@ import {
   type Runtime,
 } from 'agentpack';
 import { createSearchTool } from './tools/search.js';
+import { buildModel } from './config.js';
+import { createHash } from 'node:crypto';
 
 const RESEARCHER_SYSTEM_PROMPT = `你是一位世界级的旅行研究员。给定一个旅行目的地和用户想要旅行的天数,你会生成一组用于查找相关旅行活动和住宿的搜索词,然后对每个搜索词搜索网络,分析结果,并返回最相关的结果。
 
@@ -37,6 +37,8 @@ const PLANNER_SYSTEM_PROMPT = `你是一位资深旅行规划师。给定一个�
 export interface PlanInput {
   destination: string;
   days: number;
+  /** 模型标识 `${provider}/${modelId}`,编入 sessionKey 以隔离不同模型的会话历史 */
+  modelKey?: string;
 }
 
 export interface PlanProgress {
@@ -100,10 +102,12 @@ export async function planTravel(
 ): Promise<{ research: string; itinerary: string }> {
   const { destination, days } = input;
   const safeDays = Math.max(1, Math.min(30, Math.trunc(days) || 7));
+  // 把模型标识编入 sessionKey,隔离不同模型的会话历史(/ 转为 - 避免路径分隔符)
+  const modelTag = input.modelKey ? `:${input.modelKey.replace(/[^a-z0-9._-]+/gi, '-')}` : '';
 
   // ── 阶段 1:Researcher 同步研究 ───────────────────────────────
   onProgress({ type: 'research_start' });
-  const researcherSession = `researcher:${slug(destination)}`;
+  const researcherSession = `researcher:${slug(destination)}${modelTag}`;
   const researchReq = createRequest(
     `请为目的地「${destination}」规划一次 ${safeDays} 天的旅行。` +
       `先列出 3 个相关搜索词,逐个调用 search_web 搜索,然后汇总返回最相关的研究结果(景点、活动、住宿、交通、美食)。`,
@@ -121,7 +125,7 @@ export async function planTravel(
 
   // ── 阶段 2:Planner 流式生成行程 ───────────────────────────────
   onProgress({ type: 'plan_start' });
-  const plannerSession = `planner:${slug(destination)}`;
+  const plannerSession = `planner:${slug(destination)}${modelTag}`;
   const plannerReq = createRequest(
     [
       `目的地: ${destination}`,
@@ -158,4 +162,49 @@ function slug(s: string): string {
     .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 40) || 'default';
+}
+
+// ─── Runtime 注册表:按 (provider, modelId) 缓存 Runtime 复用 ──────────
+
+export interface RuntimePair {
+  researcher: Runtime;
+  planner: Runtime;
+}
+
+export interface RuntimeRegistry {
+  /** 取(或首次构建并缓存)指定模型的 researcher/planner Runtime。apiKey 为用户提供的 key(不传则用 env)。模型不存在时抛错。 */
+  get(provider: string, modelId: string, apiKey?: string): RuntimePair;
+  /** 关闭所有缓存的 Runtime(优雅退出时调用) */
+  closeAll(): Promise<void>;
+}
+
+/**
+ * 创建 Runtime 注册表。模型在首次被选中时按需构建并缓存,
+ * 避免每次请求重建,同时支持运行时切换模型。
+ */
+export function createRuntimeRegistry(serpapiKey?: string): RuntimeRegistry {
+  const cache = new Map<string, RuntimePair>();
+  return {
+    get(provider, modelId, apiKey) {
+      // 用 key 的哈希区分缓存(不明文存 key);env key 用 'env'
+      const keyTag = apiKey ? `u:${createHash('sha256').update(apiKey).digest('hex').slice(0, 8)}` : 'env';
+      const cacheKey = `${provider}/${modelId}:${keyTag}`;
+      let pair = cache.get(cacheKey);
+      if (!pair) {
+        const { model, streamFn } = buildModel(provider, modelId, apiKey);
+        pair = {
+          researcher: createResearcherRuntime(model, streamFn, serpapiKey),
+          planner: createPlannerRuntime(model, streamFn),
+        };
+        cache.set(cacheKey, pair);
+      }
+      return pair;
+    },
+    async closeAll() {
+      await Promise.allSettled(
+        [...cache.values()].map((p) => Promise.all([p.researcher.close(), p.planner.close()])),
+      );
+      cache.clear();
+    },
+  };
 }

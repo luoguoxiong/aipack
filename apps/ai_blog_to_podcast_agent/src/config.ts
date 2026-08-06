@@ -1,9 +1,9 @@
 /**
- * apps/ai_travel_agent/src/config.ts
+ * apps/ai_blog_to_podcast_agent/src/config.ts
  *
  * 环境变量解析 + agentpack 模型/streamFn 装配。
- * 对齐根 examples/deepseek.ts 的「getBuiltinModel → adaptAiModel → createStreamFnFromAi」模式。
- * 多层容错:缺 Key 时给出明确提示而非崩溃,允许降级到无搜索 Key 模式。
+ * 对齐 ai_travel_agent/config.ts 的「getBuiltinModel → adaptAiModel → createStreamFnFromAi」模式。
+ * 多层容错:缺 Key 时给出明确提示而非崩溃,允许降级到无 Firecrawl Key 模式(走原生 fetch)。
  */
 import './loadEnv.js'; // 副作用:最先加载 .env(必须在读取 process.env 之前)
 import {
@@ -15,6 +15,7 @@ import {
   BUILTIN_PROVIDERS,
 } from 'agentpack';
 import type { Model, StreamFn } from 'agentpack';
+import { describeScrapeBackend } from './tools/scrape.js';
 
 /** 各 provider 的默认模型 id(与 ai/catalog.ts 对齐) */
 const DEFAULT_MODEL_BY_PROVIDER: Record<string, string> = {
@@ -48,9 +49,11 @@ export interface AppConfig {
   modelId: string;
   model: Model;
   streamFn: StreamFn;
-  serpapiKey?: string;
+  firecrawlKey?: string;
   /** 模型是否为真实接入(供 UI 展示状态) */
   llmReady: boolean;
+  /** 抓取后端链描述(供 UI 展示) */
+  scrapeBackend: string;
   /** 内置模型目录(供前端渲染模型选择下拉) */
   models: ModelOption[];
 }
@@ -60,7 +63,7 @@ export function loadConfig(): AppConfig {
   const port = Number(process.env.PORT) || 3000;
   const provider = (process.env.LLM_PROVIDER || 'deepseek').toLowerCase();
   const modelId = process.env.LLM_MODEL || DEFAULT_MODEL_BY_PROVIDER[provider] || 'deepseek-chat';
-  const serpapiKey = process.env.SERPAPI_KEY || undefined;
+  const firecrawlKey = process.env.FIRECRAWL_API_KEY || undefined;
 
   // ── 校验 provider 是否在内置列表 ──────────────────────────────
   const knownProviders = new Set(BUILTIN_PROVIDERS.map((p) => p.id));
@@ -83,8 +86,8 @@ export function loadConfig(): AppConfig {
   if (!llmReady) {
     const envHint = `${provider.toUpperCase()}_API_KEY`;
     console.warn(`⚠️  未检测到 ${envHint},真实 LLM 调用会失败。`);
-    console.warn('   设置后重试,例如: DEEPSEEK_API_KEY=sk-xxx pnpm --filter ai-travel-agent dev');
-    console.warn('   无 Key 时仍可启动服务,但 /api/plan 会返回错误提示。\n');
+    console.warn('   设置后重试,例如: DEEPSEEK_API_KEY=sk-xxx pnpm --filter ai-blog-to-podcast-agent dev');
+    console.warn('   无 Key 时仍可启动服务,但 /api/podcast 会返回错误提示。\n');
   }
 
   // ── 内置模型目录(供前端模型选择;available 取决于当前已配置的 API Key)──
@@ -107,8 +110,9 @@ export function loadConfig(): AppConfig {
     modelId,
     model: adaptAiModel(aiModel),
     streamFn: createStreamFnFromAi(aiModel),
-    serpapiKey,
+    firecrawlKey,
     llmReady,
+    scrapeBackend: describeScrapeBackend(firecrawlKey),
     models,
   };
 }

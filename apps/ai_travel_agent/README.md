@@ -1,10 +1,10 @@
 # 🛫 AI Travel Agent
 
-基于 [agentpack](../../packages/agentpack) 的 AI 旅行行程规划 Web 应用。功能参考 [awesome-llm-apps/ai_travel_agent](https://github.com/Shubhamsaboo/awesome-llm-apps/tree/main/starter_ai_agents/ai_travel_agent),用 TypeScript + 原生 http 重写,零运行时框架依赖。
+基于 [agentpack](../../packages/agentpack) 的 AI 旅行行程规划 Web 应用,用 TypeScript + 原生 http 重写,零运行时框架依赖。
 
 ## 特性
 
-- **双 Agent 编排**:Researcher(带搜索工具)→ Planner(流式生成行程),忠实映射参考实现的两阶段设计
+- **双 Agent 编排**:Researcher(带搜索工具)→ Planner(流式生成行程),两阶段设计
 - **三层搜索降级**(符合多层容错偏好):SerpAPI → DuckDuckGo HTML → 内置旅游知识兜底
 - **流式输出**:Planner 通过 SSE 实时推送行程增量,前端逐字渲染
 - **多 LLM 提供商**:默认 DeepSeek,可切换 OpenAI / Anthropic / Google / Groq 等
@@ -51,17 +51,17 @@ cp .env.example .env
 # 编辑 .env,至少配置一个 LLM API Key
 ```
 
-| 变量 | 说明 | 默认 |
-| --- | --- | --- |
-| `LLM_PROVIDER` | LLM 提供商 | `deepseek` |
-| `LLM_MODEL` | 模型 id(留空按 provider 取默认) | — |
-| `DEEPSEEK_API_KEY` | DeepSeek Key | — |
-| `OPENAI_API_KEY` | OpenAI Key | — |
-| `ANTHROPIC_API_KEY` | Anthropic Key | — |
-| `GEMINI_API_KEY` | Google Gemini Key | — |
-| `GROQ_API_KEY` | Groq Key | — |
-| `SERPAPI_KEY` | SerpAPI Key(可选,不配则走免费搜索) | — |
-| `PORT` | Web 服务端口 | `3000` |
+| 变量                | 说明                               | 默认       |
+| ------------------- | ---------------------------------- | ---------- |
+| `LLM_PROVIDER`      | LLM 提供商                         | `deepseek` |
+| `LLM_MODEL`         | 模型 id(留空按 provider 取默认)    | —          |
+| `DEEPSEEK_API_KEY`  | DeepSeek Key                       | —          |
+| `OPENAI_API_KEY`    | OpenAI Key                         | —          |
+| `ANTHROPIC_API_KEY` | Anthropic Key                      | —          |
+| `GEMINI_API_KEY`    | Google Gemini Key                  | —          |
+| `GROQ_API_KEY`      | Groq Key                           | —          |
+| `SERPAPI_KEY`       | SerpAPI Key(可选,不配则走免费搜索) | —          |
+| `PORT`              | Web 服务端口                       | `3000`     |
 
 > 完整 provider 与 envVar 对照见 [`packages/agentpack/ai/catalog.ts`](../../packages/agentpack/ai/catalog.ts) 的 `BUILTIN_PROVIDERS`。
 
@@ -85,7 +85,7 @@ pnpm --filter ai-travel-agent serve
 
 ### 双 Agent 编排
 
-agentpack 是单 Runtime 框架,本应用用两个独立 Runtime 实例模拟参考实现的双 Agent 设计:
+agentpack 是单 Runtime 框架,本应用用两个独立 Runtime 实例实现双 Agent 设计:
 
 - **Researcher Runtime**([src/runtime.ts](src/runtime.ts)):系统提示词要求生成搜索词并调用 `search_web` 工具;带会话持久化,`maxTurns=20` 允许多轮搜索
 - **Planner Runtime**:系统提示词要求按天生成结构化行程;`maxTurns=5`,纯生成无工具;用 `stream()` 流式输出
@@ -106,24 +106,12 @@ agentpack 是单 Runtime 框架,本应用用两个独立 Runtime 实例模拟参
 
 ## API
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `GET` | `/` | 单页 UI |
-| `GET` | `/api/config` | 当前模型与搜索后端状态 |
-| `POST` | `/api/plan` | SSE 流式生成行程;body `{ destination, days }` |
-| `POST` | `/api/ics` | 生成 ICS 下载;body `{ itinerary, startDate? }` |
-
-## 与参考实现的差异
-
-| 维度 | awesome-llm-apps | 本实现 |
-| --- | --- | --- |
-| 语言 | Python(agno + Streamlit) | TypeScript(agentpack + 原生 http) |
-| 多 Agent | agno Agent 多实例 | agentpack Runtime 多实例 |
-| 搜索 | 仅 SerpAPI | SerpAPI + DuckDuckGo + 兜底 |
-| LLM | GPT-4o / 本地 Ollama | DeepSeek 默认,多提供商 |
-| UI | Streamlit | 原生 HTML/CSS/JS + SSE |
-| ICS | `icalendar` 库 | 零依赖手写 |
-| 日历下载 | Streamlit download_button | Blob 下载 |
+| 方法   | 路径          | 说明                                           |
+| ------ | ------------- | ---------------------------------------------- |
+| `GET`  | `/`           | 单页 UI                                        |
+| `GET`  | `/api/config` | 当前模型与搜索后端状态                         |
+| `POST` | `/api/plan`   | SSE 流式生成行程;body `{ destination, days }`  |
+| `POST` | `/api/ics`    | 生成 ICS 下载;body `{ itinerary, startDate? }` |
 
 ## 开发
 

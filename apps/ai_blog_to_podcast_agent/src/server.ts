@@ -1,14 +1,14 @@
 /**
- * apps/ai_travel_agent/src/server.ts
+ * apps/ai_blog_to_podcast_agent/src/server.ts
  *
  * 原生 http 服务(零运行时框架依赖):
  *   - GET  /                 → public/index.html
  *   - GET  /<static>          → public/app.js / style.css / favicon
- *   - GET  /api/config        → 当前模型/搜索后端状态(JSON)
- *   - POST /api/plan          → SSE 流式:research_start → research_done → plan_start → plan_delta* → done
- *   - POST /api/ics           → 生成并下载 .ics 文件
+ *   - GET  /api/config        → 当前模型/抓取后端/语音列表状态(JSON)
+ *   - POST /api/podcast       → SSE 流式:scrape_start → scrape_done → summary_start → summary_delta* → done
+ *   - POST /api/tts           → 合成并下载 .mp3 二进制(Edge TTS 免费,无需 Key)
  *
- * 启动:pnpm --filter ai-travel-agent dev
+ * 启动:pnpm --filter ai-blog-to-podcast-agent dev
  */
 import http from 'node:http';
 import { promises as fs } from 'node:fs';
@@ -17,13 +17,11 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig, resolveModelChoice } from './config.js';
 import {
   createRuntimeRegistry,
-  planTravel,
-  type PlanProgress,
-  type RuntimePair,
+  generatePodcast,
+  type PodcastProgress,
   type RuntimeRegistry,
 } from './runtime.js';
-import { describeSearchBackend } from './tools/search.js';
-import { generateIcs } from './itinerary.js';
+import { synthesizeSpeech, VOICES } from './tts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.resolve(__dirname, '../public');
@@ -43,7 +41,7 @@ async function main() {
   const config = loadConfig();
 
   // Runtime 注册表:按用户选择的模型按需构建并缓存(支持运行时切换模型)
-  const registry = createRuntimeRegistry(config.serpapiKey);
+  const registry = createRuntimeRegistry(config.firecrawlKey);
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -55,20 +53,25 @@ async function main() {
           provider: config.provider,
           model: config.modelId,
           llmReady: config.llmReady,
-          searchBackend: describeSearchBackend(config.serpapiKey),
+          scrapeBackend: config.scrapeBackend,
           defaultModel: { provider: config.provider, modelId: config.modelId },
           models: config.models,
+          voices: VOICES,
+          ttsBackend: 'edge-tts(免费·无需Key)',
         });
       }
 
-      // ── POST /api/plan (SSE 流式) ──────────────────────────────
-      if (req.method === 'POST' && url.pathname === '/api/plan') {
-        return handlePlan(req, res, { registry, fallback: { provider: config.provider, modelId: config.modelId } });
+      // ── POST /api/podcast (SSE 流式) ──────────────────────────
+      if (req.method === 'POST' && url.pathname === '/api/podcast') {
+        return handlePodcast(req, res, {
+          registry,
+          fallback: { provider: config.provider, modelId: config.modelId },
+        });
       }
 
-      // ── POST /api/ics ──────────────────────────────────────────
-      if (req.method === 'POST' && url.pathname === '/api/ics') {
-        return handleIcs(req, res);
+      // ── POST /api/tts (二进制音频) ────────────────────────────
+      if (req.method === 'POST' && url.pathname === '/api/tts') {
+        return handleTts(req, res);
       }
 
       // ── 静态资源 ───────────────────────────────────────────────
@@ -87,11 +90,12 @@ async function main() {
     const banner = [
       '',
       '╔══════════════════════════════════════════════════╗',
-      '║        🛫  AI Travel Agent (agentpack)           ║',
+      '║      🎙️  AI Blog to Podcast (agentpack)         ║',
       '╠══════════════════════════════════════════════════╣',
       `║  模型:     ${pad(`${config.provider}/${config.modelId}`, 38)}║`,
       `║  LLM 就绪: ${pad(config.llmReady ? '✅ 是' : '❌ 否(请配置 API Key)', 38)}║`,
-      `║  搜索后端: ${pad(describeSearchBackend(config.serpapiKey), 38)}║`,
+      `║  抓取后端: ${pad(config.scrapeBackend, 38)}║`,
+      `║  TTS:      ${pad('Edge TTS(免费·无需Key)', 38)}║`,
       `║  地址:     ${pad(`http://localhost:${config.port}`, 38)}║`,
       '╚══════════════════════════════════════════════════╝',
       '',
@@ -118,31 +122,36 @@ function pad(s: string, n: number): string {
   return s + ' '.repeat(need);
 }
 
-// ─── SSE: /api/plan ────────────────────────────────────────────────
+// ─── SSE: /api/podcast ────────────────────────────────────────────
 
-async function handlePlan(
+async function handlePodcast(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   ctx: { registry: RuntimeRegistry; fallback: { provider: string; modelId: string } },
 ) {
   const body =
     (await readJson(req).catch(() => null)) as
-      | { destination?: string; days?: number; model?: { provider?: string; modelId?: string }; apiKey?: string }
+      | { url?: string; model?: { provider?: string; modelId?: string }; apiKey?: string }
       | null;
-  if (!body || typeof body.destination !== 'string' || !body.destination.trim()) {
-    return json(res, 400, { error: '缺少 destination 参数' });
+  if (!body || typeof body.url !== 'string' || !body.url.trim()) {
+    return json(res, 400, { error: '缺少 url 参数' });
   }
-  const destination = body.destination.trim();
-  const days = Number(body.days) || 7;
+  const url = body.url.trim();
+  // 简单 URL 校验
+  try {
+    new URL(url);
+  } catch {
+    return json(res, 400, { error: 'url 格式无效' });
+  }
 
   // 校验并解析模型选择(缺省回退默认模型);未配置 Key 或未知模型 → 400
   const { choice, error: modelError } = resolveModelChoice(body.model, ctx.fallback, body.apiKey);
   if (modelError) {
     return json(res, 400, { error: modelError });
   }
-  let runtimes: RuntimePair;
+  let runtime;
   try {
-    runtimes = ctx.registry.get(choice.provider, choice.modelId, choice.apiKey);
+    runtime = ctx.registry.get(choice.provider, choice.modelId, choice.apiKey);
   } catch (e) {
     return json(res, 400, { error: (e as Error).message });
   }
@@ -164,45 +173,57 @@ async function handlePlan(
   const ac = new AbortController();
   req.on('close', () => ac.abort());
 
-  const onProgress = (p: PlanProgress) => {
-    if (p.type === 'plan_delta') send('delta', { delta: p.delta });
-    else if (p.type === 'research_start') send('stage', { stage: 'research_start' });
-    else if (p.type === 'research_done') send('stage', { stage: 'research_done', research: p.research });
-    else if (p.type === 'plan_start') send('stage', { stage: 'plan_start' });
-    else if (p.type === 'done') send('done', { itinerary: p.itinerary });
+  const onProgress = (p: PodcastProgress) => {
+    if (p.type === 'summary_delta') send('delta', { delta: p.delta });
+    else if (p.type === 'scrape_start') send('stage', { stage: 'scrape_start' });
+    else if (p.type === 'scrape_done') send('stage', { stage: 'scrape_done' });
+    else if (p.type === 'summary_start') send('stage', { stage: 'summary_start' });
+    else if (p.type === 'done') send('done', { summary: p.summary });
     else if (p.type === 'error') send('error', { message: p.message });
   };
 
   try {
-    await planTravel({ destination, days, modelKey: choice.modelKey }, runtimes, onProgress, ac.signal);
+    await generatePodcast({ url, modelKey: choice.modelKey }, runtime, onProgress, ac.signal);
   } catch (err) {
     const msg = (err as Error).message === 'aborted' ? '客户端已断开' : (err as Error).message;
     if (msg !== '客户端已断开') {
       send('error', { message: msg });
-      console.error('[/api/plan] 失败:', err);
+      console.error('[/api/podcast] 失败:', err);
     }
   } finally {
     res.end();
   }
 }
 
-// ─── POST /api/ics ─────────────────────────────────────────────────
+// ─── POST /api/tts(二进制音频,Edge TTS 免费)─────────────────────────
 
-async function handleIcs(req: http.IncomingMessage, res: http.ServerResponse) {
-  const body = (await readJson(req).catch(() => null)) as { itinerary?: string; startDate?: string } | null;
-  if (!body || typeof body.itinerary !== 'string') {
-    return json(res, 400, { error: '缺少 itinerary 参数' });
+async function handleTts(req: http.IncomingMessage, res: http.ServerResponse) {
+  const body =
+    (await readJson(req).catch(() => null)) as
+      | { text?: string; voice?: string; rate?: string; volume?: string }
+      | null;
+  if (!body || typeof body.text !== 'string' || !body.text.trim()) {
+    return json(res, 400, { error: '缺少 text 参数' });
   }
-  const startDate = body.startDate ? new Date(body.startDate) : new Date();
-  if (isNaN(startDate.getTime())) {
-    return json(res, 400, { error: 'startDate 格式无效' });
+
+  try {
+    const { audio, voiceUsed } = await synthesizeSpeech({
+      text: body.text,
+      voice: body.voice,
+      rate: body.rate,
+      volume: body.volume,
+    });
+    res.writeHead(200, {
+      'Content-Type': 'audio/mpeg',
+      'Content-Disposition': 'attachment; filename="podcast.mp3"',
+      'Content-Length': String(audio.length),
+      'X-TTS-Voice': voiceUsed,
+    });
+    res.end(audio);
+  } catch (err) {
+    console.error('[/api/tts] 失败:', (err as Error).message);
+    return json(res, 500, { error: 'TTS 生成失败', message: (err as Error).message });
   }
-  const ics = generateIcs(body.itinerary as string, startDate);
-  res.writeHead(200, {
-    'Content-Type': 'text/calendar; charset=utf-8',
-    'Content-Disposition': 'attachment; filename="travel_itinerary.ics"',
-  });
-  res.end(ics);
 }
 
 // ─── 静态资源 ──────────────────────────────────────────────────────
@@ -239,7 +260,7 @@ function readJson(req: http.IncomingMessage): Promise<unknown> {
     let raw = '';
     req.on('data', (c) => {
       raw += c;
-      if (raw.length > 1_000_000) reject(new Error('body too large')), req.destroy();
+      if (raw.length > 2_000_000) reject(new Error('body too large')), req.destroy(); // 摘要+TTS 文本可能较大,放宽到 2MB
     });
     req.on('end', () => {
       try {
