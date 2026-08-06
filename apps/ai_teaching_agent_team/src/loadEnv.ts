@@ -14,11 +14,12 @@ import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// 注:不能命名为 __dirname/__filename,否则 esbuild 打包时与 ESM shim 冲突(重复声明)
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
 /** 从当前目录向上查找 .env,最多回溯 5 层 */
 function findEnvFile(): string | null {
-  let dir = __dirname;
+  let dir = moduleDir;
   for (let i = 0; i < 6; i++) {
     const candidate = path.join(dir, '.env');
     if (existsSync(candidate)) return candidate;
