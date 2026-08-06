@@ -118,6 +118,7 @@ pnpm --filter agentpack-cli typecheck
 基于 agentpack 构建的端到端应用：
 
 - [ai_travel_agent](apps/ai_travel_agent/README.md) — 🛫 AI 旅行行程规划 Web 应用（Researcher + Planner 双 Agent + SSE 流式 + ICS 日历导出）
+- [ai_blog_to_podcast_agent](apps/ai_blog_to_podcast_agent/README.md) — 🎙️ AI 博客转播客 Web 应用（博客正文抓取 + 对话式摘要 + Edge TTS 免费语音合成 + SSE 流式）
 
 ## 许可证
 
