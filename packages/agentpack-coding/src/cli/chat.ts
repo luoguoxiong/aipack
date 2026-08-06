@@ -226,7 +226,7 @@ export async function startChat(opts: ChatOptions): Promise<void> {
       return;
     }
     if (trimmed === '/model') {
-      console.log(`模型: ${opts.provider ?? 'auto'}/${opts.model ?? 'auto'}`);
+      console.log(`模型: ${agent.model.provider} / ${agent.model.id}`);
       prompt();
       return;
     }

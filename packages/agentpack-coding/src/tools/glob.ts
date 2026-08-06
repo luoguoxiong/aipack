@@ -90,7 +90,9 @@ export function createGlobTool(ctx: CodingToolContext): Tool {
       }
 
       const ws = path.resolve(ctx.workspace);
-      const allFiles = await walkDir(resolved.abs, { maxFiles: maxResults * 20 });
+      // 遍历上限放宽到 10 万（walkDir 默认 1 万），避免大仓库漏扫尾部文件；
+      // 匹配数量在下方循环内达到 maxResults 即提前 break。
+      const allFiles = await walkDir(resolved.abs, { maxFiles: 100_000 });
 
       const matched: string[] = [];
       for (const file of allFiles) {

@@ -15,20 +15,18 @@
 import {
   createRuntime,
   createFileSessionStorage,
-  getBuiltinModel,
-  getBuiltinModels,
-  getEnvApiKey,
   adaptAiModel,
   createStreamFnFromAi,
 } from 'agentpack';
 import type { Runtime, Tool, Extension, ContextTransformer, StreamFn, AiModel } from 'agentpack';
 import { createCodingTools } from './tools';
 import { PermissionManager } from './permission';
+import { resolveModel } from './model';
 import { DEFAULT_CODING_SYSTEM_PROMPT } from './prompt';
 import type { CodingAgentOptions, CodingAgent } from './types';
 
 /**
- * 解析 AI 模型（分层兜底，同 agentpack-cli/runtime.ts 的 resolveAiModel）：
+ * 解析 AI 模型（分层兜底，见 src/model.ts）：
  * 1. aiModel 直接传入 → 用它
  * 2. provider + model 精确查找
  * 3. 全局按 model id 查找
@@ -39,16 +37,8 @@ function resolveAiModel(
   provider: string | undefined,
   model: string | undefined,
 ): AiModel {
-  if (provider && model) {
-    const m = getBuiltinModel(provider, model);
-    if (m) return m;
-  }
-  if (model) {
-    const byId = getBuiltinModels().find((m) => m.id === model);
-    if (byId) return byId;
-  }
-  const fallback = getBuiltinModels().find((m) => !!getEnvApiKey(m.provider));
-  if (fallback) return fallback;
+  const m = resolveModel(provider, model);
+  if (m) return m;
   throw new Error(
     '未找到可用模型。请配置 API Key（如 DEEPSEEK_API_KEY / OPENAI_API_KEY）或显式传入 aiModel。',
   );
@@ -113,6 +103,7 @@ export async function createCodingAgent(
     runtime,
     permission,
     tools: allTools,
+    model: aiModel,
     async close() {
       await runtime.close();
     },
