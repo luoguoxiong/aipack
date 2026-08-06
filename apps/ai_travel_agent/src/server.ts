@@ -14,8 +14,14 @@ import http from 'node:http';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig } from './config.js';
-import { createResearcherRuntime, createPlannerRuntime, planTravel, type PlanProgress } from './runtime.js';
+import { loadConfig, resolveModelChoice } from './config.js';
+import {
+  createRuntimeRegistry,
+  planTravel,
+  type PlanProgress,
+  type RuntimePair,
+  type RuntimeRegistry,
+} from './runtime.js';
 import { describeSearchBackend } from './tools/search.js';
 import { generateIcs } from './itinerary.js';
 
@@ -36,9 +42,8 @@ const MIME: Record<string, string> = {
 async function main() {
   const config = loadConfig();
 
-  // 预构建 Runtime(单实例复用,会话隔离靠 sessionKey)
-  const researcher = createResearcherRuntime(config.model, config.streamFn, config.serpapiKey);
-  const planner = createPlannerRuntime(config.model, config.streamFn);
+  // Runtime 注册表:按用户选择的模型按需构建并缓存(支持运行时切换模型)
+  const registry = createRuntimeRegistry(config.serpapiKey);
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -51,12 +56,14 @@ async function main() {
           model: config.modelId,
           llmReady: config.llmReady,
           searchBackend: describeSearchBackend(config.serpapiKey),
+          defaultModel: { provider: config.provider, modelId: config.modelId },
+          models: config.models,
         });
       }
 
       // ── POST /api/plan (SSE 流式) ──────────────────────────────
       if (req.method === 'POST' && url.pathname === '/api/plan') {
-        return handlePlan(req, res, { researcher, planner });
+        return handlePlan(req, res, { registry, fallback: { provider: config.provider, modelId: config.modelId } });
       }
 
       // ── POST /api/ics ──────────────────────────────────────────
@@ -96,7 +103,7 @@ async function main() {
   const shutdown = async (sig: string) => {
     console.log(`\n[${sig}] 正在关闭...`);
     server.close();
-    await Promise.allSettled([researcher.close(), planner.close()]);
+    await registry.closeAll();
     process.exit(0);
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));
@@ -116,14 +123,29 @@ function pad(s: string, n: number): string {
 async function handlePlan(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  runtimes: { researcher: ReturnType<typeof createResearcherRuntime>; planner: ReturnType<typeof createPlannerRuntime> },
+  ctx: { registry: RuntimeRegistry; fallback: { provider: string; modelId: string } },
 ) {
-  const body = (await readJson(req).catch(() => null)) as { destination?: string; days?: number } | null;
+  const body =
+    (await readJson(req).catch(() => null)) as
+      | { destination?: string; days?: number; model?: { provider?: string; modelId?: string }; apiKey?: string }
+      | null;
   if (!body || typeof body.destination !== 'string' || !body.destination.trim()) {
     return json(res, 400, { error: '缺少 destination 参数' });
   }
   const destination = body.destination.trim();
   const days = Number(body.days) || 7;
+
+  // 校验并解析模型选择(缺省回退默认模型);未配置 Key 或未知模型 → 400
+  const { choice, error: modelError } = resolveModelChoice(body.model, ctx.fallback, body.apiKey);
+  if (modelError) {
+    return json(res, 400, { error: modelError });
+  }
+  let runtimes: RuntimePair;
+  try {
+    runtimes = ctx.registry.get(choice.provider, choice.modelId, choice.apiKey);
+  } catch (e) {
+    return json(res, 400, { error: (e as Error).message });
+  }
 
   // SSE 头(禁用代理缓冲,保证流式)
   res.writeHead(200, {
@@ -152,7 +174,7 @@ async function handlePlan(
   };
 
   try {
-    await planTravel({ destination, days }, runtimes, onProgress, ac.signal);
+    await planTravel({ destination, days, modelKey: choice.modelKey }, runtimes, onProgress, ac.signal);
   } catch (err) {
     const msg = (err as Error).message === 'aborted' ? '客户端已断开' : (err as Error).message;
     if (msg !== '客户端已断开') {

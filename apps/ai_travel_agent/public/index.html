@@ -30,6 +30,10 @@
         </label>
       </div>
       <div class="form-row">
+        <label class="field">
+          <span>模型</span>
+          <select id="model"></select>
+        </label>
         <label class="field field--sm">
           <span>出发日期(用于日历)</span>
           <input id="startDate" type="date" />
@@ -38,6 +42,15 @@
           <button id="generateBtn" class="btn btn--primary">生成行程</button>
           <button id="downloadBtn" class="btn btn--ghost" disabled>下载日历 (.ics)</button>
         </div>
+      </div>
+      <div class="form-row">
+        <label class="field field--grow">
+          <span>API Key <span id="apiKeyHint" class="hint"></span></span>
+          <div class="input-with-toggle">
+            <input id="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" spellcheck="false" />
+            <button id="apiKeyToggle" type="button" class="btn btn--ghost btn--sm" aria-label="显示/隐藏 API Key">👁</button>
+          </div>
+        </label>
       </div>
     </section>
 

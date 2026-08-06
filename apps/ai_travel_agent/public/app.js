@@ -5,9 +5,13 @@ const $ = (id) => document.getElementById(id);
 
 const els = {
   status: $('status'),
+  model: $('model'),
   destination: $('destination'),
   days: $('days'),
   startDate: $('startDate'),
+  apiKey: $('apiKey'),
+  apiKeyHint: $('apiKeyHint'),
+  apiKeyToggle: $('apiKeyToggle'),
   generateBtn: $('generateBtn'),
   downloadBtn: $('downloadBtn'),
   copyBtn: $('copyBtn'),
@@ -24,18 +28,117 @@ const els = {
 els.startDate.valueAsDate = new Date();
 
 // ── 拉取服务状态 ──────────────────────────────────────────────────
+let statusInfo = null;
+let providerAvailable = new Map();
+let providerEnvVar = new Map();
+
 async function loadStatus() {
   try {
     const res = await fetch('/api/config');
     const cfg = await res.json();
-    const llm = cfg.llmReady ? '✅ 已就绪' : '❌ 未配置(请设置 API Key)';
-    els.status.textContent = `模型 ${cfg.model} · LLM ${llm} · 搜索:${cfg.searchBackend}`;
-    els.status.classList.toggle('status--warn', !cfg.llmReady);
+    statusInfo = cfg;
+    renderModelSelect(cfg);
+    updateStatus();
+    updateApiKeyField();
   } catch (e) {
     els.status.textContent = '⚠️ 无法连接服务';
   }
 }
 loadStatus();
+
+// ── 模型选择下拉(按 provider 分组;未配置 Key 的可在下方输入)────────
+function buildProviderMaps(cfg) {
+  providerAvailable = new Map();
+  providerEnvVar = new Map();
+  for (const m of cfg.models || []) {
+    providerAvailable.set(m.provider, m.available);
+    providerEnvVar.set(m.provider, m.envVar);
+  }
+}
+
+function renderModelSelect(cfg) {
+  buildProviderMaps(cfg);
+  const sel = els.model;
+  sel.innerHTML = '';
+  const groups = new Map();
+  for (const m of cfg.models || []) {
+    if (!groups.has(m.provider)) groups.set(m.provider, { name: m.providerName, items: [] });
+    groups.get(m.provider).items.push(m);
+  }
+  for (const [provider, g] of groups) {
+    const og = document.createElement('optgroup');
+    og.label = g.name;
+    for (const m of g.items) {
+      const opt = document.createElement('option');
+      opt.value = `${provider}:${m.modelId}`;
+      opt.textContent = m.modelName;
+      og.appendChild(opt);
+    }
+    sel.appendChild(og);
+  }
+  const dflt = cfg.defaultModel;
+  if (dflt) sel.value = `${dflt.provider}:${dflt.modelId}`;
+}
+
+function updateStatus() {
+  if (!statusInfo) return;
+  const llm = statusInfo.llmReady ? '✅ 已就绪' : '❌ 未配置(请设置 API Key)';
+  els.status.textContent = `模型 ${currentModelLabel()} · LLM ${llm} · 搜索:${statusInfo.searchBackend}`;
+  els.status.classList.toggle('status--warn', !statusInfo.llmReady);
+}
+
+function currentModelChoice() {
+  const v = els.model.value || '';
+  const idx = v.indexOf(':');
+  return idx === -1 ? undefined : { provider: v.slice(0, idx), modelId: v.slice(idx + 1) };
+}
+
+function currentModelLabel() {
+  const opt = els.model.options[els.model.selectedIndex];
+  if (!opt) return statusInfo?.model || '?';
+  return opt.textContent.split(' · ')[0];
+}
+
+// ── API Key 字段联动(已配 provider 禁用,未配启用 + localStorage 记忆)──
+function lsKey(provider) {
+  return `travel_agent_apikey_${provider}`;
+}
+
+function updateApiKeyField() {
+  const choice = currentModelChoice();
+  if (!choice) return;
+  const provider = choice.provider;
+  const available = providerAvailable.get(provider);
+  const envVar = providerEnvVar.get(provider) || `${provider.toUpperCase()}_API_KEY`;
+  if (available) {
+    els.apiKey.disabled = true;
+    els.apiKey.value = '';
+    els.apiKey.placeholder = '已用服务器配置,无需输入';
+    els.apiKeyHint.textContent = '✅ 已用服务器配置';
+    els.apiKeyHint.className = 'hint hint--ok';
+  } else {
+    els.apiKey.disabled = false;
+    els.apiKey.placeholder = `输入 ${envVar}`;
+    els.apiKeyHint.textContent = `需要 ${envVar}`;
+    els.apiKeyHint.className = 'hint';
+    const saved = localStorage.getItem(lsKey(provider));
+    if (saved) els.apiKey.value = saved;
+  }
+}
+
+els.model.addEventListener('change', () => {
+  updateStatus();
+  updateApiKeyField();
+});
+
+els.apiKey.addEventListener('input', () => {
+  const choice = currentModelChoice();
+  if (choice) localStorage.setItem(lsKey(choice.provider), els.apiKey.value);
+});
+
+els.apiKeyToggle.addEventListener('click', () => {
+  els.apiKey.type = els.apiKey.type === 'password' ? 'text' : 'password';
+});
 
 // ── 阶段渲染 ──────────────────────────────────────────────────────
 const STAGES = {
@@ -73,6 +176,15 @@ els.generateBtn.addEventListener('click', async () => {
     return;
   }
 
+  // 未在服务器配 Key 的 provider,要求用户输入 API Key
+  const choice = currentModelChoice();
+  const needKey = choice && !providerAvailable.get(choice.provider);
+  const apiKey = needKey ? els.apiKey.value.trim() : undefined;
+  if (needKey && !apiKey) {
+    showError(`请输入 API Key(${providerEnvVar.get(choice.provider) || '需配置'})`);
+    return;
+  }
+
   setGenerating(true);
   els.itinerary.textContent = '';
   els.result.classList.add('hidden');
@@ -88,7 +200,7 @@ els.generateBtn.addEventListener('click', async () => {
     const res = await fetch('/api/plan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ destination, days }),
+      body: JSON.stringify({ destination, days, model: choice, apiKey }),
     });
 
     if (!res.ok) {
@@ -184,6 +296,14 @@ els.copyBtn.addEventListener('click', async () => {
 function setGenerating(on) {
   els.generateBtn.disabled = on;
   els.generateBtn.textContent = on ? '生成中…' : '生成行程';
+  // 生成执行期间禁止切换模型 / 改 API Key,避免与进行中的请求不一致
+  els.model.disabled = on;
+  if (on) {
+    els.apiKey.disabled = true;
+  } else {
+    // 结束后按当前 provider 恢复 API Key 字段状态(已配→禁用,未配→启用并回填)
+    updateApiKeyField();
+  }
 }
 
 function showError(msg) {
