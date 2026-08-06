@@ -1,6 +1,8 @@
 node_modules/
 .pnpm-store
 dist/
+# Netlify Functions 打包产物(由 build:functions 生成)
+apps/ai_teaching_agent_team/netlify/functions-dist/
 .webui/
 .kobot/
 .agentpack/
