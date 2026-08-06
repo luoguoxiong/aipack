@@ -119,6 +119,7 @@ pnpm --filter agentpack-cli typecheck
 
 - [ai_travel_agent](apps/ai_travel_agent/README.md) — 🛫 AI 旅行行程规划 Web 应用（Researcher + Planner 双 Agent + SSE 流式 + ICS 日历导出）
 - [ai_blog_to_podcast_agent](apps/ai_blog_to_podcast_agent/README.md) — 🎙️ AI 博客转播客 Web 应用（博客正文抓取 + 对话式摘要 + Edge TTS 免费语音合成 + SSE 流式）
+- [ai_teaching_agent_team](apps/ai_teaching_agent_team/README.md) — 👨‍🏫 AI 教学代理团队 Web 应用（Professor + Advisor + Librarian + TA 四 Agent 顺序接力 + SSE 全流式 + Markdown 课程导出 + React 前端）
 
 ## 许可证
 
