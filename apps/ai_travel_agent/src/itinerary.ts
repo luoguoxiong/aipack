@@ -1,7 +1,7 @@
 /**
  * apps/ai_travel_agent/src/itinerary.ts
  *
- * 零依赖 ICS 日历文件生成。移植自 awesome-llm-apps ai_travel_agent 的 generate_ics_content:
+ * 零依赖 ICS 日历文件生成:
  *   - 用正则拆 "Day N: ..." 为多天,每 Day 一个全天事件
  *   - 无匹配则整体作单事件
  *
