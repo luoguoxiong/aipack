@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Blog to Podcast · agentpack</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__overlay">
+      <h1>🎙️ AI Blog to Podcast</h1>
+      <p class="hero__sub">基于 agentpack 的博客转播客 · 抓取博客正文 → 生成对话式摘要 → Edge TTS 免费语音合成</p>
+      <div id="status" class="status">读取服务状态…</div>
+    </div>
+    <img class="hero__img" alt="播客主题配图" src="https://images.unsplash.com/photo-1478737270239-2f02b77fc618?w=1600&q=80" onerror="this.style.display='none'" />
+  </header>
+
+  <main class="container">
+    <section class="card form-card">
+      <h2>生成播客</h2>
+      <div class="form-row">
+        <label class="field field--grow">
+          <span>博客 URL</span>
+          <input id="url" type="url" placeholder="https://example.com/blog/post" value="https://www.anthropic.com/news/claude-3-5-sonnet" />
+        </label>
+        <div class="actions">
+          <button id="generateBtn" class="btn btn--primary">生成播客</button>
+          <button id="downloadBtn" class="btn btn--ghost" disabled>下载播客 (.mp3)</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="field">
+          <span>LLM 模型</span>
+          <select id="model"></select>
+        </label>
+        <label class="field">
+          <span>LLM API Key <span id="apiKeyHint" class="hint"></span></span>
+          <div class="input-with-toggle">
+            <input id="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" spellcheck="false" />
+            <button id="apiKeyToggle" type="button" class="btn btn--ghost btn--sm" aria-label="显示/隐藏 API Key">👁</button>
+          </div>
+        </label>
+      </div>
+      <div class="form-row">
+        <label class="field">
+          <span>语音(Edge TTS 免费·无需 API Key)</span>
+          <select id="voice"></select>
+        </label>
+        <label class="field field--sm">
+          <span>语速</span>
+          <select id="rate">
+            <option value="-10%">慢一点</option>
+            <option value="+0%" selected>正常</option>
+            <option value="+10%">快一点</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section id="progress" class="card progress-card hidden">
+      <h2 id="progressTitle">准备中…</h2>
+      <div id="stageList" class="stages"></div>
+    </section>
+
+    <section id="result" class="card result-card hidden">
+      <div class="result-head">
+        <h2>播客摘要</h2>
+        <button id="copyBtn" class="btn btn--ghost btn--sm" disabled>复制</button>
+      </div>
+      <pre id="summary" class="itinerary"></pre>
+    </section>
+
+    <section id="audioBox" class="card audio-card hidden">
+      <h2>🎧 播客音频</h2>
+      <audio id="audioPlayer" controls preload="auto"></audio>
+      <p id="audioMeta" class="audio-meta"></p>
+    </section>
+
+    <section id="errorBox" class="card error-card hidden">
+      <h2>⚠️ 出错了</h2>
+      <pre id="errorText"></pre>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>Powered by <a href="https://github.com/luoguoxiong/agentpack" target="_blank" rel="noopener">agentpack</a></span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
