@@ -13,6 +13,9 @@ sessions
 acr-compare-output/
 acr-real-session-compare/
 
+# 部署运行时产物（pid/日志）
+apps/ai_teaching_agent_team/.deploy/
+
 # IDE
 .trae/
 /.vscode/launch.json
