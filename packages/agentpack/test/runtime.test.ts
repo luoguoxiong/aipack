@@ -113,6 +113,60 @@ describe('ephemeral 请求不持久化', () => {
   });
 });
 
+describe('实时持久化（运行中即可读到会话）', () => {
+  const probeTool: Tool = {
+    name: 'probe',
+    description: '探测工具',
+    parameters: Type.Object({}),
+    execute: async () => ({ content: [{ type: 'text', text: 'ok' }], details: {} }),
+  };
+
+  it('流式运行中途（工具调用后）存储中已有该轮消息', async () => {
+    const store = createMemorySessionStorage();
+    const runtime = createRuntime({
+      streamFn: mockToolStreamFn([{ id: 'tc1', name: 'probe', args: {} }]),
+      tools: [probeTool],
+      sessionStorage: store,
+    });
+
+    // 只消费到第一个 tool_end 即暂停（模拟运行中查看会话；此时本轮结果已落盘）
+    const gen = runtime.stream(createRequest('hi', { sessionKey: 'live1' }));
+    let sawToolEnd = false;
+    for await (const chunk of gen) {
+      if (chunk.type === 'tool_end') {
+        sawToolEnd = true;
+        break;
+      }
+    }
+    assert.ok(sawToolEnd, '应推进到 tool_end');
+
+    // 运行尚未结束，但第一轮 assistant + toolResult 应已实时落盘
+    const stored = await store.load('live1');
+    assert.ok(stored, '运行中即可读取到持久化会话');
+    assert.ok(stored!.messages.some(m => m.role === 'assistant'));
+    assert.ok(stored!.messages.some(m => m.role === 'toolResult'));
+  });
+
+  it('无工具调用的单轮结束后会话已持久化', async () => {
+    const store = createMemorySessionStorage();
+    const runtime = createRuntime({
+      streamFn: mockStreamFn([
+        { role: 'assistant', content: [{ type: 'text', text: 'hello' }], stopReason: 'stop', usage: { input: 1, output: 1, total: 2 }, timestamp: Date.now() } as AssistantMessage,
+      ]),
+      sessionStorage: store,
+    });
+
+    const gen = runtime.stream(createRequest('hi', { sessionKey: 'live2' }));
+    for await (const chunk of gen) {
+      if (chunk.type === 'done') break;
+    }
+
+    const stored = await store.load('live2');
+    assert.ok(stored, '单轮结束后会话应已持久化');
+    assert.ok(stored!.messages.some(m => m.role === 'assistant'));
+  });
+});
+
 describe('会话并发串行化', () => {
   it('同一 sessionKey 的并发请求串行执行', async () => {
     const order: string[] = [];

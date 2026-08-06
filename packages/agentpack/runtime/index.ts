@@ -356,14 +356,8 @@ export class AgentRuntime implements Runtime {
         .error(error.message)
         .build();
     } finally {
-      // 10. 每轮结束后整体保存会话（ephemeral 不持久化；失败不影响运行结果）
-      if (!finalRequest.ephemeral) {
-        try {
-          await this.persistSession(finalRequest.sessionKey);
-        } catch (err) {
-          console.warn('[Runtime] 会话持久化失败:', (err as Error)?.message);
-        }
-      }
+      // 10. 结束前最终保存会话（ephemeral 不持久化；失败不影响运行结果）
+      await this.persistSessionSafe(finalRequest);
     }
   }
 
@@ -406,13 +400,7 @@ export class AgentRuntime implements Runtime {
       yield { type: 'error', content: error.message };
       yield { type: 'done' };
     } finally {
-      if (!finalRequest.ephemeral) {
-        try {
-          await this.persistSession(finalRequest.sessionKey);
-        } catch (err) {
-          console.warn('[Runtime] 会话持久化失败:', (err as Error)?.message);
-        }
-      }
+      await this.persistSessionSafe(finalRequest);
     }
   }
 
@@ -463,6 +451,8 @@ export class AgentRuntime implements Runtime {
         );
 
         compilation.messages.push(assistantMessage);
+        // 3.1 实时持久化：assistant 回复完成即落盘（运行中可查看最新会话）
+        await this.persistSessionSafe(request);
 
         // 4. 检查工具调用
         const toolCalls = extractToolCalls(assistantMessage.content);
@@ -473,6 +463,8 @@ export class AgentRuntime implements Runtime {
 
         // 5. 执行工具（可选并行）
         await this.executeToolCalls(compilation, toolCalls, session.abortController!.signal);
+        // 5.1 实时持久化：工具结果落盘
+        await this.persistSessionSafe(request);
       }
     } finally {
       this.markIdle(session);
@@ -518,6 +510,8 @@ export class AgentRuntime implements Runtime {
 
         if (!assistantMessage) break;
         compilation.messages.push(assistantMessage);
+        // 3.1 实时持久化：assistant 回复完成即落盘（运行中可查看最新会话）
+        await this.persistSessionSafe(request);
 
         // 4. 检查工具调用
         const toolCalls = extractToolCalls(assistantMessage.content);
@@ -540,6 +534,8 @@ export class AgentRuntime implements Runtime {
           toolCalls,
           session.abortController!.signal,
         );
+        // 5.1 实时持久化：工具结果落盘
+        await this.persistSessionSafe(request);
 
         for (let i = 0; i < toolCalls.length; i++) {
           yield {
@@ -728,7 +724,7 @@ export class AgentRuntime implements Runtime {
     session.createdAt = stored.createdAt;
   }
 
-  /** 每轮 run/stream 结束后整体保存会话 */
+  /** 整体保存会话（ephemeral 跳过；失败不影响运行结果） */
   private async persistSession(sessionKey: string): Promise<void> {
     if (!this._sessionStorage) return;
     const session = this._sessions.get(sessionKey);
@@ -744,6 +740,20 @@ export class AgentRuntime implements Runtime {
       updatedAt: new Date().toISOString(),
     };
     await this._sessionStorage.save(sessionKey, stored);
+  }
+
+  /**
+   * 实时持久化当前会话：每轮 assistant 回复/工具结果完成后调用，
+   * 让运行中的会话随时可被持久化数据观测到。ephemeral 跳过；
+   * 存储失败仅告警，不影响对话循环继续。
+   */
+  private async persistSessionSafe(request: Request): Promise<void> {
+    if (request.ephemeral || !this._sessionStorage) return;
+    try {
+      await this.persistSession(request.sessionKey);
+    } catch (err) {
+      console.warn('[Runtime] 会话持久化失败:', (err as Error)?.message);
+    }
   }
 
   /** 从消息中推导最后使用的模型 */
