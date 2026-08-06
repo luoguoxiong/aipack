@@ -86,30 +86,6 @@ pnpm --filter ai-teaching-agent-team serve   # node dist/server.js
 
 打开 http://localhost:3001
 
-### 部署到 Netlify（无服务器）
-
-应用已适配为 **静态前端 + Netlify Functions** 架构：
-
-- 前端（Vite 构建产物 `dist/frontend`）→ 静态托管
-- `/api/config`、`/api/teach` → Netlify Functions（SSE 流式由 `netlify/functions/teach.ts` 实现）
-- 会话存储自动切换：检测到 Lambda 环境时写入 `/tmp`（本地仍为 `.agentpack/teaching-sessions`）
-
-发布步骤：
-
-1. 把仓库推送到 GitHub
-2. 打开 [app.netlify.com](https://app.netlify.com/) → **Add new site → Import an existing project**
-3. 选择本仓库，构建配置自动读取**仓库根**的 `netlify.toml`（已预置）：
-   - Build command：`pnpm --filter agentpack build && pnpm --filter ai-teaching-agent-team build && pnpm --filter ai-teaching-agent-team build:functions`
-   - Publish directory：`apps/ai_teaching_agent_team/dist/frontend`
-   - Functions directory：`apps/ai_teaching_agent_team/netlify/functions-dist`
-4. **Site configuration → Environment variables** 添加（与 `.env` 相同，Netlify 上不能用 `.env` 文件）：
-   `LLM_PROVIDER`、`DEEPSEEK_API_KEY`（及所用 provider 的 Key）、`SERPAPI_KEY`（可选）
-5. **Deploy site** → 完成，访问生成的 `https://<site>.netlify.app`
-
-> ⚠️ **时长限制**：Netlify Functions 同步执行有硬上限（约 60 秒）。4-Agent 完整生成对于较长主题可能超时被平台截断（前端流中断）。适合短主题与演示场景；需要完整长时间生成时，仍建议用本地 `serve` 或常驻 Node 平台（Render/Railway/Fly）。
-
-本地调试 Netlify 版可安装 `@netlify/cli` 后运行 `netlify dev`（Functions 目录指向 `netlify/functions-dist`）。
-
 ## 使用
 
 1. 选择模型（下拉按 provider 分组；未配置 Key 的 provider 需在右侧输入 Key）
@@ -125,12 +101,6 @@ apps/ai_teaching_agent_team/
 ├── tsconfig.json            # 后端 TS 配置(rootDir: src, outDir: dist)
 ├── vite.config.ts           # Vite:root frontend/, outDir ../dist/frontend, /api 代理
 ├── .env.example             # 环境变量模板
-├── netlify/                 # ── Netlify Functions(无服务器) ──
-│   └── functions/
-│       ├── config.ts        # GET /api/config(打包为 config.mjs)
-│       └── teach.ts         # POST /api/teach SSE 流式(打包为 teach.mjs)
-├── scripts/
-│   └── build-functions.mjs  # esbuild 内联打包 agentpack → netlify/functions-dist/
 ├── src/                     # ── 后端(agentpack) ──
 │   ├── loadEnv.ts           # 零依赖 .env 加载器
 │   ├── config.ts            # 模型/streamFn 装配 + 模型目录 + 选择校验
@@ -190,8 +160,6 @@ event: error  data: {"message":"..."}                      # 出错时
 
 ## 常见问题
 
-- **「未配置 XXX_API_KEY」**：该 provider 未在服务器 `.env` 配置，请在页面顶部输入 API Key（会保存到 localStorage）。Netlify 部署请在站点控制台 Environment variables 添加。
-- **Netlify 上生成中途被截断**：Netlify Functions 同步执行约 60 秒上限，4-Agent 完整生成对长主题可能超时。换更短主题或改用常驻 Node 平台。
-- **Netlify 上模型下拉显示未配置**：确认 `DEEPSEEK_API_KEY` 等已添加到 Netlify 站点 Environment variables（不是 `.env` 文件），并重新部署。
+- **「未配置 XXX_API_KEY」**：该 provider 未在服务器 `.env` 配置，请在页面顶部输入 API Key（会保存到 localStorage）。
 - **搜索全部降级到内置兜底**：网络受限时 Bing/DDG 可能被阻断，属预期降级；配置 `SERPAPI_KEY` 可获得最佳搜索质量。
 - **开发态访问 3001 看不到页面**：前端由 Vite 5173 提供，生产态才由后端托管 `dist/frontend`。
