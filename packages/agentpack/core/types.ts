@@ -118,7 +118,6 @@ export interface ToolResult {
   content: ContentBlock[];
   details: unknown;
   usage?: Usage;
-  terminate?: boolean;
 }
 
 export interface Tool {

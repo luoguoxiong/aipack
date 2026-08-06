@@ -1,7 +1,7 @@
 /**
  * Runtime 扩展测试：stream / abort / waitForIdle / clearSession /
  * listSessions / deleteSession / close / hooks / parallelToolCalls /
- * prepareArguments / terminate / registerTool / setModel 等
+ * prepareArguments / registerTool / setModel 等
  */
 import { describe, it, mock } from 'node:test';
 import assert from 'node:assert/strict';
