@@ -26,9 +26,10 @@ import {
 } from './runtime.js';
 import { describeSearchBackend } from './tools/search.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// 注:不能命名为 __dirname,否则 esbuild 打包时与 ESM shim 冲突(重复声明)
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 // 前端构建产物目录:开发态(src/)与生产态(dist/)都解析到 approot/dist/frontend
-const PUBLIC_DIR = path.resolve(__dirname, '../dist/frontend');
+const PUBLIC_DIR = path.resolve(moduleDir, '../dist/frontend');
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
