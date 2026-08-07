@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RAG Agent · Database Routing · agentpack</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__overlay">
+      <h1>📚 RAG Agent · 数据库路由</h1>
+      <p class="hero__sub">向量相似度路由 → LLM 路由 → 网页搜索兜底 · 三个专属知识库(产品 / 支持 / 财务)</p>
+      <div id="status" class="status">读取服务状态…</div>
+    </div>
+    <img class="hero__img" alt="知识库配图" src="https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=1600&q=80" onerror="this.style.display='none'" />
+  </header>
+
+  <main class="container">
+    <section class="card form-card">
+      <h2>模型配置</h2>
+      <div class="form-row">
+        <label class="field field--grow">
+          <span>模型</span>
+          <select id="model"></select>
+        </label>
+      </div>
+      <div class="form-row">
+        <label class="field field--grow">
+          <span>API Key <span id="apiKeyHint" class="hint"></span></span>
+          <div class="input-with-toggle">
+            <input id="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" spellcheck="false" />
+            <button id="apiKeyToggle" type="button" class="btn btn--ghost btn--sm" aria-label="显示/隐藏 API Key">👁</button>
+          </div>
+        </label>
+      </div>
+    </section>
+
+    <section class="card upload-card">
+      <h2>文档库</h2>
+      <p class="card__desc">向各数据库上传文档(<code>.txt</code> / <code>.md</code>)或直接粘贴文本。提问时系统会自动路由到最相关的数据库。</p>
+      <div id="dbTabs" class="tabs" role="tablist"></div>
+      <div id="dbPanels" class="db-panels"></div>
+    </section>
+
+    <section class="card query-card">
+      <h2>提问</h2>
+      <div class="form-row">
+        <label class="field field--grow">
+          <span>你的问题(将自动路由到最相关的数据库)</span>
+          <input id="question" type="text" placeholder="例如:这个产品支持哪些语言? / 我们的退款政策是什么? / 去年营收是多少?" />
+        </label>
+        <div class="actions">
+          <button id="askBtn" class="btn btn--primary">提问</button>
+          <button id="copyBtn" class="btn btn--ghost" disabled>复制</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="progress" class="card progress-card hidden">
+      <h2 id="progressTitle">准备中…</h2>
+      <div id="routeLine" class="route-line hidden"></div>
+      <div id="answerBox" class="answer-box hidden">
+        <div class="answer-head"><span id="answerLabel">回答</span></div>
+        <pre id="answer" class="answer"></pre>
+      </div>
+    </section>
+
+    <section id="errorBox" class="card error-card hidden">
+      <h2>⚠️ 出错了</h2>
+      <pre id="errorText"></pre>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>Powered by <a href="https://github.com/luoguoxiong/agentpack" target="_blank" rel="noopener">agentpack</a> · 移植自 <a href="https://github.com/Shubhamsaboo/awesome-llm-apps/tree/main/rag_tutorials/rag_database_routing" target="_blank" rel="noopener">awesome-llm-apps</a></span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
