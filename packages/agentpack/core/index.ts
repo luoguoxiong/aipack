@@ -82,6 +82,17 @@ export type { Pipeline } from './pipeline';
 export { ExtensionManager, BaseExtension } from './extension';
 export type { Extension, ExtensionContext, RuntimeHooks } from './extension';
 
+// ─── Tool Hooks: 工具调用钩子 ─────────────────────────────────────
+export { isErrorToolResult } from './tool-hooks';
+export type {
+  ToolCallContext,
+  AfterToolCallContext,
+  BeforeToolCallResult,
+  AfterToolCallResult,
+  BeforeToolCallDecision,
+  AfterToolCallDecision,
+} from './tool-hooks';
+
 // ─── Result: 运行结果 ─────────────────────────────────────────────
 export { ResultBuilder, createResult, createErrorResult } from './result';
 export type { Result, ResultChunk } from './result';

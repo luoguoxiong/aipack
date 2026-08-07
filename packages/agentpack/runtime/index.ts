@@ -18,12 +18,16 @@ import type {
   RuntimeHooks,
   ExtensionContext,
   ContextTransformer,
+  ToolCallContext,
+  BeforeToolCallDecision,
+  AfterToolCallDecision,
 } from '../core';
 import {
   ExtensionManager,
   createPipeline,
   createTaskGraph,
   ResultBuilder,
+  isErrorToolResult,
 } from '../core';
 import type {
   Model,
@@ -111,6 +115,28 @@ function buildImageContent(media: string): ImageContent {
   return { type: 'image', mimeType: 'image/url', data: media };
 }
 
+// ─── 工具执行结果（含 terminate 信号） ─────────────────────────────
+
+/**
+ * 单次/一组工具执行的产出。除结果列表外，携带 terminate 信号：
+ * beforeToolCall / afterToolCall 可请求终止整个 run，
+ * runLoop 检测到后停止循环（本轮工具结果仍写入会话以保持配对完整）。
+ */
+interface ToolExecutionOutcome {
+  results: ToolResult[];
+  /** 是否请求终止整个 run */
+  terminate: boolean;
+  /** 终止原因（写入 Result.metadata.terminateReason） */
+  terminateReason?: string;
+}
+
+/** 单个工具执行的产出（含 terminate 信号） */
+interface SingleToolOutcome {
+  result: ToolResult;
+  terminate: boolean;
+  terminateReason?: string;
+}
+
 // ─── AgentRuntime: Runtime 接口的独立实现 ─────────────────────────
 
 export class AgentRuntime implements Runtime {
@@ -127,6 +153,8 @@ export class AgentRuntime implements Runtime {
 
   private _sessions: Map<string, SessionState> = new Map();
   private _sessionStorage: SessionStorage | undefined;
+  /** Extension 应用时的上下文（shared Map 供 ToolCallContext 引用） */
+  private _extensionContext?: ExtensionContext;
 
   private _maxTurns: number;
   private _toolTimeoutMs: number;
@@ -191,6 +219,7 @@ export class AgentRuntime implements Runtime {
       sessionKey: 'runtime',
       shared: new Map(),
     };
+    runtime._extensionContext = ctx;
     runtime._extensions.applyAll(ctx);
 
     return runtime;
@@ -462,9 +491,18 @@ export class AgentRuntime implements Runtime {
         }
 
         // 5. 执行工具（可选并行）
-        await this.executeToolCalls(compilation, toolCalls, session.abortController!.signal);
+        const outcome = await this.executeToolCalls(
+          compilation,
+          toolCalls,
+          session.abortController!.signal,
+        );
         // 5.1 实时持久化：工具结果落盘
         await this.persistSessionSafe(request);
+        // 5.2 beforeToolCall/afterToolCall 请求终止：停止循环
+        if (outcome.terminate) {
+          compilation.terminateReason = outcome.terminateReason ?? 'terminated';
+          break;
+        }
       }
     } finally {
       this.markIdle(session);
@@ -529,7 +567,7 @@ export class AgentRuntime implements Runtime {
           };
         }
 
-        const toolResults = await this.executeToolCallsStreaming(
+        const outcome = await this.executeToolCallsStreaming(
           compilation,
           toolCalls,
           session.abortController!.signal,
@@ -537,13 +575,20 @@ export class AgentRuntime implements Runtime {
         // 5.1 实时持久化：工具结果落盘
         await this.persistSessionSafe(request);
 
+        // 5.2 yield tool_end（block 的工具也产出事件，便于前端展示被拒调用）
         for (let i = 0; i < toolCalls.length; i++) {
           yield {
             type: 'tool_end',
             toolName: toolCalls[i].name,
             toolCallId: toolCalls[i].id,
-            isError: this.isErrorResult(toolResults[i]),
+            isError: this.isErrorResult(outcome.results[i]),
           };
+        }
+
+        // 5.3 beforeToolCall/afterToolCall 请求终止：tool_end 之后再停止循环
+        if (outcome.terminate) {
+          compilation.terminateReason = outcome.terminateReason ?? 'terminated';
+          break;
         }
       }
     } finally {
@@ -558,13 +603,14 @@ export class AgentRuntime implements Runtime {
     compilation: Compilation,
     toolCalls: ToolCallContent[],
     signal: AbortSignal,
-  ): Promise<void> {
-    const results = await this.runTools(toolCalls, signal);
+  ): Promise<ToolExecutionOutcome> {
+    const outcome = await this.runTools(toolCalls, signal, compilation.request);
     for (let i = 0; i < toolCalls.length; i++) {
       compilation.messages.push(
-        this.buildToolResultMessage(toolCalls[i], results[i]),
+        this.buildToolResultMessage(toolCalls[i], outcome.results[i]),
       );
     }
+    return outcome;
   }
 
   /** 流式循环：执行工具调用，返回结果（消息由调用方追加） */
@@ -572,41 +618,72 @@ export class AgentRuntime implements Runtime {
     compilation: Compilation,
     toolCalls: ToolCallContent[],
     signal: AbortSignal,
-  ): Promise<ToolResult[]> {
-    const results = await this.runTools(toolCalls, signal);
+  ): Promise<ToolExecutionOutcome> {
+    const outcome = await this.runTools(toolCalls, signal, compilation.request);
     for (let i = 0; i < toolCalls.length; i++) {
       compilation.messages.push(
-        this.buildToolResultMessage(toolCalls[i], results[i]),
+        this.buildToolResultMessage(toolCalls[i], outcome.results[i]),
       );
     }
-    return results;
+    return outcome;
   }
 
-  /** 执行一组工具调用：parallelToolCalls 为 true 时并行，否则串行 */
+  /**
+   * 执行一组工具调用：parallelToolCalls 为 true 时并行，否则串行。
+   * 返回 ToolExecutionOutcome：任一工具请求 terminate 即终止整个 run；
+   * 串行模式下 terminate 后剩余工具生成 skipped 结果以保持配对完整。
+   */
   private async runTools(
     toolCalls: ToolCallContent[],
     signal: AbortSignal,
-  ): Promise<ToolResult[]> {
+    request: Request,
+  ): Promise<ToolExecutionOutcome> {
+    const execute = (tc: ToolCallContent) => this.executeTool(tc, signal, request);
+
     if (this._parallelToolCalls && toolCalls.length > 1) {
-      return Promise.all(toolCalls.map(tc => this.executeTool(tc, signal)));
+      // 并行：全部执行，聚合 terminate（取第一个命中的原因）
+      const outcomes = await Promise.all(toolCalls.map(execute));
+      const terminated = outcomes.find(o => o.terminate);
+      return {
+        results: outcomes.map(o => o.result),
+        terminate: !!terminated,
+        terminateReason: terminated?.terminateReason,
+      };
     }
+
+    // 串行：依次执行；遇 terminate 后剩余工具跳过执行（生成 skipped 结果保持配对）
     const results: ToolResult[] = [];
+    let terminate = false;
+    let terminateReason: string | undefined;
     for (const tc of toolCalls) {
-      results.push(await this.executeTool(tc, signal));
+      if (terminate) {
+        results.push(this.makeSkippedResult(tc));
+        continue;
+      }
+      const outcome = await execute(tc);
+      results.push(outcome.result);
+      if (outcome.terminate) {
+        terminate = true;
+        terminateReason = outcome.terminateReason;
+      }
     }
-    return results;
+    return { results, terminate, terminateReason };
   }
 
   private async executeTool(
     toolCall: ToolCallContent,
-    signal?: AbortSignal,
-  ): Promise<ToolResult> {
+    signal: AbortSignal | undefined,
+    request: Request,
+  ): Promise<SingleToolOutcome> {
     const tool = this._globalTools.get(toolCall.name);
 
     if (!tool) {
       return {
-        content: [createTextContent(`Tool "${toolCall.name}" not found`)],
-        details: { error: `Tool "${toolCall.name}" not found` },
+        result: {
+          content: [createTextContent(`Tool "${toolCall.name}" not found`)],
+          details: { error: `Tool "${toolCall.name}" not found` },
+        },
+        terminate: false,
       };
     }
 
@@ -616,12 +693,56 @@ export class AgentRuntime implements Runtime {
       if (tool.prepareArguments) {
         args = tool.prepareArguments(toolCall.arguments);
       }
-      return await tool.execute(toolCall.id, args, timedSignal);
-    } catch (err) {
-      const message = (err as Error)?.message ?? String(err);
+
+      // ─── beforeToolCall：参数校验后、执行前（可 block / terminate / 改写 args）───
+      const beforeCtx = this.buildToolCallContext(toolCall, tool, args, request, timedSignal);
+      const before: BeforeToolCallDecision = await this._hooks.beforeToolCall.promise(
+        { block: false, terminate: false, args },
+        beforeCtx,
+      );
+
+      if (before.terminate) {
+        const reason = before.reason ?? 'terminated by beforeToolCall';
+        return {
+          result: this.makeBlockedResult(reason),
+          terminate: true,
+          terminateReason: reason,
+        };
+      }
+      if (before.block) {
+        const reason = before.reason ?? 'blocked by beforeToolCall';
+        return {
+          result: this.makeBlockedResult(reason),
+          terminate: false,
+        };
+      }
+      // 允许 beforeToolCall 改写参数
+      args = before.args;
+
+      // ─── 执行工具 ───
+      let result: ToolResult;
+      try {
+        result = await tool.execute(toolCall.id, args, timedSignal);
+      } catch (err) {
+        const message = (err as Error)?.message ?? String(err);
+        result = {
+          content: [createTextContent(message)],
+          details: { error: message },
+        };
+      }
+
+      // ─── afterToolCall：执行后、事件发出前（可改写 result / terminate）───
+      // 用更新后的 args 重建 ctx，让 afterToolCall 看到改写后的参数
+      const afterCtx = this.buildToolCallContext(toolCall, tool, args, request, timedSignal);
+      const after: AfterToolCallDecision = await this._hooks.afterToolCall.promise(
+        { result, terminate: false },
+        afterCtx,
+      );
+
       return {
-        content: [createTextContent(message)],
-        details: { error: message },
+        result: after.result,
+        terminate: after.terminate,
+        terminateReason: after.terminate ? 'terminated by afterToolCall' : undefined,
       };
     } finally {
       clear();
@@ -630,6 +751,41 @@ export class AgentRuntime implements Runtime {
 
   private isErrorResult(result: ToolResult): boolean {
     return !!(result.details && typeof result.details === 'object' && 'error' in result.details);
+  }
+
+  /** beforeToolCall 阻断/终止时生成拒绝结果（非执行错误，isError=false） */
+  private makeBlockedResult(reason: string): ToolResult {
+    return {
+      content: [createTextContent(`[blocked] ${reason}`)],
+      details: { blocked: true, reason },
+    };
+  }
+
+  /** 串行模式下前序工具 terminate 后，剩余工具生成 skipped 结果保持配对 */
+  private makeSkippedResult(toolCall: ToolCallContent): ToolResult {
+    return {
+      content: [createTextContent(`[skipped] run terminated by prior tool: ${toolCall.name}`)],
+      details: { skipped: true, toolName: toolCall.name },
+    };
+  }
+
+  /** 构建 ToolCallContext：beforeToolCall/afterToolCall 的调用上下文 */
+  private buildToolCallContext(
+    toolCall: ToolCallContent,
+    tool: Tool,
+    args: unknown,
+    request: Request,
+    signal: AbortSignal,
+  ): ToolCallContext {
+    return {
+      toolCall,
+      tool,
+      args,
+      sessionKey: request.sessionKey,
+      request,
+      shared: this._extensionContext?.shared ?? new Map(),
+      signal,
+    };
   }
 
   private buildToolResultMessage(
@@ -894,14 +1050,20 @@ export class AgentRuntime implements Runtime {
     // 填充资源快照（此前 Result.resources 永远 undefined）
     const resources = messagesToResources(messages);
 
-    return new ResultBuilder()
+    const builder = new ResultBuilder()
       .content(content)
       .toolsUsed(toolsUsed)
       .usage(usage)
       .stopReason(stopReason)
       .error(error)
-      .resources(resources)
-      .build();
+      .resources(resources);
+
+    // beforeToolCall/afterToolCall 请求终止：覆盖 stopReason 并记录原因
+    if (compilation.terminateReason) {
+      builder.stopReason('terminated').metadata('terminateReason', compilation.terminateReason);
+    }
+
+    return builder.build();
   }
 
   private streamEventToChunk(event: StreamEvent): ResultChunk | null {
