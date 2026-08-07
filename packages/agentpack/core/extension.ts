@@ -9,6 +9,7 @@ import { AsyncSeriesHook, AsyncSeriesWaterfallHook } from './tapable';
 import type { Request } from './request';
 import type { Result } from './result';
 import type { ContextResource } from './context-resource';
+import type { BeforeToolCallDecision, AfterToolCallDecision } from './tool-hooks';
 
 // ─── Runtime 钩子集合 ─────────────────────────────────────────────
 
@@ -35,6 +36,19 @@ export interface RuntimeHooks {
   done: AsyncSeriesHook<[Result, Request?]>;
   /** 运行失败 */
   failed: AsyncSeriesHook<[Error, Request]>;
+  /**
+   * 工具执行前（参数校验后）。流转 BeforeToolCallDecision：
+   * 任一 tap 设 block 则该工具不执行（生成拒绝结果）；
+   * 设 terminate 则终止整个 run（本轮工具结束后停止 runLoop）；
+   * 可改写 args。第二参数为 ToolCallContext。
+   */
+  beforeToolCall: AsyncSeriesWaterfallHook<BeforeToolCallDecision>;
+  /**
+   * 工具执行后、最终事件发出前。流转 AfterToolCallDecision：
+   * 可改写 result（waterfall），设 terminate 终止整个 run。
+   * 第二参数为 ToolCallContext。
+   */
+  afterToolCall: AsyncSeriesWaterfallHook<AfterToolCallDecision>;
 }
 
 // ─── Extension 接口 ───────────────────────────────────────────────
@@ -83,6 +97,8 @@ export class ExtensionManager {
       afterEmit: new AsyncSeriesHook('afterEmit'),
       done: new AsyncSeriesHook('done'),
       failed: new AsyncSeriesHook('failed'),
+      beforeToolCall: new AsyncSeriesWaterfallHook('beforeToolCall'),
+      afterToolCall: new AsyncSeriesWaterfallHook('afterToolCall'),
     };
   }
 

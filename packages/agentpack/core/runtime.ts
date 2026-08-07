@@ -35,6 +35,11 @@ export interface Compilation {
   completed: boolean;
   /** 编译错误 */
   readonly error?: Error;
+  /**
+   * 终止原因。由 beforeToolCall/afterToolCall 的 terminate 决策设置，
+   * runLoop 检测到后停止循环，buildResult 据此将 stopReason 标为 'terminated'。
+   */
+  terminateReason?: string;
 }
 
 // ─── Runtime 接口 ─────────────────────────────────────────────────

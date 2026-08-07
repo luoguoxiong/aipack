@@ -53,6 +53,22 @@ importers:
         specifier: ^5.5.0
         version: 5.9.3
 
+  apps/ai_rag_database_routing:
+    dependencies:
+      agentpack:
+        specifier: workspace:*
+        version: link:../../packages/agentpack
+    devDependencies:
+      '@types/node':
+        specifier: ^20.12.0
+        version: 20.19.43
+      tsx:
+        specifier: ^4.16.0
+        version: 4.23.5
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+
   apps/ai_teaching_agent_team:
     dependencies:
       agentpack:
