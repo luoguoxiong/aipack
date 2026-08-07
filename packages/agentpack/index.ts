@@ -63,6 +63,7 @@ export {
   SharedStateExtension,
   createDefaultExtensions,
   createExtensionManager,
+  createToolHookExtension,
 } from './extension';
 
 // ─── Result: 运行结果 ────────────────────────────────────────────

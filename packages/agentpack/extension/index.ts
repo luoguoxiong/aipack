@@ -5,9 +5,17 @@
  * 通过 Tapable 钩子在 Runtime 生命周期的关键节点注入逻辑。
  */
 
-import { BaseExtension, ExtensionManager } from '../core';
+import { BaseExtension, ExtensionManager, isErrorToolResult } from '../core';
 import type { Extension, RuntimeHooks, ExtensionContext } from '../core';
 import type { Request, Result, ContextResource } from '../core';
+import type {
+  ToolCallContext,
+  AfterToolCallContext,
+  BeforeToolCallResult,
+  AfterToolCallResult,
+  BeforeToolCallDecision,
+  AfterToolCallDecision,
+} from '../core';
 
 // ─── 日志扩展 ─────────────────────────────────────────────────────
 
@@ -208,4 +216,84 @@ export function createExtensionManager(options?: {
   }
 
   return manager;
+}
+
+// ─── 工具钩子扩展工厂 ─────────────────────────────────────────────
+
+/**
+ * 以对象式 API 注册 beforeToolCall / afterToolCall 回调，翻译为 waterfall tap。
+ *
+ * beforeToolCall：参数校验后、执行前。返回 { block, terminate, reason, args }：
+ *  - block:true     该工具不执行，生成拒绝结果（[blocked] reason）
+ *  - terminate:true 终止整个 run（本轮工具结束后停止 runLoop）
+ *  - args           覆盖参数（仅当未 block）
+ *
+ * afterToolCall：执行后、事件发出前。返回 { terminate, result, details }：
+ *  - terminate:true 终止整个 run
+ *  - result         替换工具结果（waterfall，后续 tap 基于新结果继续）
+ *  - details        浅合并到 result.details（result 优先）
+ *
+ * 多个 createToolHookExtension 串联时，任一设 block/terminate 即生效；
+ * 前置 tap 已 block/terminate 时，后续 beforeToolCall 回调不再被调用。
+ */
+export function createToolHookExtension(options: {
+  name?: string;
+  beforeToolCall?: (
+    ctx: ToolCallContext,
+  ) => Promise<BeforeToolCallResult | void> | BeforeToolCallResult | void;
+  afterToolCall?: (
+    ctx: AfterToolCallContext,
+  ) => Promise<AfterToolCallResult | void> | AfterToolCallResult | void;
+}): Extension {
+  const name = options.name ?? 'tool-hooks';
+  return {
+    name,
+    apply(hooks: RuntimeHooks): void {
+      if (options.beforeToolCall) {
+        hooks.beforeToolCall.tapPromise(
+          name,
+          async (decision: BeforeToolCallDecision, ctx: ToolCallContext): Promise<BeforeToolCallDecision> => {
+            // 前置 tap 已拒绝/终止：尊重其决策，不再调用用户回调
+            if (decision.block || decision.terminate) return decision;
+            const r = await options.beforeToolCall!(ctx);
+            if (!r) return decision;
+            return {
+              block: r.block ?? decision.block,
+              terminate: r.terminate ?? decision.terminate,
+              reason: r.reason ?? decision.reason,
+              args: r.args ?? decision.args,
+            };
+          },
+        );
+      }
+      if (options.afterToolCall) {
+        hooks.afterToolCall.tapPromise(
+          name,
+          async (decision: AfterToolCallDecision, ctx: ToolCallContext): Promise<AfterToolCallDecision> => {
+            const isError = isErrorToolResult(decision.result);
+            const r = await options.afterToolCall!({
+              ...ctx,
+              result: decision.result,
+              isError,
+            });
+            if (!r) return decision;
+            let result = decision.result;
+            if (r.result) {
+              result = r.result;
+            } else if (r.details) {
+              const base =
+                result.details && typeof result.details === 'object'
+                  ? (result.details as Record<string, unknown>)
+                  : {};
+              result = { ...result, details: { ...base, ...r.details } };
+            }
+            return {
+              result,
+              terminate: r.terminate ?? decision.terminate,
+            };
+          },
+        );
+      }
+    },
+  };
 }
