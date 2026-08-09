@@ -69,7 +69,7 @@ export async function replaySession(
   }
 
   // 3. 创建回放 Runtime，直接继续原会话（回放结果追加到原会话历史）
-  const runtime = createAgentpackRuntime(config, model);
+  const runtime = createAgentpackRuntime(config, model, sessionKey);
   const turns: ReplayTurnResult[] = [];
   let totalErrors = 0;
   const startTime = Date.now();
@@ -85,7 +85,7 @@ export async function replaySession(
 
       try {
         const result = await runtime.run(
-          createRequest(userMsg, { sessionKey, channel: 'cli' }),
+          createRequest(userMsg, { channel: 'cli' }),
         );
         response = result.content;
         if (!result.success && result.error) {

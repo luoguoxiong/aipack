@@ -88,13 +88,13 @@ const runtime = createRuntime({
 
 // 3. 同步调用
 const result = await runtime.run(
-  createRequest('用一句话介绍 agentpack', { sessionKey: 'demo' })
+  createRequest('用一句话介绍 agentpack')
 );
 console.log(result.content);
 
 // 4. 流式调用（打字机效果）
 for await (const chunk of runtime.stream(
-  createRequest('写一首关于春天的诗', { sessionKey: 'demo' })
+  createRequest('写一首关于春天的诗')
 )) {
   if (chunk.type === 'text') process.stdout.write(chunk.content ?? '');
 }

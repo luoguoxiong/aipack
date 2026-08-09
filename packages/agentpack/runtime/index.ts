@@ -151,7 +151,8 @@ export class AgentRuntime implements Runtime {
   private _thinkingLevel: ThinkingLevel;
   private _globalTools: Map<string, Tool> = new Map();
 
-  private _sessions: Map<string, SessionState> = new Map();
+  private _session: SessionState;
+  private _sessionKey: string;
   private _sessionStorage: SessionStorage | undefined;
   /** Extension 应用时的上下文（shared Map 供 ToolCallContext 引用） */
   private _extensionContext?: ExtensionContext;
@@ -196,6 +197,17 @@ export class AgentRuntime implements Runtime {
       }
     }
 
+    this._sessionKey = options.sessionKey ?? 'default';
+    this._session = {
+      messages: [],
+      isStreaming: false,
+      abortController: null,
+      createdAt: new Date().toISOString(),
+      hydrated: false,
+      queue: Promise.resolve(),
+      idleResolvers: [],
+    };
+
     // 注册转换器
     if (options.transformers) {
       this._pipeline.useAll(options.transformers);
@@ -216,7 +228,7 @@ export class AgentRuntime implements Runtime {
     const ctx: ExtensionContext = {
       config: runtime._config,
       workspace: options.workspace ?? process.cwd(),
-      sessionKey: 'runtime',
+      sessionKey: runtime._sessionKey,
       shared: new Map(),
     };
     runtime._extensionContext = ctx;
@@ -286,9 +298,9 @@ export class AgentRuntime implements Runtime {
     return this;
   }
 
-  getMessages(sessionKey: string = 'default'): Message[] {
+  getMessages(): Message[] {
     // 返回深拷贝，避免外部直接修改会话内部状态
-    const messages = this.getSession(sessionKey).messages;
+    const messages = this._session.messages;
     try {
       return structuredClone(messages);
     } catch {
@@ -309,7 +321,7 @@ export class AgentRuntime implements Runtime {
     const finalRequest = normalizeRequest(request);
 
     // 1. 串行化：同一会话的请求依次执行
-    const release = await this.acquire(finalRequest.sessionKey);
+    const release = await this.acquire();
 
     try {
       return await this._run(finalRequest);
@@ -329,7 +341,7 @@ export class AgentRuntime implements Runtime {
     const finalRequest = normalizeRequest(request);
 
     // 1. 串行化
-    const release = await this.acquire(finalRequest.sessionKey);
+    const release = await this.acquire();
 
     try {
       yield* this._stream(finalRequest);
@@ -348,7 +360,7 @@ export class AgentRuntime implements Runtime {
 
     // 3. 会话持久化：从存储恢复历史消息（ephemeral 跳过）
     if (!finalRequest.ephemeral) {
-      await this.hydrateSession(finalRequest.sessionKey);
+      await this.hydrateSession();
     }
 
     // 4. 创建编译上下文
@@ -398,7 +410,7 @@ export class AgentRuntime implements Runtime {
 
     // 2. 会话持久化：从存储恢复历史消息（ephemeral 跳过）
     if (!finalRequest.ephemeral) {
-      await this.hydrateSession(finalRequest.sessionKey);
+      await this.hydrateSession();
     }
 
     // 3. 创建编译上下文
@@ -434,24 +446,22 @@ export class AgentRuntime implements Runtime {
   }
 
   createCompilation(request: Request): Compilation {
-    const session = this.getSession(request.sessionKey);
-
     return {
       request,
       graph: createTaskGraph(),
       pipeline: this._pipeline,
       resources: [],
-      messages: session.messages,
+      messages: this._session.messages,
       completed: false,
     };
   }
 
   async close(): Promise<void> {
-    // 等待所有会话的在途任务完成，再清理
-    const queues = Array.from(this._sessions.values()).map(s => s.queue);
-    await Promise.allSettled(queues);
+    // 等待当前会话的在途任务完成，再清理
+    await Promise.allSettled([this._session.queue]);
 
-    this._sessions.clear();
+    this._session.messages = [];
+    this._session.hydrated = false;
     this._extensions.clear();
     this._pipeline.clear();
   }
@@ -459,7 +469,7 @@ export class AgentRuntime implements Runtime {
   // ─── 对话循环（同步） ───────────────────────────────────────────
 
   private async runLoop(compilation: Compilation, request: Request): Promise<void> {
-    const session = this.getSession(request.sessionKey);
+    const session = this._session;
     session.isStreaming = true;
     session.abortController = new AbortController();
 
@@ -515,7 +525,7 @@ export class AgentRuntime implements Runtime {
     compilation: Compilation,
     request: Request,
   ): AsyncGenerator<ResultChunk> {
-    const session = this.getSession(request.sessionKey);
+    const session = this._session;
     session.isStreaming = true;
     session.abortController = new AbortController();
 
@@ -781,7 +791,7 @@ export class AgentRuntime implements Runtime {
       toolCall,
       tool,
       args,
-      sessionKey: request.sessionKey,
+      sessionKey: this._sessionKey,
       request,
       shared: this._extensionContext?.shared ?? new Map(),
       signal,
@@ -823,28 +833,13 @@ export class AgentRuntime implements Runtime {
 
   // ─── 内部方法 ───────────────────────────────────────────────────
 
-  private getSession(sessionKey: string): SessionState {
-    if (!this._sessions.has(sessionKey)) {
-      this._sessions.set(sessionKey, {
-        messages: [],
-        isStreaming: false,
-        abortController: null,
-        createdAt: new Date().toISOString(),
-        hydrated: false,
-        queue: Promise.resolve(),
-        idleResolvers: [],
-      });
-    }
-    return this._sessions.get(sessionKey)!;
-  }
-
   /**
    * 获取同一会话的执行锁：返回 release 函数，调用后释放。
    * 同一 sessionKey 的 run/stream 会串行执行，避免消息数组交错、
    * abortController 互相覆盖、hydrate 竞态。
    */
-  private async acquire(sessionKey: string): Promise<() => void> {
-    const session = this.getSession(sessionKey);
+  private async acquire(): Promise<() => void> {
+    const session = this._session;
     let release!: () => void;
     const prev = session.queue;
     session.queue = new Promise<void>(resolve => {
@@ -867,13 +862,13 @@ export class AgentRuntime implements Runtime {
   // ─── 会话持久化 ─────────────────────────────────────────────────
 
   /** 从存储懒加载会话（串行化后无竞态，每个会话仅恢复一次） */
-  private async hydrateSession(sessionKey: string): Promise<void> {
+  private async hydrateSession(): Promise<void> {
     if (!this._sessionStorage) return;
-    const session = this.getSession(sessionKey);
+    const session = this._session;
     if (session.hydrated) return;
     session.hydrated = true;
 
-    const stored = await this._sessionStorage.load(sessionKey);
+    const stored = await this._sessionStorage.load(this._sessionKey);
     if (!stored) return;
 
     session.messages = stored.messages;
@@ -881,13 +876,12 @@ export class AgentRuntime implements Runtime {
   }
 
   /** 整体保存会话（ephemeral 跳过；失败不影响运行结果） */
-  private async persistSession(sessionKey: string): Promise<void> {
+  private async persistSession(): Promise<void> {
     if (!this._sessionStorage) return;
-    const session = this._sessions.get(sessionKey);
-    if (!session) return;
+    const session = this._session;
 
     const stored: StoredSession = {
-      key: sessionKey,
+      key: this._sessionKey,
       version: SESSION_VERSION,
       messages: session.messages,
       model: this.deriveModel(session.messages),
@@ -895,7 +889,7 @@ export class AgentRuntime implements Runtime {
       createdAt: session.createdAt,
       updatedAt: new Date().toISOString(),
     };
-    await this._sessionStorage.save(sessionKey, stored);
+    await this._sessionStorage.save(this._sessionKey, stored);
   }
 
   /**
@@ -906,7 +900,7 @@ export class AgentRuntime implements Runtime {
   private async persistSessionSafe(request: Request): Promise<void> {
     if (request.ephemeral || !this._sessionStorage) return;
     try {
-      await this.persistSession(request.sessionKey);
+      await this.persistSession();
     } catch (err) {
       console.warn('[Runtime] 会话持久化失败:', (err as Error)?.message);
     }
@@ -962,7 +956,7 @@ export class AgentRuntime implements Runtime {
     const transformed = await this._pipeline.run(resources, {
       graph: compilation.graph,
       runtime: {
-        sessionKey: compilation.request.sessionKey,
+        sessionKey: this._sessionKey,
         turn: compilation.messages.length,
         contextWindow: this._model.contextWindow,
         maxTokens: this._model.maxTokens,
@@ -1086,52 +1080,42 @@ export class AgentRuntime implements Runtime {
 
   // ─── 便捷方法 ───────────────────────────────────────────────────
 
-  /** 终止指定会话的运行 */
-  abort(sessionKey: string = 'default'): void {
-    const session = this._sessions.get(sessionKey);
-    session?.abortController?.abort();
+  /** 终止当前会话的运行 */
+  abort(): void {
+    this._session.abortController?.abort();
   }
 
-  /** 检查会话是否正在运行 */
-  isBusy(sessionKey: string = 'default'): boolean {
-    return this.getSession(sessionKey).isStreaming;
+  /** 检查当前会话是否正在运行 */
+  isBusy(): boolean {
+    return this._session.isStreaming;
   }
 
-  /** 等待会话空闲（基于 promise，无轮询） */
-  async waitForIdle(sessionKey: string = 'default'): Promise<void> {
-    const session = this.getSession(sessionKey);
+  /** 等待当前会话空闲（基于 promise，无轮询） */
+  async waitForIdle(): Promise<void> {
+    const session = this._session;
     if (!session.isStreaming) return;
     await new Promise<void>(resolve => {
       session.idleResolvers.push(resolve);
     });
   }
 
-  /** 清除会话消息（仅内存；下次 run 会从存储恢复该会话） */
-  clearSession(sessionKey: string = 'default'): void {
-    const session = this._sessions.get(sessionKey);
-    if (session) {
-      session.messages = [];
-      session.hydrated = false;
-    }
+  /** 清除当前会话消息（仅内存；下次 run 会从存储恢复） */
+  clearSession(): void {
+    this._session.messages = [];
+    this._session.hydrated = false;
   }
 
-  /** 列出所有会话 key（内存 + 存储） */
-  async listSessions(): Promise<string[]> {
-    const memoryKeys = Array.from(this._sessions.keys());
-    const storedKeys = this._sessionStorage ? await this._sessionStorage.list() : [];
-    return [...new Set([...storedKeys, ...memoryKeys])];
-  }
-
-  /** 删除指定会话（内存 + 存储），返回是否删除成功 */
-  async deleteSession(sessionKey: string = 'default'): Promise<boolean> {
-    const session = this._sessions.get(sessionKey);
-    if (session) {
-      // 等待在途任务完成后再清理
-      await session.queue;
-      this._sessions.delete(sessionKey);
-    }
+  /** 删除当前会话（内存 + 存储），返回是否删除成功 */
+  async deleteSession(): Promise<boolean> {
+    // 等待在途任务完成后再清理
+    await this._session.queue;
+    // 重置内存会话状态（保留结构，避免后续调用崩溃）
+    this._session.messages = [];
+    this._session.hydrated = false;
+    this._session.isStreaming = false;
+    this._session.abortController = null;
     if (this._sessionStorage) {
-      return this._sessionStorage.delete(sessionKey);
+      return this._sessionStorage.delete(this._sessionKey);
     }
     return true;
   }

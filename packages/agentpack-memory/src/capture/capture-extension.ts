@@ -5,11 +5,9 @@
  * 参考 agentmemory 的 capture 阶段。
  *
  * 机制：
- *   - beforeRun：按 sessionKey 暂存本轮用户消息（Map 键控，非 FIFO）。
- *   - done：框架现在将最终 Request 作为第二参数传入（agentpack RuntimeHooks.done
- *     签名扩展），直接用 request.sessionKey 取回暂存消息并与本轮结果配对 ——
- *     彻底解决旧实现 FIFO 队列在并发多会话下错配/丢失的问题。
- *     框架保证同一 sessionKey 的 run 串行执行，故 Map 键控安全。
+ *   - beforeRun：暂存本轮用户消息（单会话，Runtime 持有唯一 sessionKey）。
+ *   - done：与本轮结果配对捕获。sessionKey 来自 ExtensionContext（Runtime 级），
+ *     与结果配对写入记忆库。框架保证同一 Runtime 的 run 串行执行，无并发错配。
  *   - failed：本轮失败不捕获（仅成功回合入库），无残留状态需清理。
  *
  * 每 consolidateEvery 次捕获触发一次合并。
@@ -69,20 +67,21 @@ export class MemoryCaptureExtension extends BaseExtension {
     this.onEvent = options.onEvent;
   }
 
-  protected setup(hooks: RuntimeHooks, _context: ExtensionContext): void {
+  protected setup(hooks: RuntimeHooks, context: ExtensionContext): void {
+    const sessionKey = context.sessionKey;
     // beforeRun：暂存用户消息（不改请求）
     hooks.beforeRun.tapPromise('memory-capture', async (request: Request) => {
       try {
-        this.pending.set(request.sessionKey, { message: request.message });
+        this.pending.set(sessionKey, { message: request.message });
       } catch {
         // 忽略 stash 失败
       }
       return request;
     });
 
-    // done：框架传入最终 Request（含 sessionKey），与本轮结果精确配对
-    hooks.done.tapPromise('memory-capture', async (result: Result, request?: Request) => {
-      await this.captureFromResult(result, request?.sessionKey);
+    // done：与本轮结果配对捕获（单会话模式，sessionKey 由 Runtime 持有）
+    hooks.done.tapPromise('memory-capture', async (result: Result, _request?: Request) => {
+      await this.captureFromResult(result, sessionKey);
     });
   }
 

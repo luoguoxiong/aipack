@@ -29,14 +29,14 @@ export class LoggingExtension extends BaseExtension {
     super();
   }
 
-  protected setup(hooks: RuntimeHooks, _context: ExtensionContext): void {
+  protected setup(hooks: RuntimeHooks, context: ExtensionContext): void {
     hooks.beforeInitialize.tapPromise('logging', async (request) => {
       console.log(`[Runtime] 初始化: ${request.message.substring(0, 80)}`);
     });
 
     hooks.beforeRun.tapPromise('logging', async (request) => {
       if (this.verbose) {
-        console.debug(`[Runtime] 请求处理:`, { session: request.sessionKey });
+        console.debug(`[Runtime] 请求处理:`, { session: context.sessionKey });
       }
       return request;
     });

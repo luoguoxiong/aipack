@@ -71,11 +71,14 @@ describe('请求校验', () => {
     assert.ok(result.error?.includes('message'));
   });
 
-  it('空 sessionKey 返回错误结果', async () => {
-    const runtime = createRuntime({ streamFn: mockStreamFn([]) });
-    const result = await runtime.run(createRequest('hi', { sessionKey: '' }));
-    assert.equal(result.success, false);
-    assert.ok(result.error?.includes('sessionKey'));
+  it('未指定 sessionKey 时使用默认值（sessionKey 由 Runtime 管理）', async () => {
+    const runtime = createRuntime({
+      streamFn: mockStreamFn([
+        { role: 'assistant', content: [{ type: 'text', text: 'ok' }], stopReason: 'stop', usage: { input: 1, output: 1, total: 2 }, timestamp: Date.now() } as AssistantMessage,
+      ]),
+    });
+    const result = await runtime.run(createRequest('hi'));
+    assert.equal(result.success, true);
   });
 });
 
@@ -92,7 +95,7 @@ describe('ephemeral 请求不持久化', () => {
       sessionStorage: store,
     });
 
-    await runtime.run(createRequest('hi', { sessionKey: 'e1', ephemeral: true }));
+    await runtime.run(createRequest('hi', { ephemeral: true }));
     assert.equal(saveCalls.mock.callCount(), 0, 'ephemeral 不应调用 save');
   });
 
@@ -108,7 +111,7 @@ describe('ephemeral 请求不持久化', () => {
       sessionStorage: store,
     });
 
-    await runtime.run(createRequest('hi', { sessionKey: 'n1' }));
+    await runtime.run(createRequest('hi'));
     assert.ok(saveCalls.mock.callCount() > 0, '非 ephemeral 应调用 save');
   });
 });
@@ -127,10 +130,11 @@ describe('实时持久化（运行中即可读到会话）', () => {
       streamFn: mockToolStreamFn([{ id: 'tc1', name: 'probe', args: {} }]),
       tools: [probeTool],
       sessionStorage: store,
+      sessionKey: 'live1',
     });
 
     // 只消费到第一个 tool_end 即暂停（模拟运行中查看会话；此时本轮结果已落盘）
-    const gen = runtime.stream(createRequest('hi', { sessionKey: 'live1' }));
+    const gen = runtime.stream(createRequest('hi'));
     let sawToolEnd = false;
     for await (const chunk of gen) {
       if (chunk.type === 'tool_end') {
@@ -154,9 +158,10 @@ describe('实时持久化（运行中即可读到会话）', () => {
         { role: 'assistant', content: [{ type: 'text', text: 'hello' }], stopReason: 'stop', usage: { input: 1, output: 1, total: 2 }, timestamp: Date.now() } as AssistantMessage,
       ]),
       sessionStorage: store,
+      sessionKey: 'live2',
     });
 
-    const gen = runtime.stream(createRequest('hi', { sessionKey: 'live2' }));
+    const gen = runtime.stream(createRequest('hi'));
     for await (const chunk of gen) {
       if (chunk.type === 'done') break;
     }
@@ -193,9 +198,9 @@ describe('会话并发串行化', () => {
 
     // 并发发起 3 个请求
     await Promise.all([
-      runtime.run(createRequest('a', { sessionKey: 's' })),
-      runtime.run(createRequest('b', { sessionKey: 's' })),
-      runtime.run(createRequest('c', { sessionKey: 's' })),
+      runtime.run(createRequest('a')),
+      runtime.run(createRequest('b')),
+      runtime.run(createRequest('c')),
     ]);
 
     // 串行：start-1 -> end-1 -> start-2 -> end-2 -> start-3 -> end-3
@@ -206,7 +211,7 @@ describe('会话并发串行化', () => {
     ]);
   });
 
-  it('不同 sessionKey 可并行执行', async () => {
+  it('不同 sessionKey 可并行执行（多 Runtime 实例）', async () => {
     let concurrent = 0;
     let maxConcurrent = 0;
     const streamFn: StreamFn = async function* () {
@@ -226,11 +231,13 @@ describe('会话并发串行化', () => {
       };
     };
 
-    const runtime = createRuntime({ streamFn });
+    const runtime1 = createRuntime({ streamFn, sessionKey: 's1' });
+    const runtime2 = createRuntime({ streamFn, sessionKey: 's2' });
+    const runtime3 = createRuntime({ streamFn, sessionKey: 's3' });
     await Promise.all([
-      runtime.run(createRequest('a', { sessionKey: 's1' })),
-      runtime.run(createRequest('b', { sessionKey: 's2' })),
-      runtime.run(createRequest('c', { sessionKey: 's3' })),
+      runtime1.run(createRequest('a')),
+      runtime2.run(createRequest('b')),
+      runtime3.run(createRequest('c')),
     ]);
 
     assert.ok(maxConcurrent >= 2, `不同会话应可并行，实际最大并发 ${maxConcurrent}`);
@@ -259,7 +266,7 @@ describe('工具循环', () => {
       tools: [tool],
     });
 
-    const result = await runtime.run(createRequest('北京天气如何', { sessionKey: 't1' }));
+    const result = await runtime.run(createRequest('北京天气如何'));
     assert.equal(result.success, true);
     assert.deepEqual(result.toolsUsed, ['get_weather']);
     assert.equal(result.content, 'done');
@@ -272,7 +279,7 @@ describe('工具循环', () => {
       ]),
     });
 
-    const result = await runtime.run(createRequest('hi', { sessionKey: 't2' }));
+    const result = await runtime.run(createRequest('hi'));
     assert.equal(result.success, true);
     assert.equal(result.content, 'done');
   });
@@ -296,7 +303,7 @@ describe('工具循环', () => {
       toolTimeoutMs: 50,  // 50ms 超时
     });
 
-    const result = await runtime.run(createRequest('hi', { sessionKey: 't3' }));
+    const result = await runtime.run(createRequest('hi'));
     assert.equal(result.success, true);
     assert.equal(result.content, 'done');
   });
@@ -310,11 +317,11 @@ describe('getMessages 返回拷贝', () => {
       ]),
     });
 
-    await runtime.run(createRequest('hello', { sessionKey: 'c1' }));
-    const msgs1 = runtime.getMessages('c1');
+    await runtime.run(createRequest('hello'));
+    const msgs1 = runtime.getMessages();
     assert.ok(msgs1.length > 0);
     (msgs1 as any[]).push({ role: 'user', content: 'injected', timestamp: 0 });
-    const msgs2 = runtime.getMessages('c1');
+    const msgs2 = runtime.getMessages();
     assert.ok(msgs2.length < (msgs1 as any[]).length, '外部修改不应影响内部');
   });
 });
@@ -348,10 +355,10 @@ describe('maxTurns 限制', () => {
       maxTurns: 3,
     });
 
-    const result = await runtime.run(createRequest('loop', { sessionKey: 'm1' }));
+    const result = await runtime.run(createRequest('loop'));
     assert.equal(result.success, true);
     // 3 回合 = 3 个 assistant + 3 个 toolResult
-    const msgs = runtime.getMessages('m1');
+    const msgs = runtime.getMessages();
     const assistantCount = msgs.filter(m => m.role === 'assistant').length;
     assert.ok(assistantCount <= 3, `不应超过 maxTurns，实际 ${assistantCount}`);
   });
@@ -365,7 +372,7 @@ describe('Result.resources 快照', () => {
       ]),
     });
 
-    const result = await runtime.run(createRequest('hi', { sessionKey: 'r1' }));
+    const result = await runtime.run(createRequest('hi'));
     assert.ok(result.resources, 'resources 应被填充');
     assert.ok(result.resources!.length > 0);
   });
@@ -468,7 +475,6 @@ describe('media 附件', () => {
 
     const runtime = createRuntime({ streamFn });
     await runtime.run(createRequest('看图', {
-      sessionKey: 'media1',
       media: ['data:image/png;base64,iVBORw0KGgo='],
     }));
 

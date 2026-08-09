@@ -81,13 +81,8 @@ export async function generatePodcast(
   signal?: AbortSignal,
 ): Promise<{ summary: string }> {
   const { url } = input;
-  // 把模型标识编入 sessionKey,隔离不同模型的会话历史(/ 转为 - 避免路径分隔符)
-  const modelTag = input.modelKey ? `:${input.modelKey.replace(/[^a-z0-9._-]+/gi, '-')}` : '';
-  const session = `summarizer:${slug(url)}${modelTag}`;
 
-  const req = createRequest(`请抓取以下博客并生成播客摘要(不超过 2000 字符):\n\n${url}`, {
-    sessionKey: session,
-  });
+  const req = createRequest(`请抓取以下博客并生成播客摘要(不超过 2000 字符):\n\n${url}`);
 
   let summary = '';
   let scrapeStarted = false;
@@ -121,16 +116,7 @@ export async function generatePodcast(
   return { summary };
 }
 
-/** 把 URL 转为 session key 友好的 slug */
-function slug(s: string): string {
-  return (
-    s
-      .toLowerCase()
-      .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 60) || 'default'
-  );
-}
+
 
 // ─── Runtime 注册表:按 (provider, modelId) 缓存 Runtime 复用 ──────────
 

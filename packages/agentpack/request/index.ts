@@ -22,10 +22,6 @@ export function validateRequest(request: Request): ValidationResult {
     errors.push('message 不能为空');
   }
 
-  if (!request.sessionKey || request.sessionKey.trim().length === 0) {
-    errors.push('sessionKey 不能为空');
-  }
-
   if (request.message.length > 100000) {
     errors.push('message 长度超过限制（100000 字符）');
   }
@@ -38,7 +34,6 @@ export function validateRequest(request: Request): ValidationResult {
 export function normalizeRequest(request: Request): Request {
   return createRequest(request.message, {
     type: request.type,
-    sessionKey: request.sessionKey || 'default',
     channel: request.channel || 'cli',
     chatId: request.chatId || 'direct',
     senderId: request.senderId || 'user',

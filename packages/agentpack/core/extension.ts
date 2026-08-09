@@ -30,8 +30,8 @@ export interface RuntimeHooks {
   afterEmit: AsyncSeriesHook<[Result]>;
   /**
    * 运行结束。
-   * 第二参数为最终 Request（可选，向后兼容）：done 钩子如需按会话配对（如记忆捕获），
-   * 应使用 request.sessionKey 而非依赖 FIFO 推断。
+   * 第二参数为最终 Request（可选，向后兼容）。
+   * 单会话模式下会话标识由 Runtime 持有；多会话场景请创建独立 Runtime 实例。
    */
   done: AsyncSeriesHook<[Result, Request?]>;
   /** 运行失败 */

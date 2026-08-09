@@ -86,25 +86,22 @@ export interface Runtime {
   useTransformer(transformer: import('./transformer').ContextTransformer): this;
 
   /** 获取消息列表 */
-  getMessages(sessionKey?: string): Message[];
+  getMessages(): Message[];
 
-  /** 终止指定会话的运行 */
-  abort(sessionKey?: string): void;
+  /** 终止当前会话的运行 */
+  abort(): void;
 
-  /** 检查会话是否正在运行 */
-  isBusy(sessionKey?: string): boolean;
+  /** 检查当前会话是否正在运行 */
+  isBusy(): boolean;
 
-  /** 等待会话空闲 */
-  waitForIdle(sessionKey?: string): Promise<void>;
+  /** 等待当前会话空闲 */
+  waitForIdle(): Promise<void>;
 
-  /** 清除会话消息（仅内存，不影响已持久化数据） */
-  clearSession(sessionKey?: string): void;
+  /** 清除当前会话消息(仅内存,不影响已持久化数据) */
+  clearSession(): void;
 
-  /** 列出所有会话 key（内存 + 存储） */
-  listSessions(): Promise<string[]>;
-
-  /** 删除指定会话（内存 + 存储），返回是否删除成功 */
-  deleteSession(sessionKey?: string): Promise<boolean>;
+  /** 删除当前会话(内存 + 存储),返回是否删除成功 */
+  deleteSession(): Promise<boolean>;
 
   /** 关闭运行时，释放资源 */
   close(): Promise<void>;
@@ -117,6 +114,8 @@ export interface RuntimeOptions {
   config?: Record<string, unknown>;
   /** 工作区路径 */
   workspace?: string;
+  /** 会话标识(单会话;默认 'default')。多会话场景请创建多个 Runtime 实例 */
+  sessionKey?: string;
   /** 系统提示词 */
   systemPrompt?: string;
   /** 模型 */

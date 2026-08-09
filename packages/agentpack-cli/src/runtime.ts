@@ -72,6 +72,7 @@ export function resolveModelForCli(config: AgentpackConfig): AiModel {
 export function createAgentpackRuntime(
   config: AgentpackConfig,
   model?: AiModel,
+  sessionKey?: string,
 ): Runtime {
   const aiModel = model ?? resolveAiModel(config);
 
@@ -83,6 +84,7 @@ export function createAgentpackRuntime(
     streamFn: createStreamFnFromAi(aiModel),
     systemPrompt: config.systemPrompt,
     workspace: config.workspace,
+    sessionKey: sessionKey ?? config.sessionKey,
     sessionStorage: config.sessions.enabled
       ? createFileSessionStorage({
           baseDir: config.sessions.baseDir,

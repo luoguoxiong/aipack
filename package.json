@@ -5,7 +5,6 @@
   "type": "module",
   "scripts": {
     "build:agentpack": "pnpm --filter agentpack build",
-    "agent": "tsx packages/agentpack/test/start.js",
     "example:deepseek": "tsx examples/deepseek.ts",
     "example:agent-memory": "tsx examples/agent-memory.ts",
     "example:compression": "tsx examples/compression-demo.ts",

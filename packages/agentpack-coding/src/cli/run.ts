@@ -16,17 +16,18 @@ export interface RunOptions {
 }
 
 export async function runOnce(opts: RunOptions): Promise<void> {
+  const sessionKey = `coding-run-${Date.now().toString(36)}`;
   const agent = await createCodingAgent({
     provider: opts.provider,
     model: opts.model,
     workspace: opts.workspace ?? process.cwd(),
+    sessionKey,
     memory: opts.memory,
     // 非 TTY：不提供 confirmFn，confirm 类命令将被拒绝
   });
 
-  const sessionKey = `coding-run-${Date.now().toString(36)}`;
   try {
-    await handleMessage(agent, sessionKey, opts.message);
+    await handleMessage(agent, opts.message);
   } finally {
     await agent.close();
   }

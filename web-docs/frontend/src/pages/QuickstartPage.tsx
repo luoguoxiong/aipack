@@ -129,8 +129,9 @@ export default function QuickstartPage() {
           <DatabaseOutlined /> 进阶 B：多轮对话 + 持久化
         </h2>
         <p style={{ lineHeight: 1.8, color: '#475569' }}>
-          传入相同的 <code>sessionKey</code>，Runtime 会自动恢复历史消息。
-          配合 <code>createFileSessionStorage</code>，即便重启进程也能继续对话。
+          同一 <code>Runtime</code> 的多次 <code>run</code> 会自动恢复历史消息。
+          <code>sessionKey</code> 在 <code>createRuntime</code> 时指定（默认 <code>'default'</code>）。
+          配合 <code>createFileSessionStorage</code>，即便重启进程也能继续对话。多会话请创建多个 Runtime 实例。
         </p>
         <Alert
           type="info"

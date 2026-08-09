@@ -91,6 +91,7 @@ export async function createCodingAgent(
     streamFn,
     systemPrompt: options.systemPrompt ?? DEFAULT_CODING_SYSTEM_PROMPT,
     workspace,
+    sessionKey: options.sessionKey,
     tools: allTools,
     extensions: extensions.length > 0 ? extensions : undefined,
     transformers: transformers.length > 0 ? transformers : undefined,

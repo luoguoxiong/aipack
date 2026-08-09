@@ -2,11 +2,12 @@
  * AgentService —— 包装 agentpack-coding 的 createCodingAgent。
  *
  * 职责：
- * 1. 懒初始化：首次 getAgent() 才真正 createCodingAgent（避免无 API Key 时启动报错）
+ * 1. 懒初始化：首次 getAgent(sessionKey) 才真正 createCodingAgent（避免无 API Key 时启动报错）
  * 2. 从 VSCode settings 读取 provider/model/apiKey，syncApiKeysToEnv 后交给 createCodingAgent
  * 3. workspace 取 workspaceFolders[0]；sessionDir 落 globalStorage/sessions
  * 4. confirmFn 接 QuickPick；memory 按 settings 启用
- * 5. invalidate()：配置变更时重建 agent，保留 allowedAlways 集合
+ * 5. 多会话：每个 sessionKey 对应独立 CodingAgent 实例（单会话架构）
+ * 6. invalidate()：配置变更时重建所有 agent，保留 allowedAlways 集合
  *
  * 面板层通过 streamRun/stop/clearHistory/getHistory 驱动 agent，sessionKey 由面板持有。
  */
@@ -22,16 +23,17 @@ import { createQuickPickConfirmFn } from './confirm';
 import { loadConfigAndSyncEnv } from './config';
 
 export class AgentService {
-  private agent: CodingAgent | undefined;
+  private agents = new Map<string, CodingAgent>();
   private preservedAllowedAlways: string[] = [];
   private disposed = false;
 
   constructor(private readonly ctx: vscode.ExtensionContext) {}
 
-  /** 获取或懒初始化 agent */
-  async getAgent(): Promise<CodingAgent> {
-    if (this.agent) return this.agent;
-    console.log('[agentpack] getAgent: creating...');
+  /** 获取或懒初始化指定 sessionKey 的 agent */
+  async getAgent(sessionKey: string): Promise<CodingAgent> {
+    const existing = this.agents.get(sessionKey);
+    if (existing) return existing;
+    console.log(`[agentpack] getAgent: creating for session ${sessionKey}...`);
 
     const { config: cfg } = loadConfigAndSyncEnv();
 
@@ -58,11 +60,12 @@ export class AgentService {
         : true
       : false;
 
-    this.agent = await createCodingAgent({
+    const agent = await createCodingAgent({
       provider: cfg.provider,
       model: cfg.model || undefined,
       workspace,
       sessionDir,
+      sessionKey,
       permission: {
         confirmFn,
         allowedAlways: new Set(this.preservedAllowedAlways),
@@ -70,55 +73,59 @@ export class AgentService {
       memory,
       enabledTools: cfg.enabledTools.length > 0 ? cfg.enabledTools : undefined,
     });
-    console.log('[agentpack] getAgent: created');
+    console.log(`[agentpack] getAgent: created for session ${sessionKey}`);
+    this.agents.set(sessionKey, agent);
 
-    return this.agent;
+    return agent;
   }
 
   /** 流式运行；面板订阅返回的 AsyncGenerator 做增量渲染 */
   async *streamRun(message: string, sessionKey: string): AsyncGenerator<ResultChunk> {
-    const agent = await this.getAgent();
-    yield* agent.runtime.stream(createRequest(message, { sessionKey }));
+    const agent = await this.getAgent(sessionKey);
+    yield* agent.runtime.stream(createRequest(message));
   }
 
   /** 停止指定会话的运行（agent 未初始化时 no-op，避免触发创建） */
   async stop(sessionKey: string): Promise<void> {
-    if (!this.agent) return;
-    this.agent.runtime.abort(sessionKey);
+    this.agents.get(sessionKey)?.runtime.abort();
   }
 
   /** 清空指定会话的内存消息历史（agent 未初始化时 no-op） */
   async clearHistory(sessionKey: string): Promise<void> {
-    if (!this.agent) return;
-    this.agent.runtime.clearSession(sessionKey);
+    this.agents.get(sessionKey)?.runtime.clearSession();
   }
 
   /** 取指定会话的已有消息列表（agent 未初始化时返回空，避免 ready 阶段触发创建卡住） */
   async getHistory(sessionKey: string): Promise<Message[]> {
-    if (!this.agent) return [];
-    return this.agent.runtime.getMessages(sessionKey);
+    const agent = this.agents.get(sessionKey);
+    if (!agent) return [];
+    return agent.runtime.getMessages();
   }
 
   /**
-   * 配置变更时重建 agent：保留 allowedAlways 集合，下次 getAgent 重建时传入。
+   * 配置变更时重建所有 agent：保留 allowedAlways 集合，下次 getAgent 重建时传入。
    * 不阻塞调用方：旧 agent 异步关闭。
    */
   invalidate(): void {
-    if (!this.agent) return;
-    const allowed = this.agent.permission.getAllowedAlways();
-    this.preservedAllowedAlways = allowed;
-    const old = this.agent;
-    this.agent = undefined;
-    void old.close().catch(() => {
-      // 忽略关闭错误
-    });
+    if (this.agents.size === 0) return;
+    const first = this.agents.values().next().value;
+    if (first) {
+      const allowed = first.permission.getAllowedAlways();
+      this.preservedAllowedAlways = allowed;
+    }
+    const oldAgents = [...this.agents.values()];
+    this.agents.clear();
+    for (const old of oldAgents) {
+      void old.close().catch(() => {
+        // 忽略关闭错误
+      });
+    }
   }
 
   async dispose(): Promise<void> {
     this.disposed = true;
-    await this.agent?.close().catch(() => {
-      // 忽略关闭错误
-    });
-    this.agent = undefined;
+    const all = [...this.agents.values()];
+    this.agents.clear();
+    await Promise.allSettled(all.map((a) => a.close()));
   }
 }

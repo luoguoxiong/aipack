@@ -51,6 +51,7 @@ async function main() {
       maxTurns: 20,
     },
     workspace: process.cwd(),                 // 工作区路径，供扩展/转换器使用
+    sessionKey: 'deepseek-demo',              // 单会话标识（多会话请创建多个 Runtime 实例）
 
     // 初始工具列表（也可后续用 runtime.registerTool() 动态注册）
     tools: [{
@@ -98,7 +99,6 @@ async function main() {
   // ── 5. 流式运行 ─────────────────────────────────────────────────
   const request = createRequest(
     '北京和上海的天气怎么样？分别说一下。',
-    { sessionKey: 'deepseek-demo' },
   );
 
   console.log('\nAI:');
