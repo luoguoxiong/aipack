@@ -4,6 +4,9 @@
  * 用 InMemoryStore + 假 streamFn 验证完整闭环：
  *   capture → index → recall/inject → strip（防累积）→ tools
  *
+ * 单会话架构（A 方案）：每个 Runtime 绑定一个 sessionKey。
+ * 跨会话记忆检索通过多 Runtime 实例共享同一 store 实现。
+ *
  * 运行：pnpm --filter agentpack-memory example
  *   或：node --import tsx examples/round-trip.ts
  */
@@ -104,39 +107,49 @@ function countSentinelBlocks(text: string): number {
   return count;
 }
 
+// ─── 模型定义 ──────────────────────────────────────────────────────────
+
+const model: Model = {
+  id: 'test-model',
+  name: 'test-model',
+  provider: 'test',
+  contextWindow: 128000,
+  maxTokens: 8192,
+  reasoning: false,
+};
+
+// ─── 创建带记忆插件的 Runtime（多 Runtime 共享同一 store） ───────────
+
+function createMemoryRuntime(sessionKey: string, streamFn: StreamFn) {
+  const mem = createMemoryPlugin({ store });
+  const installed = mem.install();
+  return createRuntime({
+    sessionKey,
+    model,
+    streamFn,
+    extensions: installed.extensions,
+    transformers: installed.transformers,
+    tools: installed.tools,
+  });
+}
+
+// 共享 store（跨会话记忆检索的关键）
+const store = new InMemoryStore();
+
 // ─── 主流程 ──────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   console.log('\n=== agentpack-memory 往返验证 ===\n');
 
-  // 1. 创建插件（InMemoryStore，纯 BM25）
-  const store = new InMemoryStore();
-  const mem = createMemoryPlugin({ store });
-  const installed = mem.install();
-
-  // 2. 创建 runtime
-  const model: Model = {
-    id: 'test-model',
-    name: 'test-model',
-    provider: 'test',
-    contextWindow: 128000,
-    maxTokens: 8192,
-    reasoning: false,
-  };
-
-  const runtime = createRuntime({
-    model,
-    streamFn: makeFakeStreamFn('好的，我记住了你用 React + TypeScript。'),
-    extensions: installed.extensions,
-    transformers: installed.transformers,
-    tools: installed.tools,
-  });
+  // s1：捕获会话；s2：检索注入会话（跨会话记忆）
+  const runtime1 = createMemoryRuntime('s1', makeFakeStreamFn('好的，我记住了你用 React + TypeScript。'));
+  const runtime2 = createMemoryRuntime('s2', makeFakeStreamFn('根据之前的记忆，你用的是 React + TypeScript。'));
 
   // ─── 测试 1：capture ──────────────────────────────────────────────
   console.log('▶ 测试 1：自动捕获（capture）');
 
-  await runtime.run(
-    createRequest('我喜欢用 React + TypeScript 做项目', { sessionKey: 's1' }),
+  await runtime1.run(
+    createRequest('我喜欢用 React + TypeScript 做项目'),
   );
 
   const memories = await store.list();
@@ -147,15 +160,13 @@ async function main(): Promise<void> {
   );
   console.log(`  📝 捕获内容: ${memories[0]?.content.slice(0, 80)}...\n`);
 
-  // ─── 测试 2：injection ───────────────────────────────────────────
-  console.log('▶ 测试 2：自动注入（injection）');
+  // ─── 测试 2：injection（跨会话：s2 检索 s1 的记忆）─────────────────
+  console.log('▶ 测试 2：自动注入（injection，跨会话检索）');
 
-  // 换一个 sessionKey，模拟跨会话记忆检索
   capturedContexts.length = 0;
-  runtime.setStreamFn(makeFakeStreamFn('根据之前的记忆，你用的是 React + TypeScript。'));
 
-  await runtime.run(
-    createRequest('我之前说过用什么 React 技术栈？', { sessionKey: 's2' }),
+  await runtime2.run(
+    createRequest('我之前说过用什么 React 技术栈？'),
   );
 
   const ctx2 = capturedContexts[0];
@@ -173,15 +184,14 @@ async function main(): Promise<void> {
     console.log(`  📝 注入后的 user 消息（前 120 字）: ${userText.slice(0, 120)}...\n`);
   }
 
-  // ─── 测试 3：strip 防累积 ─────────────────────────────────────────
+  // ─── 测试 3：strip 防累积（同一 s2 会话再跑一次）──────────────────
   console.log('▶ 测试 3：剥离防累积（strip-then-inject）');
 
-  // 同一个 sessionKey 再跑一次相同 query
   capturedContexts.length = 0;
-  runtime.setStreamFn(makeFakeStreamFn('没错，你之前提到过 React + TypeScript。'));
+  runtime2.setStreamFn(makeFakeStreamFn('没错，你之前提到过 React + TypeScript。'));
 
-  await runtime.run(
-    createRequest('我之前说过用什么 React 技术栈？', { sessionKey: 's2' }),
+  await runtime2.run(
+    createRequest('我之前说过用什么 React 技术栈？'),
   );
 
   const ctx3 = capturedContexts[0];
@@ -265,6 +275,9 @@ async function main(): Promise<void> {
   console.log('════════════════════════════════════════');
   console.log(`  通过: ${passed}  失败: ${failed}`);
   console.log('════════════════════════════════════════\n');
+
+  await runtime1.close();
+  await runtime2.close();
 
   if (failed > 0) {
     process.exit(1);

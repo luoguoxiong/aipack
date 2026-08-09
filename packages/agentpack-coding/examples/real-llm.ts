@@ -13,20 +13,21 @@ import { createRequest } from 'agentpack';
 import { createCodingAgent } from '../src/factory';
 
 async function main(): Promise<void> {
+  const sessionKey = `coding-demo-${Date.now().toString(36)}`;
   const agent = await createCodingAgent({
     provider: process.env.AGENTPACK_PROVIDER,
     model: process.env.AGENTPACK_MODEL,
     workspace: process.cwd(),
+    sessionKey,
     sessionDir: path.join(process.cwd(), '.agentpack', 'sessions'),
   });
 
-  const sessionKey = `coding-demo-${Date.now().toString(36)}`;
   const message = process.argv[2] ?? '读 package.json 并总结有哪些 script';
 
   console.log(`提问：${message}\n---`);
 
   for await (const chunk of agent.runtime.stream(
-    createRequest(message, { sessionKey }),
+    createRequest(message),
   )) {
     switch (chunk.type) {
       case 'text':

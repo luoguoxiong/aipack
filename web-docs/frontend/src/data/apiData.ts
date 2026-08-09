@@ -37,6 +37,7 @@ export const apiList: ApiItem[] = [
       { name: 'options.transformers', type: 'ContextTransformer[]', description: '预注册的上下文转换器' },
       { name: 'options.pipeline', type: 'Pipeline', description: '自定义 Pipeline，覆盖默认流水线' },
       { name: 'options.sessionStorage', type: 'SessionStorage', description: '会话存储适配器，启用后会话自动持久化' },
+      { name: 'options.sessionKey', type: 'string', description: '单会话标识（默认 default），多会话请创建多个 Runtime 实例' },
       { name: 'options.maxTurns', type: 'number', description: '单次请求最大对话回合数，默认 50，防止失控循环' },
       { name: 'options.toolTimeoutMs', type: 'number', description: '单个工具执行超时（毫秒），默认 120000' },
       { name: 'options.parallelToolCalls', type: 'boolean', description: '是否并行执行同一轮的多个工具调用，默认 true' },
@@ -80,7 +81,7 @@ await runtime.close();`,
     ],
     returns: 'Promise<Result> - 运行结果，包含 content、toolsUsed、usage、stopReason 等字段',
     example: `const result = await runtime.run(
-  createRequest('解释什么是闭包', { sessionKey: 'js-101' })
+  createRequest('解释什么是闭包')
 );
 console.log(result.content);  // 最终回复文本
 console.log(result.toolsUsed); // 调用过的工具名列表
@@ -149,26 +150,22 @@ console.log(result.usage);    // Token 用量统计`,
     id: 'Runtime-session',
     name: '会话管理方法',
     kind: 'function',
-    signature: 'listSessions() / deleteSession() / clearSession() / getMessages()',
-    description: 'Runtime 提供一系列会话管理方法，用于查询、删除、清空会话，以及获取历史消息。当配置了 sessionStorage 时，这些操作会同时作用于内存和持久化存储。',
+    signature: 'getMessages() / clearSession() / deleteSession() / close()',
+    description: 'Runtime 提供一系列会话管理方法（单会话架构，无需传 sessionKey）。每个 Runtime 绑定一个 sessionKey（通过 createRuntime 指定），多会话场景请创建多个 Runtime 实例。当配置了 sessionStorage 时，这些操作会同时作用于内存和持久化存储。',
     category: 'Runtime 核心',
-    params: [
-      { name: 'sessionKey', type: 'string', description: '会话标识，不传则操作默认会话' },
-    ],
-    example: `// 列出所有会话 key
-const keys = await runtime.listSessions();
-console.log('会话列表:', keys);
-
-// 获取指定会话的消息历史
-const messages = runtime.getMessages('session-1');
+    example: `// 获取当前会话的消息历史
+const messages = runtime.getMessages();
 console.log('消息数:', messages.length);
 
 // 清除内存中的会话（不影响已持久化数据）
-runtime.clearSession('session-1');
+runtime.clearSession();
 
 // 删除会话（内存 + 存储）
-const deleted = await runtime.deleteSession('session-1');
-console.log('已删除:', deleted);`,
+const deleted = await runtime.deleteSession();
+console.log('已删除:', deleted);
+
+// 关闭 Runtime，释放资源
+await runtime.close();`,
   },
 
   // ========== Request 请求 ==========
@@ -177,11 +174,10 @@ console.log('已删除:', deleted);`,
     name: 'createRequest()',
     kind: 'function',
     signature: 'createRequest(message: string, options?: RequestOptions): Request',
-    description: '构建一个请求对象，是 run/stream 的入口参数。最简单的用法只需传入消息文本，高级用法可指定 sessionKey（多轮对话）、channel、metadata 等。',
+    description: '构建一个请求对象，是 run/stream 的入口参数。最简单的用法只需传入消息文本，高级用法可指定 channel、metadata 等。sessionKey 由 Runtime 管理（通过 createRuntime 指定），不在 Request 中传递。',
     category: 'Request 请求',
     params: [
       { name: 'message', type: 'string', required: true, description: '用户输入的消息文本' },
-      { name: 'options.sessionKey', type: 'string', description: '会话标识，相同 key 的请求共享上下文，实现多轮对话' },
       { name: 'options.channel', type: 'string', description: '来源渠道标识，如 "web"、"cli"、"vscode"' },
       { name: 'options.chatId', type: 'string', description: '聊天 ID，用于关联多条消息' },
       { name: 'options.senderId', type: 'string', description: '发送者 ID，区分不同用户' },
@@ -191,29 +187,28 @@ console.log('已删除:', deleted);`,
     example: `// 最简单的一次性请求
 const req1 = createRequest('你好');
 
-// 启用多轮对话（同一 sessionKey 自动关联历史）
-const req2 = createRequest('记住我叫张三', { sessionKey: 'user-123' });
-const req3 = createRequest('我叫什么？', { sessionKey: 'user-123' });
-
 // 带元数据的请求（Extension 中可通过 request.metadata 读取）
-const req4 = createRequest('生成报告', {
-  sessionKey: 'report-gen',
+const req2 = createRequest('生成报告', {
   channel: 'web-dashboard',
   metadata: { userId: 'u-001', priority: 'high' },
-});`,
+});
+
+// 多轮对话：同一 Runtime 的多次 run 自动关联历史
+// （sessionKey 在 createRuntime 时指定，无需在 Request 中传递）
+await runtime.run(createRequest('记住我叫张三'));
+await runtime.run(createRequest('我叫什么？'));`,
   },
   {
     id: 'RequestBuilder',
     name: 'RequestBuilder',
     kind: 'class',
-    signature: 'new RequestBuilder().message(text).sessionKey(key)...build()',
+    signature: 'new RequestBuilder().message(text).channel(ch)...build()',
     description: '链式请求构建器，适合需要逐步组装请求的场景。每个方法返回 this，最后调用 build() 生成 Request 对象。',
     category: 'Request 请求',
     example: `import { RequestBuilder } from 'agentpack';
 
 const request = new RequestBuilder()
   .message('帮我分析这段代码')
-  .sessionKey('code-review-1')
   .channel('vscode')
   .senderId('dev-alice')
   .metadata({ file: 'src/index.ts', lineStart: 100 })

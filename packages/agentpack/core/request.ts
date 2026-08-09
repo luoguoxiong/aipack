@@ -15,8 +15,6 @@ export interface Request {
   readonly message: string;
   /** 请求类型 */
   readonly type: RequestType;
-  /** 会话标识 */
-  readonly sessionKey: string;
   /** 通道标识 */
   readonly channel?: string;
   /** 聊天 ID */
@@ -40,7 +38,6 @@ export interface Request {
 export class RequestBuilder {
   private _message: string = '';
   private _type: RequestType = 'message';
-  private _sessionKey: string = 'sdk:default';
   private _channel?: string;
   private _chatId?: string;
   private _senderId?: string;
@@ -57,11 +54,6 @@ export class RequestBuilder {
 
   type(t: RequestType): this {
     this._type = t;
-    return this;
-  }
-
-  sessionKey(key: string): this {
-    this._sessionKey = key;
     return this;
   }
 
@@ -109,7 +101,6 @@ export class RequestBuilder {
     return {
       message: this._message,
       type: this._type,
-      sessionKey: this._sessionKey,
       channel: this._channel,
       chatId: this._chatId,
       senderId: this._senderId,
@@ -126,7 +117,6 @@ export function createRequest(message: string, options?: Partial<Request>): Requ
   return {
     message,
     type: 'message',
-    sessionKey: 'sdk:default',
     ...options,
   };
 }

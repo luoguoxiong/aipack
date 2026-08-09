@@ -62,6 +62,8 @@ export interface CodingAgentOptions {
   workspace?: string;
   /** 会话存储目录（不传则不持久化） */
   sessionDir?: string;
+  /** 会话标识（单会话;默认 'default'）。多会话场景请创建多个 agent 实例 */
+  sessionKey?: string;
   /** 额外工具（与 coding 工具合并，便于注入 memory 工具等） */
   extraTools?: Tool[];
   /** 额外扩展（如 LoggingExtension / memory capture） */

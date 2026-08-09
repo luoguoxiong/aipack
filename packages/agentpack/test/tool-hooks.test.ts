@@ -92,11 +92,11 @@ describe('beforeToolCall', () => {
       ],
     });
 
-    const result = await runtime.run(createRequest('hi', { sessionKey: 'block-1' }));
+    const result = await runtime.run(createRequest('hi'));
 
     assert.equal(exec.mock.callCount(), 0, 'block 后工具不应执行');
     assert.ok(result.toolsUsed.includes('bash'), 'toolsUsed 仍记录该工具');
-    const msgs = runtime.getMessages('block-1');
+    const msgs = runtime.getMessages();
     assert.ok(toolResultText(msgs).includes('[blocked]'), '结果应含 [blocked]');
     assert.ok(toolResultText(msgs).includes('bash is disabled'), '结果应含原因');
     // block 不 terminate：run 继续到第二轮纯文本，正常完成
@@ -120,7 +120,7 @@ describe('beforeToolCall', () => {
       ],
     });
 
-    const result = await runtime.run(createRequest('hi', { sessionKey: 'term-1' }));
+    const result = await runtime.run(createRequest('hi'));
 
     assert.equal(exec.mock.callCount(), 0, 'terminate 前工具不应执行');
     assert.equal(result.stopReason, 'terminated');
@@ -143,7 +143,7 @@ describe('beforeToolCall', () => {
       ],
     });
 
-    await runtime.run(createRequest('hi', { sessionKey: 'args-1' }));
+    await runtime.run(createRequest('hi'));
 
     assert.equal(exec.mock.callCount(), 1, '工具应执行一次');
     const passedArgs = exec.mock.calls[0].arguments[1];
@@ -167,7 +167,7 @@ describe('beforeToolCall', () => {
       ],
     });
 
-    await runtime.run(createRequest('hi', { sessionKey: 'pass-1' }));
+    await runtime.run(createRequest('hi'));
     assert.equal(exec.mock.callCount(), 1, '未匹配规则应放行');
   });
 });
@@ -194,8 +194,8 @@ describe('afterToolCall', () => {
       ],
     });
 
-    await runtime.run(createRequest('hi', { sessionKey: 'after-1' }));
-    const msgs = runtime.getMessages('after-1');
+    await runtime.run(createRequest('hi'));
+    const msgs = runtime.getMessages();
     assert.equal(toolResultText(msgs), 'overridden');
   });
 
@@ -223,7 +223,7 @@ describe('afterToolCall', () => {
       ],
     });
 
-    await runtime.run(createRequest('hi', { sessionKey: 'after-2' }));
+    await runtime.run(createRequest('hi'));
     assert.equal(seen.mock.callCount(), 1, 'observer 应被调用一次');
     const observed = seen.mock.calls[0].arguments[0];
     assert.deepEqual(
@@ -249,7 +249,7 @@ describe('afterToolCall', () => {
       ],
     });
 
-    const result = await runtime.run(createRequest('hi', { sessionKey: 'after-term-1' }));
+    const result = await runtime.run(createRequest('hi'));
     assert.equal(exec.mock.callCount(), 1, 'afterToolCall 在执行后触发，工具应已执行');
     assert.equal(result.stopReason, 'terminated');
     assert.equal(result.metadata.terminateReason, 'terminated by afterToolCall');
@@ -287,10 +287,10 @@ describe('多 tap 串联', () => {
       ],
     });
 
-    await runtime.run(createRequest('hi', { sessionKey: 'multi-1' }));
+    await runtime.run(createRequest('hi'));
     assert.equal(rewriterCalled.mock.callCount(), 1, '前置 rewriter 应执行');
     assert.equal(exec.mock.callCount(), 0, '后置 block 生效，工具不执行');
-    const msgs = runtime.getMessages('multi-1');
+    const msgs = runtime.getMessages();
     assert.ok(toolResultText(msgs).includes('blocked by blocker'));
   });
 
@@ -316,7 +316,7 @@ describe('多 tap 串联', () => {
       ],
     });
 
-    await runtime.run(createRequest('hi', { sessionKey: 'multi-2' }));
+    await runtime.run(createRequest('hi'));
     assert.equal(laterCalled.mock.callCount(), 0, '前置 block 后后续回调不应执行');
   });
 });
@@ -341,7 +341,7 @@ describe('流式事件', () => {
     });
 
     const chunks: ResultChunk[] = [];
-    for await (const chunk of runtime.stream(createRequest('hi', { sessionKey: 'stream-1' }))) {
+    for await (const chunk of runtime.stream(createRequest('hi'))) {
       chunks.push(chunk);
     }
 
@@ -382,7 +382,7 @@ describe('流式事件', () => {
     });
 
     const chunks: ResultChunk[] = [];
-    for await (const chunk of runtime.stream(createRequest('hi', { sessionKey: 'stream-2' }))) {
+    for await (const chunk of runtime.stream(createRequest('hi'))) {
       chunks.push(chunk);
     }
 
@@ -433,7 +433,7 @@ describe('串行模式 terminate', () => {
       ],
     });
 
-    const result = await runtime.run(createRequest('hi', { sessionKey: 'serial-1' }));
+    const result = await runtime.run(createRequest('hi'));
 
     assert.equal(execA.mock.callCount(), 1, 'toolA 应执行');
     assert.equal(execB.mock.callCount(), 0, 'toolB 被 block 不执行');
@@ -441,7 +441,7 @@ describe('串行模式 terminate', () => {
     assert.equal(result.stopReason, 'terminated');
 
     // 三个 toolCall 都应有配对的 toolResult 消息
-    const msgs = runtime.getMessages('serial-1');
+    const msgs = runtime.getMessages();
     const toolResults = msgs.filter(m => m.role === 'toolResult');
     assert.equal(toolResults.length, 3, '每个 toolCall 都应有配对结果');
   });

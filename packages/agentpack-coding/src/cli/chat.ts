@@ -25,7 +25,6 @@ export interface ChatOptions {
 /** 消费 runtime.stream 事件，打印文本/思考/工具执行进度。供 chat 与 run 复用。 */
 export async function handleMessage(
   agent: CodingAgent,
-  sessionKey: string,
   message: string,
 ): Promise<void> {
   let thinkingActive = false;
@@ -33,7 +32,7 @@ export async function handleMessage(
 
   try {
     for await (const chunk of agent.runtime.stream(
-      createRequest(message, { sessionKey, channel: 'cli' }),
+      createRequest(message, { channel: 'cli' }),
     )) {
       if (chunk.type !== 'done') wroteAnything = true;
 
@@ -80,7 +79,7 @@ export async function handleMessage(
     if (thinkingActive) process.stdout.write('\x1b[0m\n');
 
     // LLM 层错误（如 API Key 无效）从最后一条 assistant 消息兜底捕获
-    const messages = agent.runtime.getMessages(sessionKey);
+    const messages = agent.runtime.getMessages();
     const last = messages[messages.length - 1];
     if (last?.role === 'assistant' && (last as AssistantMessage).errorMessage) {
       wroteAnything = true;
@@ -159,16 +158,16 @@ export async function startChat(opts: ChatOptions): Promise<void> {
   };
 
   console.log('初始化 coding agent...');
+  const sessionKey = `coding-${Date.now().toString(36)}`;
   const agent = await createCodingAgent({
     provider: opts.provider,
     model: opts.model,
     workspace,
+    sessionKey,
     sessionDir: opts.sessionDir ?? path.join(workspace, '.agentpack', 'sessions'),
     memory: opts.memory,
     permission: { confirmFn },
   });
-
-  const sessionKey = `coding-${Date.now().toString(36)}`;
 
   if (isTTY) {
     console.log(`会话: ${sessionKey}`);
@@ -210,7 +209,7 @@ export async function startChat(opts: ChatOptions): Promise<void> {
       return;
     }
     if (trimmed === '/clear') {
-      agent.runtime.clearSession(sessionKey);
+      agent.runtime.clearSession();
       console.log('已清空当前会话上下文');
       prompt();
       return;
@@ -231,7 +230,7 @@ export async function startChat(opts: ChatOptions): Promise<void> {
       return;
     }
 
-    await handleMessage(agent, sessionKey, input);
+    await handleMessage(agent, input);
     prompt();
   }
 }
