@@ -122,6 +122,7 @@ export default function ApiPage() {
     'AI 模型层': 'ai',
     'Extension 扩展': 'extension',
     'Transformer 转换器': 'transformer',
+    'Pipeline 流水线': 'pipeline',
     'Result 结果': 'result',
   };
 
