@@ -11,7 +11,11 @@
     "example:compression": "tsx examples/compression-demo.ts",
     "lint": "tsc --noEmit",
     "example:coding": "tsx packages/agentpack-coding/examples/round-trip.ts",
-    "example:coding:llm": "tsx packages/agentpack-coding/examples/real-llm.ts"
+    "example:coding:llm": "tsx packages/agentpack-coding/examples/real-llm.ts",
+    "docs:dev": "pnpm --dir web-docs dev",
+    "docs:build": "pnpm --dir web-docs build",
+    "docs:preview": "pnpm --dir web-docs preview",
+    "docs:typecheck": "pnpm --dir web-docs typecheck"
   },
   "keywords": [
     "ai",
