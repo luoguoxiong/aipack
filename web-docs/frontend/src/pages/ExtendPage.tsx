@@ -22,7 +22,7 @@ export default function ExtendPage() {
         <SettingOutlined style={{ color: '#6366f1' }} /> 扩展指南
       </h1>
       <p className="section-subtitle">
-        agentpack 提供三种扩展面：<b>自定义工具</b>（能力扩展）、
+        aipack 提供三种扩展面：<b>自定义工具</b>（能力扩展）、
         <b>Extension（生命周期钩子）</b>、<b>Transformer（上下文转换）</b>，
         以及针对工具执行的 <b>Tool Hooks</b>。组合使用可满足任意业务需求。
       </p>
@@ -113,7 +113,7 @@ export default function ExtendPage() {
             <tr>
               <td><span className="param-name">parameters</span><span className="param-required">必填</span></td>
               <td><span className="param-type">TSchema (TypeBox)</span></td>
-              <td>从 agentpack/ai 导入 Type 声明，转为 JSON Schema 传给模型；additionalProperties:false 可减少幻觉参数</td>
+              <td>从 aipack/ai 导入 Type 声明，转为 JSON Schema 传给模型；additionalProperties:false 可减少幻觉参数</td>
             </tr>
             <tr>
               <td><span className="param-name">execute</span><span className="param-required">必填</span></td>

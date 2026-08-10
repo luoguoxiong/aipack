@@ -1,7 +1,7 @@
 /**
  * apps/ai_blog_to_podcast_agent/src/tools/scrape.ts
  *
- * 博客抓取工具(agentpack Tool):三层降级,符合用户偏好的多层容错。
+ * 博客抓取工具(aipack Tool):三层降级,符合用户偏好的多层容错。
  *   1. FIRECRAWL_API_KEY 存在 → Firecrawl v2 /scrape(返回 markdown 正文)
  *   2. 原生 fetch + HTML 正文提取(去 script/style/nav,取 main/article/p 文本)
  *   3. 兜底(返回 URL + 提示,让 LLM 基于已知处理)
@@ -9,7 +9,7 @@
  * 容错细节:每层 try/catch + fetch 超时(8s,避免阻断层卡死)+ 1 次重试 + User-Agent。
  * 模式对齐 ai_travel_agent/src/tools/search.ts。
  */
-import type { Tool } from 'agentpack';
+import type { Tool } from '@aipack/agent';
 
 export interface ScrapeResult {
   url: string;
@@ -175,7 +175,7 @@ function formatScrape(r: ScrapeResult): string {
     .join('\n');
 }
 
-// ─── 导出 agentpack Tool ──────────────────────────────────────────
+// ─── 导出 aipack Tool ──────────────────────────────────────────
 
 export function createScrapeTool(firecrawlKey?: string): Tool {
   return {

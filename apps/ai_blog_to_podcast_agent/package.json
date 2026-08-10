@@ -2,7 +2,7 @@
   "name": "ai-blog-to-podcast-agent",
   "version": "0.1.0",
   "private": true,
-  "description": "基于 agentpack 的博客转播客 Web 应用(抓取博客正文 → 对话式摘要 → Edge TTS 免费语音合成)",
+  "description": "基于 aipack 的博客转播客 Web 应用(抓取博客正文 → 对话式摘要 → Edge TTS 免费语音合成)",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -17,7 +17,7 @@
     "podcast",
     "tts",
     "edge-tts",
-    "agentpack",
+    "aipack",
     "firecrawl"
   ],
   "license": "MIT",
@@ -25,7 +25,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "agentpack": "workspace:*",
+    "@aipack/agent": "workspace:*",
     "ws": "^8.18.0"
   },
   "devDependencies": {

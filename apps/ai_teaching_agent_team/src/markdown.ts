@@ -60,7 +60,7 @@ export function buildCourseMarkdown(topic: string, sections: CourseSections): st
 
   // ── 标题页 ──────────────────────────────────────
   lines.push(`# ${topic}`, '');
-  lines.push(`> 由 AI 教学代理团队(agentpack)生成 · ${nowStamp()}`, '');
+  lines.push(`> 由 AI 教学代理团队(aipack)生成 · ${nowStamp()}`, '');
   lines.push('**教学团队:**', '');
   for (const c of chapters) {
     lines.push(`- ${c.author} — ${c.title}`);

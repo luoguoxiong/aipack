@@ -1,6 +1,6 @@
 # 🎙️ AI Blog to Podcast Agent
 
-基于 [agentpack](../../packages/agentpack) 的博客转播客 Web 应用,用 TypeScript + 原生 http 重写,零运行时框架依赖。
+基于 [aipack](../../packages/agent) 的博客转播客 Web 应用,用 TypeScript + 原生 http 重写,零运行时框架依赖。
 
 ## 特性
 
@@ -9,8 +9,8 @@
 - **Edge TTS 免费语音合成**:微软神经语音,无需 API Key,WebSocket 直连 `speech.platform.bing.com`;连接失败重试 1 次,30s 超时;DRM token 基于 SHA256 动态生成(每 5 分钟轮换)
 - **流式摘要**:Summarizer 通过 SSE 实时推送摘要增量,前端逐字渲染
 - **多 LLM 提供商**:默认 DeepSeek,可切换 OpenAI / Anthropic / Google / Groq 等;API Key 可前端输入(localStorage 持久化)或服务器配置
-- **会话持久化**:基于 agentpack `FileSessionStorage`,同一 URL 历史可恢复
-- **极简依赖**:仅 `agentpack`(workspace)+ `ws`(Edge TTS WebSocket)+ devDeps(`tsx`/`typescript`/`@types/node`/`@types/ws`)
+- **会话持久化**:基于 aipack `FileSessionStorage`,同一 URL 历史可恢复
+- **极简依赖**:仅 `aipack`(workspace)+ `ws`(Edge TTS WebSocket)+ devDeps(`tsx`/`typescript`/`@types/node`/`@types/ws`)
 
 ## 架构
 
@@ -41,7 +41,7 @@
 
 ### 1. 安装依赖
 
-在仓库根目录(`agentpack/`)执行:
+在仓库根目录(`aipack/`)执行:
 
 ```bash
 pnpm install
@@ -69,7 +69,7 @@ cp .env.example .env
 
 > TTS 使用 Edge TTS(微软神经语音),**免费且无需 API Key**,服务器直连 WebSocket 合成,前端可选语音与语速。
 > LLM API Key 可在 `.env` 配置(供所有用户共用),也可由前端用户输入(localStorage 持久化,服务器不存储)。
-> 完整 provider 与 envVar 对照见 [`packages/agentpack/ai/catalog.ts`](../../packages/agentpack/ai/catalog.ts) 的 `BUILTIN_PROVIDERS`。
+> 完整 provider 与 envVar 对照见 [`packages/agent/ai/catalog.ts`](../../packages/agent/ai/catalog.ts) 的 `BUILTIN_PROVIDERS`。
 
 ### 3. 启动
 

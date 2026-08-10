@@ -20,7 +20,7 @@ export default function Navbar() {
     <nav className="navbar">
       <div className="navbar-logo" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
         <span style={{ fontSize: 24 }}>📦</span>
-        <span>agentpack</span>
+        <span>aipack</span>
         <span
           style={{
             fontSize: 11,

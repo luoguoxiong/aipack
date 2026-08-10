@@ -2,7 +2,7 @@
   "name": "ai-teaching-agent-team",
   "version": "0.1.0",
   "private": true,
-  "description": "基于 agentpack 的 AI 教学代理团队 Web 应用(4-Agent 协作:Professor + Advisor + Librarian + TA + SSE 流式 + Markdown 导出)",
+  "description": "基于 aipack 的 AI 教学代理团队 Web 应用(4-Agent 协作:Professor + Advisor + Librarian + TA + SSE 流式 + Markdown 导出)",
   "type": "module",
   "scripts": {
     "dev": "concurrently -n server,web -c blue,green \"tsx watch src/server.ts\" \"vite\"",
@@ -17,7 +17,7 @@
     "ai",
     "teaching",
     "agent",
-    "agentpack",
+    "aipack",
     "multi-agent",
     "education",
     "react"
@@ -27,7 +27,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "agentpack": "workspace:*",
+    "@aipack/agent": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

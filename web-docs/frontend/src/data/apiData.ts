@@ -56,7 +56,7 @@ export const apiList: ApiItem[] = [
   getBuiltinModel,
   adaptAiModel,
   createStreamFnFromAi,
-} from 'agentpack';
+} from '@aipack/agent';
 
 const aiModel = getBuiltinModel('deepseek', 'deepseek-chat');
 
@@ -217,7 +217,7 @@ await runtime.run(createRequest('你好', { sessionKey: 'user-b' }));`,
     signature: 'new RequestBuilder().message(text).channel(ch)...build()',
     description: '链式请求构建器，适合需要逐步组装请求的场景。每个方法返回 this，最后调用 build() 生成 Request 对象。',
     category: 'Request 请求',
-    example: `import { RequestBuilder } from 'agentpack';
+    example: `import { RequestBuilder } from '@aipack/agent';
 
 const request = new RequestBuilder()
   .message('帮我分析这段代码')
@@ -242,7 +242,7 @@ await runtime.run(request);`,
       { name: 'options.maxAge', type: 'number', description: '会话最大存活时间（毫秒），超过后在加载时惰性清理。如 30 天 = 30 * 24 * 60 * 60 * 1000' },
     ],
     returns: 'SessionStorage 实例，可传给 createRuntime 的 sessionStorage 选项',
-    example: `import { createFileSessionStorage } from 'agentpack';
+    example: `import { createFileSessionStorage } from '@aipack/agent';
 
 // 会话持久化到磁盘，30 天后自动清理
 const storage = createFileSessionStorage({
@@ -265,7 +265,7 @@ const runtime = createRuntime({
     params: [
       { name: 'options.maxAge', type: 'number', description: '会话最大存活时间（毫秒），超期自动清理' },
     ],
-    example: `import { createMemorySessionStorage } from 'agentpack';
+    example: `import { createMemorySessionStorage } from '@aipack/agent';
 
 const storage = createMemorySessionStorage({
   maxAge: 2 * 60 * 60 * 1000,  // 2 小时
@@ -283,7 +283,7 @@ const storage = createMemorySessionStorage({
       { name: 'options.lockStaleMs', type: 'number', description: '锁视为陈旧的阈值（默认 30000ms），超时自动回收（进程崩溃恢复）' },
       { name: 'options.lockRetryMs', type: 'number', description: '重试间隔（默认 50ms，带指数退避 + jitter）' },
     ],
-    example: `import { createFileSessionStorage } from 'agentpack';
+    example: `import { createFileSessionStorage } from '@aipack/agent';
 
 const storage = createFileSessionStorage({
   baseDir: './sessions',
@@ -310,7 +310,7 @@ await storage.withLock('user-1', async () => {
       { name: 'options.runtimeOptions', type: 'RuntimeOptions', description: '未提供 runtime 时据此创建共享 Runtime' },
     ],
     returns: 'SessionManager 实例',
-    example: `import { createSessionManager, getBuiltinModel, adaptAiModel, createStreamFnFromAi } from 'agentpack';
+    example: `import { createSessionManager, getBuiltinModel, adaptAiModel, createStreamFnFromAi } from '@aipack/agent';
 
 const aiModel = getBuiltinModel('deepseek', 'deepseek-chat');
 
@@ -376,7 +376,7 @@ await sm.deleteSession('user-9');           // 内存 + 存储`,
   getBuiltinModel,
   adaptAiModel,
   createStreamFnFromAi,
-} from 'agentpack';
+} from '@aipack/agent';
 
 const policy = createPermissionPolicy({
   rules: [
@@ -414,7 +414,7 @@ const result = await runtime.run(createRequest('帮我执行 ls'));`,
       { name: 'options.confirm', type: 'string[]', description: '需人工确认的工具/能力列表' },
     ],
     returns: 'PermissionPolicy 实例',
-    example: `import { createAllowListPolicy } from 'agentpack';
+    example: `import { createAllowListPolicy } from '@aipack/agent';
 
 // 只放行只读文件工具 + 只读 shell，其余一律拒绝
 const policy = createAllowListPolicy([
@@ -429,7 +429,7 @@ const policy = createAllowListPolicy([
     signature: 'createDenyAllPolicy(): PermissionPolicy',
     description: '创建全拒绝策略：所有工具调用一律拒绝（安全演示、只读评估、沙箱隔离场景）。',
     category: '权限安全',
-    example: `import { createDenyAllPolicy, createRuntime } from 'agentpack';
+    example: `import { createDenyAllPolicy, createRuntime } from '@aipack/agent';
 
 // 只读评估环境：禁止一切工具
 const runtime = createRuntime({
@@ -449,7 +449,7 @@ const runtime = createRuntime({
       { name: 'target', type: 'string', required: true, description: '要检查的能力，如 "fs:write"；以冒号结尾（如 "fs:"）或裸前缀（"shell"）表示前缀匹配' },
     ],
     returns: 'boolean - 是否包含目标能力',
-    example: `import { hasPermission } from 'agentpack';
+    example: `import { hasPermission } from '@aipack/agent';
 
 const tool = {
   name: 'write_file',
@@ -468,8 +468,8 @@ hasPermission(tool.permissions, 'fs:read');  // false`,
     signature: 'Tool { permissions?: string[] }',
     description: '工具声明自身需要的权限能力（如 shell:exec / fs:write / fs:read / memory:write / network:fetch），供框架级 PermissionPolicy 裁决。未声明视为安全工具（permissions: []）。coding 包 7 个工具已按此约定声明。',
     category: '权限安全',
-    example: `import { Type } from 'agentpack/ai';
-import type { Tool } from 'agentpack';
+    example: `import { Type } from '@aipack/agent/ai';
+import type { Tool } from '@aipack/agent';
 
 const tool: Tool = {
   name: 'send_mail',
@@ -492,8 +492,8 @@ const tool: Tool = {
       { name: 'providerId', type: 'string', required: true, description: '提供商 ID，如 deepseek / openai / anthropic' },
       { name: 'modelId', type: 'string', required: true, description: '模型 ID，如 deepseek-chat / gpt-4o-mini / claude-3-5-sonnet' },
     ],
-    returns: '标准化 AiModel 对象（agentpack/ai 的 Model 类型）',
-    example: `import { getBuiltinModel } from 'agentpack';
+    returns: '标准化 AiModel 对象（aipack/ai 的 Model 类型）',
+    example: `import { getBuiltinModel } from '@aipack/agent';
 
 // 获取 DeepSeek 模型
 const deepseek = getBuiltinModel('deepseek', 'deepseek-chat');
@@ -508,7 +508,7 @@ const gpt = getBuiltinModel('openai', 'gpt-4o-mini');
     name: 'adaptAiModel()',
     kind: 'function',
     signature: 'adaptAiModel(aiModel: AiModel): Model',
-    description: 'AI 层适配器：将 agentpack/ai 的标准化 Model 转换为框架核心需要的 Model 类型。两者字段高度相似，此函数做类型桥接与字段兼容。',
+    description: 'AI 层适配器：将 aipack/ai 的标准化 Model 转换为框架核心需要的 Model 类型。两者字段高度相似，此函数做类型桥接与字段兼容。',
     category: 'AI 模型层',
     params: [
       { name: 'aiModel', type: 'AiModel', required: true, description: '通过 getBuiltinModel 或自定义获取的 AI 模型' },
@@ -539,7 +539,7 @@ const runtime = createRuntime({
   getBuiltinModel,
   adaptAiModel,
   createStreamFnFromAi,
-} from 'agentpack';
+} from '@aipack/agent';
 
 const aiModel = getBuiltinModel('openai', 'gpt-4o-mini');
 
@@ -561,7 +561,7 @@ const runtime = createRuntime({
       { name: 'providerId', type: 'string', required: true, description: '提供商 ID' },
     ],
     returns: 'API Key 字符串，未配置则返回 undefined',
-    example: `import { getEnvApiKey, hasProviderConfigured } from 'agentpack';
+    example: `import { getEnvApiKey, hasProviderConfigured } from '@aipack/agent';
 
 const key = getEnvApiKey('deepseek');
 console.log('Key 已配置:', !!key);
@@ -581,7 +581,7 @@ console.log('Google 可用:', hasProviderConfigured('google')); // 读 GOOGLE_AP
       { name: 'createEnvCredentialStore()', type: '() => CredentialStore', description: '默认实现：按约定名 <PROVIDER>_API_KEY 读取 process.env' },
       { name: 'read(providerId)', type: '(id) => Promise<unknown>', description: '读取某 provider 的凭证，返回 string 视为 API Key' },
     ],
-    example: `import { createModels, createEnvCredentialStore } from 'agentpack/ai';
+    example: `import { createModels, createEnvCredentialStore } from '@aipack/agent/ai';
 
 // 默认：EnvCredentialStore（无需配置）
 const models = createModels();
@@ -614,7 +614,7 @@ console.log(auth?.source); // 'credential-store' | env 变量名`,
       { name: 'options.afterToolCall', type: '(ctx: AfterToolCallContext) => AfterToolCallResult', description: '工具执行后回调。可 terminate 终止、result 替换结果、details 合并元数据' },
     ],
     returns: 'Extension 实例，可传给 createRuntime 或 runtime.registerExtension',
-    example: `import { createToolHookExtension } from 'agentpack';
+    example: `import { createToolHookExtension } from '@aipack/agent';
 
 const guard = createToolHookExtension({
   name: 'safety-guard',
@@ -659,7 +659,7 @@ const runtime = createRuntime({
   RequestInterceptorExtension,
   SharedStateExtension,
   createDefaultExtensions,
-} from 'agentpack';
+} from '@aipack/agent';
 
 // 方式一：用 createDefaultExtensions 获取推荐默认值
 const defaults = createDefaultExtensions({ verbose: true });
@@ -691,7 +691,7 @@ const runtime = createRuntime({
     signature: 'class MyTransformer extends BaseTransformer { async transform(ctx, runtime) {...} }',
     description: '上下文转换器基类。Transformer 在模型调用前执行，按 Pipeline 顺序对上下文（消息/资源）进行转换。典型用途：上下文裁剪、消息摘要、记忆注入、工具配对校验等。',
     category: 'Transformer 转换器',
-    example: `import { BaseTransformer, type TransformContext } from 'agentpack';
+    example: `import { BaseTransformer, type TransformContext } from '@aipack/agent';
 
 class PrefixInjectTransformer extends BaseTransformer {
   readonly name = 'prefix-inject';
@@ -737,7 +737,7 @@ const runtime = createRuntime({
   SystemMessageCleanerTransformer,
   StateSnapshotTransformer,
   ensureToolPairing,
-} from 'agentpack';
+} from '@aipack/agent';
 
 // 使用推荐默认配置（开箱即用）
 const transformers = createDefaultTransformers();
@@ -773,7 +773,7 @@ const runtime = createRuntime({
       { name: 'clear()', type: 'void', description: '清空所有转换器' },
       { name: 'isEmpty', type: 'boolean', description: '流水线是否为空（只读）。Runtime 在为空时会跳过转换步骤' },
     ],
-    example: `import { createPipeline, createDefaultTransformers } from 'agentpack';
+    example: `import { createPipeline, createDefaultTransformers } from '@aipack/agent';
 
 const pipeline = createPipeline();
 pipeline.useAll(createDefaultTransformers({ maxResources: 200 }));
@@ -789,7 +789,7 @@ const transformed = await pipeline.run(resources, context);`,
     description: '创建一个空的转换流水线。返回的 Pipeline 不含任何转换器，需通过 use / useAll 注册；若想要内置转换器组合，请改用 createDefaultPipeline。',
     category: 'Pipeline 流水线',
     returns: 'Pipeline 实例（空）',
-    example: `import { createPipeline, ToolPairingTransformer } from 'agentpack';
+    example: `import { createPipeline, ToolPairingTransformer } from '@aipack/agent';
 
 const pipeline = createPipeline();
 pipeline.use(new ToolPairingTransformer());
@@ -812,7 +812,7 @@ const runtime = createRuntime({
       { name: 'options.extraTransformers', type: 'ContextTransformer[]', description: '额外的自定义转换器，追加到内置转换器之后（仍按 priority 排序）' },
     ],
     returns: '已注册内置转换器的 Pipeline 实例',
-    example: `import { createRuntime, createDefaultPipeline } from 'agentpack';
+    example: `import { createRuntime, createDefaultPipeline } from '@aipack/agent';
 
 const runtime = createRuntime({
   // ...model / streamFn
@@ -831,7 +831,7 @@ const runtime = createRuntime({
     signature: 'createPipelineRunner(options?): PipelineRunner  ·  class PipelineRunner { use / useAll / run / getTransformers / getStats / getPipeline }',
     description: 'Pipeline 的便捷封装，额外提供执行统计（runCount / totalTransformations / transformerCount）。适合在脱离 Runtime 的独立场景运行 Pipeline 并观测转换次数。Runtime 内部不使用 Runner，而是直接持有 Pipeline。',
     category: 'Pipeline 流水线',
-    example: `import { createPipelineRunner } from 'agentpack';
+    example: `import { createPipelineRunner } from '@aipack/agent';
 
 const runner = createPipelineRunner({ maxResources: 200 });
 

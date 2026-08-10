@@ -23,7 +23,7 @@ export default function QuickstartPage() {
         <ThunderboltOutlined style={{ color: '#6366f1' }} /> 快速开始
       </h1>
       <p className="section-subtitle">
-        跟随以下 4 步，5 分钟内跑通你的第一个 agentpack 应用，并解锁流式、多轮、工具调用能力。
+        跟随以下 4 步，5 分钟内跑通你的第一个 aipack 应用，并解锁流式、多轮、工具调用能力。
       </p>
 
       <Steps
@@ -66,7 +66,7 @@ export default function QuickstartPage() {
           type="info"
           showIcon
           message="Node.js >= 18"
-          description="agentpack 使用 ES Module + 最新 TypeScript 特性，请确保 Node.js 版本 >= 18。"
+          description="aipack 使用 ES Module + 最新 TypeScript 特性，请确保 Node.js 版本 >= 18。"
           style={{ marginBottom: 16 }}
         />
         <CodeBlock code={qsInstallCode} language="bash" />
@@ -85,7 +85,7 @@ export default function QuickstartPage() {
           style={{ marginBottom: 16 }}
         />
         <p style={{ lineHeight: 1.8, color: '#475569' }}>
-          agentpack 约定提供商 API Key 环境变量格式为：<code>{'<PROVIDER_ID_UPPERCASE>_API_KEY'}</code>。
+          aipack 约定提供商 API Key 环境变量格式为：<code>{'<PROVIDER_ID_UPPERCASE>_API_KEY'}</code>。
           支持 DeepSeek、OpenAI、Anthropic、Google、Mistral、Bedrock 等主流提供商。
         </p>
         <CodeBlock code={qsEnvCode} language="bash" />
@@ -106,7 +106,7 @@ export default function QuickstartPage() {
         <AntResult
           status="success"
           title="如果一切顺利"
-          subTitle="你应该能看到类似：🤖 助手: 你好，我是基于 agentpack 的 AI 助手…"
+          subTitle="你应该能看到类似：🤖 助手: 你好，我是基于 aipack 的 AI 助手…"
           style={{ padding: '24px 0', background: 'white', borderRadius: 12, border: '1px solid #e5e7eb' }}
         />
       </div>
@@ -149,9 +149,9 @@ export default function QuickstartPage() {
           <ThunderboltOutlined /> 进阶 C：自定义工具调用
         </h2>
         <p style={{ lineHeight: 1.8, color: '#475569' }}>
-          agentpack 的一大核心能力就是 <b>工具循环</b>：模型输出 tool_call → Runtime 自动执行工具
+          aipack 的一大核心能力就是 <b>工具循环</b>：模型输出 tool_call → Runtime 自动执行工具
           → 结果回填上下文 → 继续下一轮推理，直到模型给出最终回答。
-          用 <code>TypeBox</code>（随 agentpack/ai 导出）声明参数 Schema：
+          用 <code>TypeBox</code>（随 aipack/ai 导出）声明参数 Schema：
         </p>
         <CodeBlock code={qsToolCode} language="typescript" />
       </div>

@@ -2,7 +2,7 @@
   "name": "ai-rag-database-routing",
   "version": "0.1.0",
   "private": true,
-  "description": "基于 agentpack 的 RAG 数据库路由应用(向量路由 → LLM 路由 → 网页搜索兜底)",
+  "description": "基于 aipack 的 RAG 数据库路由应用(向量路由 → LLM 路由 → 网页搜索兜底)",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -16,14 +16,14 @@
     "rag",
     "routing",
     "agent",
-    "agentpack"
+    "aipack"
   ],
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "agentpack": "workspace:*"
+    "@aipack/agent": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.12.0",

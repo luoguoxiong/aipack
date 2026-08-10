@@ -1,6 +1,6 @@
 # 🛫 AI Travel Agent
 
-基于 [agentpack](../../packages/agentpack) 的 AI 旅行行程规划 Web 应用,用 TypeScript + 原生 http 重写,零运行时框架依赖。
+基于 [aipack](../../packages/agent) 的 AI 旅行行程规划 Web 应用,用 TypeScript + 原生 http 重写,零运行时框架依赖。
 
 ## 特性
 
@@ -9,8 +9,8 @@
 - **流式输出**:Planner 通过 SSE 实时推送行程增量,前端逐字渲染
 - **多 LLM 提供商**:默认 DeepSeek,可切换 OpenAI / Anthropic / Google / Groq 等
 - **ICS 日历导出**:零依赖手写 ICS,按 "Day N" 拆分为全天事件,可导入 Google/Apple/Outlook 日历
-- **会话持久化**:基于 agentpack `FileSessionStorage`,同一目的地历史可恢复
-- **极简依赖**:仅 `agentpack`(workspace)+ devDeps(`tsx`/`typescript`/`@types/node`)
+- **会话持久化**:基于 aipack `FileSessionStorage`,同一目的地历史可恢复
+- **极简依赖**:仅 `aipack`(workspace)+ devDeps(`tsx`/`typescript`/`@types/node`)
 
 ## 架构
 
@@ -37,7 +37,7 @@
 
 ### 1. 安装依赖
 
-在仓库根目录(`agentpack/`)执行:
+在仓库根目录(`aipack/`)执行:
 
 ```bash
 pnpm install
@@ -63,7 +63,7 @@ cp .env.example .env
 | `SERPAPI_KEY`       | SerpAPI Key(可选,不配则走免费搜索) | —          |
 | `PORT`              | Web 服务端口                       | `3000`     |
 
-> 完整 provider 与 envVar 对照见 [`packages/agentpack/ai/catalog.ts`](../../packages/agentpack/ai/catalog.ts) 的 `BUILTIN_PROVIDERS`。
+> 完整 provider 与 envVar 对照见 [`packages/agent/ai/catalog.ts`](../../packages/agent/ai/catalog.ts) 的 `BUILTIN_PROVIDERS`。
 
 ### 3. 启动
 
@@ -85,7 +85,7 @@ pnpm --filter ai-travel-agent serve
 
 ### 双 Agent 编排
 
-agentpack 是单 Runtime 框架,本应用用两个独立 Runtime 实例实现双 Agent 设计:
+aipack 是单 Runtime 框架,本应用用两个独立 Runtime 实例实现双 Agent 设计:
 
 - **Researcher Runtime**([src/runtime.ts](src/runtime.ts)):系统提示词要求生成搜索词并调用 `search_web` 工具;带会话持久化,`maxTurns=20` 允许多轮搜索
 - **Planner Runtime**:系统提示词要求按天生成结构化行程;`maxTurns=5`,纯生成无工具;用 `stream()` 流式输出

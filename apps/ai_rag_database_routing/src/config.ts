@@ -1,7 +1,7 @@
 /**
  * apps/ai_rag_database_routing/src/config.ts
  *
- * 环境变量解析 + agentpack 模型/streamFn 装配。
+ * 环境变量解析 + aipack 模型/streamFn 装配。
  * 对齐 ai_travel_agent 的「getBuiltinModel → adaptAiModel → createStreamFnFromAi」模式。
  * 多层容错:缺 Key 时给出明确提示而非崩溃;允许用户在前端输入 API Key。
  */
@@ -13,8 +13,8 @@ import {
   adaptAiModel,
   createStreamFnFromAi,
   BUILTIN_PROVIDERS,
-} from 'agentpack';
-import type { Model, StreamFn } from 'agentpack';
+} from '@aipack/agent';
+import type { Model, StreamFn } from '@aipack/agent';
 
 /** 各 provider 的默认模型 id(与 ai/catalog.ts 对齐) */
 const DEFAULT_MODEL_BY_PROVIDER: Record<string, string> = {
@@ -66,7 +66,7 @@ export function loadConfig(): AppConfig {
   const modelId = process.env.LLM_MODEL || DEFAULT_MODEL_BY_PROVIDER[provider] || 'deepseek-chat';
   const serpapiKey = process.env.SERPAPI_KEY || undefined;
   const routingThreshold = Math.min(0.9, Math.max(0, Number(process.env.ROUTING_THRESHOLD) || 0.12));
-  const vectorDbDir = process.env.VECTOR_DB_DIR || '.agentpack/rag-db';
+  const vectorDbDir = process.env.VECTOR_DB_DIR || '.aipack/rag-db';
 
   // ── 校验 provider 是否在内置列表 ──────────────────────────────
   const knownProviders = new Set(BUILTIN_PROVIDERS.map((p) => p.id));

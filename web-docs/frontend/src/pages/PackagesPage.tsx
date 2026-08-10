@@ -115,7 +115,7 @@ export default function PackagesPage() {
           <RocketOutlined style={{ color: '#6366f1' }} /> 包生态概览
         </Title>
         <Paragraph style={{ fontSize: 16, lineHeight: 1.8, color: '#475569' }}>
-          agentpack 采用「核心 + 扩展包」的模块化设计。核心包（agentpack）提供 Runtime、Extension、Transformer
+          aipack 采用「核心 + 扩展包」的模块化设计。核心包（aipack）提供 Runtime、Extension、Transformer
           三层架构；配套包按需组合，覆盖编码工具集、持久化记忆、上下文压缩、CLI、VSCode 扩展等完整场景。
         </Paragraph>
 
@@ -135,7 +135,7 @@ export default function PackagesPage() {
               <Card size="small" style={{ border: 'none', background: 'rgba(255,255,255,0.85)' }}>
                 <Tag color="blue">轻量对话</Tag>
                 <div style={{ fontSize: 13, color: '#475569', marginTop: 6 }}>
-                  agentpack 核心即可
+                  aipack 核心即可
                 </div>
               </Card>
             </Col>
@@ -159,12 +159,12 @@ export default function PackagesPage() {
         </div>
       </div>
 
-      <PackageCard pkg={packages[0]} /> {/* agentpack */}
-      <PackageCard pkg={packages[1]} /> {/* agentpack-coding */}
-      <PackageCard pkg={packages[2]} /> {/* agentpack-memory */}
-      <PackageCard pkg={packages[3]} /> {/* agentpack-compression */}
-      <PackageCard pkg={packages[4]} /> {/* agentpack-cli */}
-      <PackageCard pkg={packages[5]} /> {/* vscode-agentpack-coding */}
+      <PackageCard pkg={packages[0]} /> {/* aipack */}
+      <PackageCard pkg={packages[1]} /> {/* aipack-coding */}
+      <PackageCard pkg={packages[2]} /> {/* aipack-memory */}
+      <PackageCard pkg={packages[3]} /> {/* aipack-compression */}
+      <PackageCard pkg={packages[4]} /> {/* aipack-cli */}
+      <PackageCard pkg={packages[5]} /> {/* vscode-aipack-coding */}
     </div>
   );
 }

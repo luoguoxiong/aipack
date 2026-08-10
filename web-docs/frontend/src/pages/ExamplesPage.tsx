@@ -32,11 +32,11 @@ export default function ExamplesPage() {
         message="安装示例依赖"
         description={
           <span>
-            除 <code>agentpack</code> 核心外：
-            coding 示例需 <code>pnpm add agentpack-coding</code>，
-            memory 示例需 <code>pnpm add agentpack-memory</code>，
-            compression 示例需 <code>pnpm add agentpack-compression</code>，
-            CLI 需 <code>pnpm add -g agentpack-cli</code>。
+            除 <code>aipack</code> 核心外：
+            coding 示例需 <code>pnpm add aipack-coding</code>，
+            memory 示例需 <code>pnpm add aipack-memory</code>，
+            compression 示例需 <code>pnpm add aipack-compression</code>，
+            CLI 需 <code>pnpm add -g aipack-cli</code>。
           </span>
         }
         style={{ marginBottom: 24 }}
@@ -101,7 +101,7 @@ export default function ExamplesPage() {
                   <DatabaseOutlined /> 长期记忆（跨会话记住用户）
                 </h2>
                 <p style={{ lineHeight: 1.8, color: '#475569' }}>
-                  agentpack-memory 提供完整的"记住用户"闭环：<b>捕获 → 索引 → 注入 → 合并</b>。
+                  aipack-memory 提供完整的"记住用户"闭环：<b>捕获 → 索引 → 注入 → 合并</b>。
                   默认 BM25 关键词检索（零依赖，支持中文）；配上 Embedder 自动升级为 BM25 + 向量双路召回。
                 </p>
                 <CodeBlock code={exMemoryCode} />
@@ -131,10 +131,10 @@ export default function ExamplesPage() {
             children: (
               <div>
                 <h2 className="subsection-title" id="cli" style={{ marginTop: 0 }}>
-                  <SettingOutlined /> agentpack.config.js（CLI 配置）
+                  <SettingOutlined /> aipack.config.js（CLI 配置）
                 </h2>
                 <p style={{ lineHeight: 1.8, color: '#475569' }}>
-                  用 agentpack-cli 而非写代码时，通过 <code>agentpack.config.js</code>
+                  用 aipack-cli 而非写代码时，通过 <code>aipack.config.js</code>
                   即可组合 coding 工具、memory 记忆、自定义扩展/工具。
                   配置优先级：默认值 &lt; 配置文件 &lt; 环境变量 &lt; CLI 选项。
                 </p>

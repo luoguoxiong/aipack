@@ -2,8 +2,7 @@ node_modules/
 .pnpm-store
 dist/
 .webui/
-.kobot/
-.agentpack/
+.aipack/
 .env
 .env.local
 *.log

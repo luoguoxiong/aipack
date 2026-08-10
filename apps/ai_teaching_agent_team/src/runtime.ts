@@ -7,7 +7,7 @@
  *   - Research Librarian(研究馆员):用 search_web 策展高质量学习资源
  *   - Teaching Assistant(助教):用 search_web 基于知识库+路线图设计练习材料
  *
- * agentpack 是单 Runtime 框架,故用四个独立 Runtime 实例 + 顺序链式编排。
+ * aipack 是单 Runtime 框架,故用四个独立 Runtime 实例 + 顺序链式编排。
  * 每个 Runtime 都用 stream() 流式输出,通过 onProgress 回调把增量推给 SSE。
  *
  * 与 ai_travel_agent 双 Agent 的关键差异:4 个 agent 全部流式(非仅最后一个),
@@ -20,7 +20,7 @@ import {
   type Model,
   type StreamFn,
   type Runtime,
-} from 'agentpack';
+} from '@aipack/agent';
 import { createSearchTool } from './tools/search.js';
 import { buildModel } from './config.js';
 import { buildCourseMarkdown } from './markdown.js';
@@ -117,7 +117,7 @@ const STAGE_DONE: Record<AgentRole, CourseProgress['type']> = {
 
 // ─── Runtime 工厂 ───────────────────────────────────────────────
 
-const SESSION_BASE_DIR = '.agentpack/teaching-sessions';
+const SESSION_BASE_DIR = '.aipack/teaching-sessions';
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 天
 
 /** 构建 Professor Runtime:带搜索工具 */
