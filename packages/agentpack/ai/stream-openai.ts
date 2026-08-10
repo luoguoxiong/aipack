@@ -15,66 +15,18 @@ import type {
 import { createEmptyUsage, createEmptyAssistantMessage } from './types';
 import { retry, ok, isRetryableHttpStatus } from './retry';
 import { normalizeResponseError } from './error-body';
+import { resolveApiKey } from './credentials';
+import {
+  AgentError,
+  AgentErrorCategory,
+  classifyError,
+  formatCategoryError,
+  formatHttpError,
+} from './errors';
 import type { ProviderCompat } from './compat';
 import { detectCompat } from './compat';
 import { sanitizeSurrogates } from './sanitize-unicode';
-import { repairJson } from './json-parse';
-
-// ─── 局部同步 JSON 解析（惰性加载）─────────────────────────────────
-
-type SyncPartialParser = (input: string) => Record<string, unknown>;
-
-let syncParser: SyncPartialParser | null = null;
-let syncParserLoaded = false;
-
-async function getSyncParser(): Promise<SyncPartialParser> {
-  if (syncParserLoaded) return syncParser!;
-  syncParserLoaded = true;
-  let partialParse: ((s: string) => unknown) | null = null;
-  try {
-    const mod: any = await import('partial-json');
-    partialParse = mod.parse || mod.parseJSON || mod.default?.parse;
-  } catch {
-    // fall through
-  }
-  syncParser = (s: string) => {
-    // 1) JSON.parse
-    try { return JSON.parse(s) as Record<string, unknown>; } catch { /* fall */ }
-    // 2) repair + JSON.parse
-    try {
-      const repaired = repairJson(s);
-      if (repaired !== s) return JSON.parse(repaired) as Record<string, unknown>;
-    } catch { /* fall */ }
-    // 3) partial-json
-    if (partialParse) {
-      try { return (partialParse(s) ?? {}) as Record<string, unknown>; } catch { /* fall */ }
-    }
-    // 4) repair + partial-json
-    if (partialParse) {
-      try {
-        const repaired = repairJson(s);
-        return (partialParse(repaired) ?? {}) as Record<string, unknown>;
-      } catch { /* fall */ }
-    }
-    return {};
-  };
-  return syncParser;
-}
-
-// ─── API 密钥解析 ──────────────────────────────────────────────────
-
-function resolveApiKey(model: Model, options: SimpleStreamOptions): string | undefined {
-  if (options.apiKey) return options.apiKey;
-  const env = options.env ?? (typeof process !== 'undefined' ? process.env : {});
-  if (!env) return undefined;
-  const providerKey = `${model.provider.toUpperCase().replace(/-/g, '_')}_API_KEY`;
-  if (env[providerKey]) return env[providerKey];
-  // 仅当 provider 确为 openai 时才回退到 OPENAI_API_KEY。
-  // 此前对任意 provider 都回退，会把 OpenAI 密钥作为 Bearer 发往第三方端点，
-  // 造成密钥泄露与错误计费（参见 401 教训）。
-  if (model.provider === 'openai' && env['OPENAI_API_KEY']) return env['OPENAI_API_KEY'];
-  return undefined;
-}
+import { getSyncPartialParser } from './json-parse';
 
 // ─── Context -> OpenAI 消息 ────────────────────────────────────────
 
@@ -293,6 +245,10 @@ export function calculateCost(
   model: Pick<Model, 'cost'>,
   usage: Usage,
 ): Usage['cost'] {
+  const cost = usage.cost;
+  // 无费率模型（自定义 Model 未配置 cost）跳过费用计算，避免崩溃
+  if (!model.cost) return cost;
+
   const inputTokens = usage.input + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
   let rates = model.cost;
   let matchedThreshold = -1;
@@ -305,16 +261,10 @@ export function calculateCost(
 
   const perMillion = (n: number) => n / 1_000_000;
 
-  // Anthropic 1h cache writes 按 2x 基础输入费率计费
-  const longWrite = (usage as any).cacheWrite1h ?? 0;
-  const shortWrite = (usage.cacheWrite ?? 0) - longWrite;
-
-  const cost = usage.cost;
   cost.input = perMillion(usage.input) * rates.input;
   cost.output = perMillion(usage.output) * rates.output;
   cost.cacheRead = perMillion(usage.cacheRead ?? 0) * rates.cacheRead;
-  cost.cacheWrite = (perMillion(shortWrite) * rates.cacheWrite)
-    + (perMillion(longWrite) * rates.input * 2);
+  cost.cacheWrite = perMillion(usage.cacheWrite ?? 0) * rates.cacheWrite;
   cost.total = cost.input + cost.output + (cost.cacheRead ?? 0) + (cost.cacheWrite ?? 0);
   return cost;
 }
@@ -337,8 +287,10 @@ function buildUsage(raw: any, model: Model): Usage {
   usage.cacheWrite = cacheWriteTokens;
   usage.reasoning = raw?.completion_tokens_details?.reasoning_tokens ?? 0;
 
-  // totalTokens = input + output + cacheRead + cacheWrite（还原原始值）
-  usage.totalTokens = usage.input + usage.output + cacheReadTokens + cacheWriteTokens;
+  // total 与 totalTokens：runtime 的 sumUsage/buildResult 累加 u.total，
+  // 此前此处仅设置 totalTokens 导致 OpenAI 路径 token 统计恒为 0。
+  usage.total = usage.input + usage.output + cacheReadTokens + cacheWriteTokens;
+  usage.totalTokens = usage.total;
 
   calculateCost(model, usage);
   return usage;
@@ -384,13 +336,16 @@ async function* runStream(
 ): AsyncGenerator<StreamEvent> {
   const compat = detectCompat(model);
 
-  const apiKey = resolveApiKey(model, options);
+  const apiKey = await resolveApiKey(model, options);
   if (!apiKey) {
     const error = createEmptyAssistantMessage();
     error.model = model.id;
     error.provider = model.provider;
     error.stopReason = 'error';
-    error.errorMessage = `No API key found for provider "${model.provider}" (looked for ${model.provider.toUpperCase()}_API_KEY)`;
+    error.errorMessage = formatCategoryError(
+      AgentErrorCategory.AUTH,
+      `No API key found for provider "${model.provider}" (looked for ${model.provider.toUpperCase()}_API_KEY)`,
+    );
     yield { type: 'error', reason: 'error', error };
     return;
   }
@@ -493,18 +448,22 @@ async function* runStream(
 
     if (aborted) {
       error.errorMessage = 'Request aborted';
-    } else if (e?.status) {
-      // HTTP 错误（不成功的重试后）
-      const normalized = e?.body
-        ? { status: e.status, message: e.body }
-        : undefined;
-      if (normalized) {
-        error.errorMessage = `API error ${normalized.status}: ${normalized.message}`;
-      } else {
-        error.errorMessage = `API error ${e.status}${e.statusText ? ` ${e.statusText}` : ''}`;
+    } else if (e?.status && typeof e.status === 'number') {
+      // 重试后仍失败的 HTTP 错误。e 可能是 fetch Response 或自定义错误对象；
+      // 消费 body 文本（避免连接泄漏 + 提供可读信息），失败时退回 statusText。
+      try {
+        const normalized = await normalizeResponseError(e);
+        error.errorMessage = formatHttpError(e.status, normalized.message);
+      } catch {
+        error.errorMessage = formatHttpError(
+          e.status,
+          e.statusText || `HTTP ${e.status}`,
+        );
       }
     } else {
-      error.errorMessage = String(e?.message ?? e);
+      // 网络错误 / 超时 / 其他：按 AgentError 分类或消息模式打前缀
+      const category = classifyError(e);
+      error.errorMessage = formatCategoryError(category, String(e?.message ?? e));
     }
     yield { type: 'error', reason: aborted ? 'aborted' : 'error', error };
     return;
@@ -518,7 +477,7 @@ async function* runStream(
     error.model = model.id;
     error.provider = model.provider;
     error.stopReason = 'error';
-    error.errorMessage = `API error ${response.status}: ${normalized.message}`;
+    error.errorMessage = formatHttpError(response.status, normalized.message);
     yield { type: 'error', reason: 'error', error };
     return;
   }
@@ -541,7 +500,7 @@ async function* runStream(
 
   yield { type: 'start', partial };
 
-  const parser = await getSyncParser();
+  const parser = await getSyncPartialParser();
 
   // 流式状态
   let currentTextIndex: number | null = null;
@@ -556,6 +515,49 @@ async function* runStream(
   const decoder = new TextDecoder();
   let buffer = '';
   let streamDone = false;
+
+  // 空闲超时：两次数据块之间超过 idleTimeoutMs 视为断流，避免半开连接永久挂起。
+  // 总超时（timeoutMs）：整个流式响应从开始到结束的硬时限，与 idle 互补，
+  // 防止"持续有数据但整体超长"的挂起。取两者中更早到期者。
+  const idleTimeoutMs = options.idleTimeoutMs ?? 60_000;
+  const totalTimeoutMs = options.timeoutMs ?? 0;
+  const deadline = totalTimeoutMs > 0 ? Date.now() + totalTimeoutMs : Infinity;
+  // 返回一个带超时的 reader.read()。
+  const readWithIdleTimeout = async (): Promise<{ done: boolean; value: Uint8Array | undefined }> => {
+    const readPromise = reader.read();
+    if (!idleTimeoutMs || idleTimeoutMs <= 0) return readPromise;
+    let timer: NodeJS.Timeout | undefined;
+    // 总超时优先：剩余时间耗尽则立即失败，无需再等待 idle
+    const remaining = totalTimeoutMs > 0 ? deadline - Date.now() : Infinity;
+    if (remaining <= 0) {
+      throw new AgentError(
+        `Stream total timeout after ${totalTimeoutMs}ms`,
+        { category: AgentErrorCategory.TIMEOUT },
+      );
+    }
+    const waitMs = Math.min(idleTimeoutMs, remaining);
+    try {
+      return await Promise.race([
+        readPromise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => {
+              const isTotal = totalTimeoutMs > 0 && Date.now() >= deadline;
+              reject(new AgentError(
+                isTotal
+                  ? `Stream total timeout after ${totalTimeoutMs}ms`
+                  : `Stream idle timeout after ${idleTimeoutMs}ms`,
+                { category: AgentErrorCategory.TIMEOUT },
+              ));
+            },
+            waitMs,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
 
   const closeText = function* (): Generator<StreamEvent> {
     if (currentTextIndex !== null) {
@@ -583,7 +585,7 @@ async function* runStream(
 
   try {
     while (!streamDone) {
-      const { done, value } = await reader.read();
+      const { done, value } = await readWithIdleTimeout();
       if (done) {
         streamDone = true;
         break;
@@ -742,7 +744,9 @@ async function* runStream(
       };
     }
     partial.stopReason = aborted ? 'aborted' : 'error';
-    partial.errorMessage = aborted ? 'Stream aborted' : String(e?.message ?? e);
+    partial.errorMessage = aborted
+      ? 'Stream aborted'
+      : formatCategoryError(classifyError(e), String(e?.message ?? e));
     partial.usage = finalUsage;
     partial.responseId = responseId;
     yield {
@@ -751,6 +755,19 @@ async function* runStream(
       error: partial,
     };
     return;
+  } finally {
+    // 释放 reader：消费者中途 break 时 async generator 会进入 finally，
+    // 确保底层 HTTP 连接被释放而非悬挂（配合 idle 超时兜底半开连接）。
+    try {
+      await reader.cancel();
+    } catch {
+      /* 已关闭，忽略 */
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      /* 已释放，忽略 */
+    }
   }
 
   // 流式正常结束：关闭所有打开的块。
