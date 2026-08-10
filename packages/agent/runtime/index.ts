@@ -174,7 +174,7 @@ export class AgentRuntime implements Runtime {
 
   /** 多会话状态表：key = sessionKey。模型/工具/扩展/转换器等资源跨会话共享 */
   private _sessions: Map<string, SessionState>;
-  /** 默认会话 key（createRuntime 的 sessionKey；请求未指定 sessionKey 时使用） */
+  /** 默认会话 key（常量 'default'；请求未指定 sessionKey 时路由到此会话） */
   private _sessionKey: string;
   /** 内存会话状态表 LRU 上限 */
   private _maxSessions: number;
@@ -227,7 +227,7 @@ export class AgentRuntime implements Runtime {
       }
     }
 
-    this._sessionKey = options.sessionKey ?? 'default';
+    this._sessionKey = 'default';
     this._maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
     // 默认会话预先入表，保证未指定 sessionKey 的请求路由到它
     this._sessions = new Map([[this._sessionKey, createSessionState()]]);

@@ -121,10 +121,6 @@ export interface RuntimeOptions {
   config?: Record<string, unknown>;
   /** 工作区路径 */
   workspace?: string;
-  /** 默认会话 key（默认 'default'）。同一 Runtime 可服务多个会话：
-   *  请求携带 sessionKey 时按该 key 路由到独立会话，未携带时使用默认会话。
-   *  模型/工具/扩展/转换器等资源跨会话共享。 */
-  sessionKey?: string;
   /** 内存会话状态表 LRU 上限（默认 256）。仅清理内存态，不删除存储；
    *  超限时淘汰最久未用的非活动会话。 */
   maxSessions?: number;

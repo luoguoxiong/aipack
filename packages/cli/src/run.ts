@@ -28,7 +28,7 @@ export async function runOnce(
     let hasOutput = false;
 
     for await (const chunk of runtime.stream(
-      createRequest(message, { channel: 'cli' }),
+      createRequest(message, { channel: 'cli', sessionKey: config.sessionKey }),
     )) {
       switch (chunk.type) {
         case 'thinking':
@@ -80,7 +80,7 @@ export async function runOnce(
 
     // LLM 层错误（如 API Key 无效）不会以 chunk 形式抛出，
     // 从最后一条 assistant 消息的 errorMessage 兜底捕获
-    const messages = runtime.getMessages();
+    const messages = runtime.getMessages(config.sessionKey);
     const last = messages[messages.length - 1];
     if (!error && last?.role === 'assistant' && (last as AssistantMessage).errorMessage) {
       error = (last as AssistantMessage).errorMessage;

@@ -295,14 +295,14 @@ describe('clearSession', () => {
 
   it('清除后下次 run 从存储恢复', async () => {
     const store = createMemorySessionStorage();
-    const runtime = createRuntime({ streamFn: textStreamFn('reply'), sessionStorage: store, sessionKey: 'clear2' });
-    await runtime.run(createRequest('hi'));
-    assert.ok(runtime.getMessages().length > 0);
-    runtime.clearSession();
-    assert.equal(runtime.getMessages().length, 0);
+    const runtime = createRuntime({ streamFn: textStreamFn('reply'), sessionStorage: store });
+    await runtime.run(createRequest('hi', { sessionKey: 'clear2' }));
+    assert.ok(runtime.getMessages('clear2').length > 0);
+    runtime.clearSession('clear2');
+    assert.equal(runtime.getMessages('clear2').length, 0);
     // 再次 run，应从存储恢复历史
-    await runtime.run(createRequest('again'));
-    const msgs = runtime.getMessages();
+    await runtime.run(createRequest('again', { sessionKey: 'clear2' }));
+    const msgs = runtime.getMessages('clear2');
     // 应包含恢复的历史 + 新消息
     assert.ok(msgs.length >= 2);
   });
@@ -311,10 +311,10 @@ describe('clearSession', () => {
 describe('listSessions', () => {
   it('列出内存中的会话', async () => {
     const store = createMemorySessionStorage();
-    const runtime1 = createRuntime({ streamFn: textStreamFn(), sessionStorage: store, sessionKey: 'list1' });
-    const runtime2 = createRuntime({ streamFn: textStreamFn(), sessionStorage: store, sessionKey: 'list2' });
-    await runtime1.run(createRequest('a'));
-    await runtime2.run(createRequest('b'));
+    const runtime1 = createRuntime({ streamFn: textStreamFn(), sessionStorage: store });
+    const runtime2 = createRuntime({ streamFn: textStreamFn(), sessionStorage: store });
+    await runtime1.run(createRequest('a', { sessionKey: 'list1' }));
+    await runtime2.run(createRequest('b', { sessionKey: 'list2' }));
     const keys = await store.list();
     assert.ok(keys.includes('list1'));
     assert.ok(keys.includes('list2'));
@@ -331,8 +331,8 @@ describe('listSessions', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
-    const runtime = createRuntime({ streamFn: textStreamFn(), sessionStorage: store, sessionKey: 'mem1' });
-    await runtime.run(createRequest('hi'));
+    const runtime = createRuntime({ streamFn: textStreamFn(), sessionStorage: store });
+    await runtime.run(createRequest('hi', { sessionKey: 'mem1' }));
     const keys = await store.list();
     assert.ok(keys.includes('mem1'));
     assert.ok(keys.includes('stored1'));
@@ -340,8 +340,8 @@ describe('listSessions', () => {
 
   it('去重', async () => {
     const store = createMemorySessionStorage();
-    const runtime = createRuntime({ streamFn: textStreamFn(), sessionStorage: store, sessionKey: 'dup' });
-    await runtime.run(createRequest('hi'));
+    const runtime = createRuntime({ streamFn: textStreamFn(), sessionStorage: store });
+    await runtime.run(createRequest('hi', { sessionKey: 'dup' }));
     // 保存到存储后，store.list 返回唯一的 'dup'
     const keys = await store.list();
     const dupCount = keys.filter(k => k === 'dup').length;
@@ -360,9 +360,9 @@ describe('deleteSession', () => {
 
   it('删除存储中的会话', async () => {
     const store = createMemorySessionStorage();
-    const runtime = createRuntime({ streamFn: textStreamFn(), sessionStorage: store, sessionKey: 'del2' });
-    await runtime.run(createRequest('hi'));
-    const deleted = await runtime.deleteSession();
+    const runtime = createRuntime({ streamFn: textStreamFn(), sessionStorage: store });
+    await runtime.run(createRequest('hi', { sessionKey: 'del2' }));
+    const deleted = await runtime.deleteSession('del2');
     assert.equal(deleted, true);
     const loaded = await store.load('del2');
     assert.equal(loaded, null);

@@ -82,24 +82,24 @@ export class AgentService {
   /** 流式运行；面板订阅返回的 AsyncGenerator 做增量渲染 */
   async *streamRun(message: string, sessionKey: string): AsyncGenerator<ResultChunk> {
     const agent = await this.getAgent(sessionKey);
-    yield* agent.runtime.stream(createRequest(message));
+    yield* agent.runtime.stream(createRequest(message, { sessionKey }));
   }
 
   /** 停止指定会话的运行（agent 未初始化时 no-op，避免触发创建） */
   async stop(sessionKey: string): Promise<void> {
-    this.agents.get(sessionKey)?.runtime.abort();
+    this.agents.get(sessionKey)?.runtime.abort(sessionKey);
   }
 
   /** 清空指定会话的内存消息历史（agent 未初始化时 no-op） */
   async clearHistory(sessionKey: string): Promise<void> {
-    this.agents.get(sessionKey)?.runtime.clearSession();
+    this.agents.get(sessionKey)?.runtime.clearSession(sessionKey);
   }
 
   /** 取指定会话的已有消息列表（agent 未初始化时返回空，避免 ready 阶段触发创建卡住） */
   async getHistory(sessionKey: string): Promise<Message[]> {
     const agent = this.agents.get(sessionKey);
     if (!agent) return [];
-    return agent.runtime.getMessages();
+    return agent.runtime.getMessages(sessionKey);
   }
 
   /**

@@ -86,7 +86,6 @@ export async function replaySession(
   const runtime = createAipackRuntime(
     config,
     model,
-    sessionKey,
     dryRun ? { tools: [] } : undefined,
   );
   const turns: ReplayTurnResult[] = [];
@@ -104,7 +103,7 @@ export async function replaySession(
 
       try {
         const result = await runtime.run(
-          createRequest(userMsg, { channel: 'cli' }),
+          createRequest(userMsg, { channel: 'cli', sessionKey }),
         );
         response = result.content;
         if (!result.success && result.error) {

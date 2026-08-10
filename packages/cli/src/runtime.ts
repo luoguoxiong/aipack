@@ -73,7 +73,6 @@ export function resolveModelForCli(config: AipackConfig): AiModel {
 export function createAipackRuntime(
   config: AipackConfig,
   model?: AiModel,
-  sessionKey?: string,
   overrides?: Record<string, unknown>,
 ): Runtime {
   const aiModel = model ?? resolveAiModel(config);
@@ -81,12 +80,13 @@ export function createAipackRuntime(
   // 配置文件透传的 Runtime 选项（tools/extensions 等），优先级高于默认值
   const runtimeOverrides = config.runtime ?? {};
 
+  // 注：会话 key 不再编入 Runtime（RuntimeOptions.sessionKey 已移除）。
+  // CLI 侧通过 config.sessionKey 在每次 createRequest / getMessages / clearSession 时显式传递。
   return createRuntime({
     model: adaptAiModel(aiModel),
     streamFn: createStreamFnFromAi(aiModel),
     systemPrompt: config.systemPrompt,
     workspace: config.workspace,
-    sessionKey: sessionKey ?? config.sessionKey,
     sessionStorage: config.sessions.enabled
       ? createFileSessionStorage({
           baseDir: config.sessions.baseDir,
