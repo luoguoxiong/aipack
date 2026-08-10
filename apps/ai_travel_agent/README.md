@@ -58,7 +58,7 @@ cp .env.example .env
 | `DEEPSEEK_API_KEY`  | DeepSeek Key                       | —          |
 | `OPENAI_API_KEY`    | OpenAI Key                         | —          |
 | `ANTHROPIC_API_KEY` | Anthropic Key                      | —          |
-| `GEMINI_API_KEY`    | Google Gemini Key                  | —          |
+| `GOOGLE_API_KEY`    | Google Gemini Key                  | —          |
 | `GROQ_API_KEY`      | Groq Key                           | —          |
 | `SERPAPI_KEY`       | SerpAPI Key(可选,不配则走免费搜索) | —          |
 | `PORT`              | Web 服务端口                       | `3000`     |

@@ -34,6 +34,7 @@ import type {
   StreamEvent as AiStreamEvent,
   SimpleStreamOptions,
   StreamOptions as AiStreamOptions,
+  ReasoningLevel,
   AssistantMessage as AiAssistantMessage,
   ToolCallContent as AiToolCallContent,
   ContentBlock as AiContentBlock,
@@ -164,10 +165,14 @@ export function createStreamFnFromAi(
     };
 
     // ── 合并选项（框架的 AbortSignal / reasoning 透传） ──
+    // 注意：stream-openai/anthropic 读取的是 options.reasoning（非 reasoningEffort），
+    // 此前误写入 reasoningEffort 导致框架 setThinkingLevel 配置对模型完全无效。
     const merged: AiStreamOptions = { ...options };
     if (streamOptions?.signal) merged.signal = streamOptions.signal;
     if (streamOptions?.reasoning) {
-      merged.reasoningEffort = merged.reasoningEffort ?? streamOptions.reasoning;
+      // 框架 ThinkingLevel（off/minimal/low/.../max）与 AI ReasoningLevel 同域，
+      // 运行时值合法；此处类型断言消除联合类型差异
+      merged.reasoning = (merged.reasoning ?? streamOptions.reasoning) as ReasoningLevel;
     }
 
     // ── 按 model.api 分派(与 agentpack/ai Models.dispatchStream 保持一致) ──
