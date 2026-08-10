@@ -161,6 +161,10 @@ importers:
         version: 5.9.3
 
   packages/agentpack-coding:
+    dependencies:
+      '@sinclair/typebox':
+        specifier: ^0.34.0
+        version: 0.34.52
     devDependencies:
       '@types/node':
         specifier: ^20.12.0

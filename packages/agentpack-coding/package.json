@@ -40,6 +40,9 @@
   "peerDependencies": {
     "agentpack": "workspace:*"
   },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.0"
+  },
   "devDependencies": {
     "agentpack": "workspace:*",
     "agentpack-memory": "workspace:*",
