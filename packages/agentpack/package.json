@@ -19,6 +19,7 @@
   "files": [
     "dist"
   ],
+  "sideEffects": false,
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -32,7 +33,7 @@
   ],
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18.19.0"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.0",

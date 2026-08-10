@@ -11,6 +11,10 @@ export * from './core';
 // ─── Runtime: 编排层 ──────────────────────────────────────────────
 export { AgentRuntime, createRuntime } from './runtime';
 
+// ─── SessionManager: 多会话共享 Runtime 门面 ───────────────────────
+export { SessionManager, createSessionManager } from './session-manager';
+export type { SessionManagerOptions } from './session-manager';
+
 // ─── Request: 请求入口 ────────────────────────────────────────────
 export {
   validateRequest,
@@ -100,3 +104,12 @@ export type { Model as AiModel } from './ai';
 
 // ─── AI 适配器(模型层 ↔ 框架核心 胶水)────────────────────────────
 export { adaptAiModel, createStreamFnFromAi } from './adapters/ai';
+
+// ─── Telemetry: 轻量可观测性 ─────────────────────────────────────
+export { noopTelemetry } from './telemetry';
+export type {
+  Telemetry,
+  RunTelemetryInfo,
+  ToolTelemetryInfo,
+  ModelTelemetryInfo,
+} from './telemetry';

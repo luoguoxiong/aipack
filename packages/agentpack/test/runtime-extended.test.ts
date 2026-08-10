@@ -92,7 +92,7 @@ describe('stream 方法', () => {
     ];
     const runtime = createRuntime({ streamFn: multiEventStreamFn(events) });
     const chunks: ResultChunk[] = [];
-    for await (const chunk of runtime.stream(createRequest('hi', { sessionKey: 'stream1' }))) {
+    for await (const chunk of runtime.stream(createRequest('hi'))) {
       chunks.push(chunk);
     }
     const textChunks = chunks.filter(c => c.type === 'text');
@@ -118,7 +118,7 @@ describe('stream 方法', () => {
     ];
     const runtime = createRuntime({ streamFn: multiEventStreamFn(events) });
     const chunks: ResultChunk[] = [];
-    for await (const chunk of runtime.stream(createRequest('hi', { sessionKey: 'stream2' }))) {
+    for await (const chunk of runtime.stream(createRequest('hi'))) {
       chunks.push(chunk);
     }
     const thinkingChunks = chunks.filter(c => c.type === 'thinking');
@@ -142,7 +142,7 @@ describe('stream 方法', () => {
     ];
     const runtime = createRuntime({ streamFn: multiEventStreamFn(events) });
     const chunks: ResultChunk[] = [];
-    for await (const chunk of runtime.stream(createRequest('hi', { sessionKey: 'stream3' }))) {
+    for await (const chunk of runtime.stream(createRequest('hi'))) {
       chunks.push(chunk);
     }
     const errorChunks = chunks.filter(c => c.type === 'error');
@@ -166,7 +166,7 @@ describe('stream 方法', () => {
       tools: [tool],
     });
     const chunks: ResultChunk[] = [];
-    for await (const chunk of runtime.stream(createRequest('calc', { sessionKey: 'stream4' }))) {
+    for await (const chunk of runtime.stream(createRequest('calc'))) {
       chunks.push(chunk);
     }
     const starts = chunks.filter(c => c.type === 'tool_start');
@@ -210,14 +210,14 @@ describe('abort / isBusy / waitForIdle', () => {
       };
     };
     const runtime = createRuntime({ streamFn });
-    assert.equal(runtime.isBusy('busy1'), false);
-    const runPromise = runtime.run(createRequest('hi', { sessionKey: 'busy1' }));
+    assert.equal(runtime.isBusy(), false);
+    const runPromise = runtime.run(createRequest('hi'));
     // 让事件循环跑一下让 run 启动
     await new Promise(r => setTimeout(r, 5));
-    assert.equal(runtime.isBusy('busy1'), true);
+    assert.equal(runtime.isBusy(), true);
     resolveStream!();
     await runPromise;
-    assert.equal(runtime.isBusy('busy1'), false);
+    assert.equal(runtime.isBusy(), false);
   });
 
   it('abort 终止运行', async () => {
@@ -244,12 +244,12 @@ describe('abort / isBusy / waitForIdle', () => {
       };
     };
     const runtime = createRuntime({ streamFn });
-    const runPromise = runtime.run(createRequest('hi', { sessionKey: 'abort1' }));
+    const runPromise = runtime.run(createRequest('hi'));
     await new Promise(r => setTimeout(r, 10));
-    runtime.abort('abort1');
+    runtime.abort();
     const result = await runPromise;
     // abort 后运行应结束（成功或失败都算结束）
-    assert.equal(runtime.isBusy('abort1'), false);
+    assert.equal(runtime.isBusy(), false);
   });
 
   it('waitForIdle 在运行结束后唤醒', async () => {
@@ -267,17 +267,17 @@ describe('abort / isBusy / waitForIdle', () => {
       };
     };
     const runtime = createRuntime({ streamFn });
-    const runPromise = runtime.run(createRequest('hi', { sessionKey: 'idle1' }));
+    const runPromise = runtime.run(createRequest('hi'));
     await new Promise(r => setTimeout(r, 5));
-    assert.equal(runtime.isBusy('idle1'), true);
-    await runtime.waitForIdle('idle1');
-    assert.equal(runtime.isBusy('idle1'), false);
+    assert.equal(runtime.isBusy(), true);
+    await runtime.waitForIdle();
+    assert.equal(runtime.isBusy(), false);
     await runPromise;
   });
 
   it('waitForIdle 空闲时立即返回', async () => {
     const runtime = createRuntime({ streamFn: textStreamFn() });
-    await runtime.waitForIdle('never-run');
+    await runtime.waitForIdle();
     // 不阻塞即通过
   });
 });
@@ -287,22 +287,22 @@ describe('abort / isBusy / waitForIdle', () => {
 describe('clearSession', () => {
   it('清除内存消息', async () => {
     const runtime = createRuntime({ streamFn: textStreamFn('reply') });
-    await runtime.run(createRequest('hi', { sessionKey: 'clear1' }));
-    assert.ok(runtime.getMessages('clear1').length > 0);
-    runtime.clearSession('clear1');
-    assert.equal(runtime.getMessages('clear1').length, 0);
+    await runtime.run(createRequest('hi'));
+    assert.ok(runtime.getMessages().length > 0);
+    runtime.clearSession();
+    assert.equal(runtime.getMessages().length, 0);
   });
 
   it('清除后下次 run 从存储恢复', async () => {
     const store = createMemorySessionStorage();
-    const runtime = createRuntime({ streamFn: textStreamFn('reply'), sessionStorage: store });
-    await runtime.run(createRequest('hi', { sessionKey: 'clear2' }));
-    assert.ok(runtime.getMessages('clear2').length > 0);
-    runtime.clearSession('clear2');
-    assert.equal(runtime.getMessages('clear2').length, 0);
+    const runtime = createRuntime({ streamFn: textStreamFn('reply'), sessionStorage: store, sessionKey: 'clear2' });
+    await runtime.run(createRequest('hi'));
+    assert.ok(runtime.getMessages().length > 0);
+    runtime.clearSession();
+    assert.equal(runtime.getMessages().length, 0);
     // 再次 run，应从存储恢复历史
-    await runtime.run(createRequest('again', { sessionKey: 'clear2' }));
-    const msgs = runtime.getMessages('clear2');
+    await runtime.run(createRequest('again'));
+    const msgs = runtime.getMessages();
     // 应包含恢复的历史 + 新消息
     assert.ok(msgs.length >= 2);
   });
@@ -310,10 +310,12 @@ describe('clearSession', () => {
 
 describe('listSessions', () => {
   it('列出内存中的会话', async () => {
-    const runtime = createRuntime({ streamFn: textStreamFn() });
-    await runtime.run(createRequest('a', { sessionKey: 'list1' }));
-    await runtime.run(createRequest('b', { sessionKey: 'list2' }));
-    const keys = await runtime.listSessions();
+    const store = createMemorySessionStorage();
+    const runtime1 = createRuntime({ streamFn: textStreamFn(), sessionStorage: store, sessionKey: 'list1' });
+    const runtime2 = createRuntime({ streamFn: textStreamFn(), sessionStorage: store, sessionKey: 'list2' });
+    await runtime1.run(createRequest('a'));
+    await runtime2.run(createRequest('b'));
+    const keys = await store.list();
     assert.ok(keys.includes('list1'));
     assert.ok(keys.includes('list2'));
   });
@@ -329,19 +331,19 @@ describe('listSessions', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
-    const runtime = createRuntime({ streamFn: textStreamFn(), sessionStorage: store });
-    await runtime.run(createRequest('hi', { sessionKey: 'mem1' }));
-    const keys = await runtime.listSessions();
+    const runtime = createRuntime({ streamFn: textStreamFn(), sessionStorage: store, sessionKey: 'mem1' });
+    await runtime.run(createRequest('hi'));
+    const keys = await store.list();
     assert.ok(keys.includes('mem1'));
     assert.ok(keys.includes('stored1'));
   });
 
   it('去重', async () => {
     const store = createMemorySessionStorage();
-    const runtime = createRuntime({ streamFn: textStreamFn(), sessionStorage: store });
-    await runtime.run(createRequest('hi', { sessionKey: 'dup' }));
-    // 保存到存储后，内存和存储都有 'dup'
-    const keys = await runtime.listSessions();
+    const runtime = createRuntime({ streamFn: textStreamFn(), sessionStorage: store, sessionKey: 'dup' });
+    await runtime.run(createRequest('hi'));
+    // 保存到存储后，store.list 返回唯一的 'dup'
+    const keys = await store.list();
     const dupCount = keys.filter(k => k === 'dup').length;
     assert.equal(dupCount, 1);
   });
@@ -350,17 +352,17 @@ describe('listSessions', () => {
 describe('deleteSession', () => {
   it('删除内存会话', async () => {
     const runtime = createRuntime({ streamFn: textStreamFn() });
-    await runtime.run(createRequest('hi', { sessionKey: 'del1' }));
-    const deleted = await runtime.deleteSession('del1');
+    await runtime.run(createRequest('hi'));
+    const deleted = await runtime.deleteSession();
     assert.equal(deleted, true);
-    assert.equal(runtime.getMessages('del1').length, 0);
+    assert.equal(runtime.getMessages().length, 0);
   });
 
   it('删除存储中的会话', async () => {
     const store = createMemorySessionStorage();
-    const runtime = createRuntime({ streamFn: textStreamFn(), sessionStorage: store });
-    await runtime.run(createRequest('hi', { sessionKey: 'del2' }));
-    const deleted = await runtime.deleteSession('del2');
+    const runtime = createRuntime({ streamFn: textStreamFn(), sessionStorage: store, sessionKey: 'del2' });
+    await runtime.run(createRequest('hi'));
+    const deleted = await runtime.deleteSession();
     assert.equal(deleted, true);
     const loaded = await store.load('del2');
     assert.equal(loaded, null);
@@ -368,7 +370,7 @@ describe('deleteSession', () => {
 
   it('删除不存在的会话返回 true（无存储时）', async () => {
     const runtime = createRuntime({ streamFn: textStreamFn() });
-    const deleted = await runtime.deleteSession('not-exist');
+    const deleted = await runtime.deleteSession();
     assert.equal(deleted, true);
   });
 });
@@ -378,10 +380,10 @@ describe('deleteSession', () => {
 describe('close', () => {
   it('关闭后清理所有会话', async () => {
     const runtime = createRuntime({ streamFn: textStreamFn() });
-    await runtime.run(createRequest('hi', { sessionKey: 'close1' }));
+    await runtime.run(createRequest('hi'));
     await runtime.close();
     // close 后 getMessages 返回新空会话
-    assert.equal(runtime.getMessages('close1').length, 0);
+    assert.equal(runtime.getMessages().length, 0);
   });
 
   it('close 等待在途任务完成', async () => {
@@ -399,7 +401,7 @@ describe('close', () => {
       };
     };
     const runtime = createRuntime({ streamFn });
-    const runPromise = runtime.run(createRequest('hi', { sessionKey: 'close2' }));
+    const runPromise = runtime.run(createRequest('hi'));
     await runtime.close();
     await runPromise;
     // close 应等待在途任务完成
@@ -423,7 +425,7 @@ describe('registerTool / registerTools', () => {
       streamFn: toolCallStreamFn([{ id: 'tc1', name: 'ping', args: {} }]),
     });
     runtime.registerTool(tool);
-    const result = await runtime.run(createRequest('ping', { sessionKey: 'reg1' }));
+    const result = await runtime.run(createRequest('ping'));
     assert.equal(result.success, true);
     assert.deepEqual(result.toolsUsed, ['ping']);
   });
@@ -447,7 +449,7 @@ describe('registerTool / registerTools', () => {
       streamFn: toolCallStreamFn([{ id: 'tc1', name: 'tool_b', args: {} }]),
     });
     runtime.registerTools(tools);
-    const result = await runtime.run(createRequest('b', { sessionKey: 'reg2' }));
+    const result = await runtime.run(createRequest('b'));
     assert.deepEqual(result.toolsUsed, ['tool_b']);
   });
 
@@ -469,7 +471,7 @@ describe('registerTool / registerTools', () => {
     });
     runtime.registerTool(tool1);
     runtime.registerTool(tool2); // 覆盖
-    const result = await runtime.run(createRequest('dup', { sessionKey: 'reg3' }));
+    const result = await runtime.run(createRequest('dup'));
     assert.equal(result.success, true);
   });
 });
@@ -499,7 +501,7 @@ describe('setModel / setSystemPrompt / setStreamFn / setThinkingLevel', () => {
       maxTokens: 4096,
       reasoning: false,
     });
-    await runtime.run(createRequest('hi', { sessionKey: 'set1' }));
+    await runtime.run(createRequest('hi'));
     assert.equal(receivedModel.id, 'custom-model');
   });
 
@@ -520,7 +522,7 @@ describe('setModel / setSystemPrompt / setStreamFn / setThinkingLevel', () => {
     };
     const runtime = createRuntime({ streamFn });
     runtime.setSystemPrompt('你是一个助手');
-    await runtime.run(createRequest('hi', { sessionKey: 'set2' }));
+    await runtime.run(createRequest('hi'));
     assert.equal(receivedCtx.systemPrompt, '你是一个助手');
   });
 
@@ -550,10 +552,10 @@ describe('setModel / setSystemPrompt / setStreamFn / setThinkingLevel', () => {
       };
     };
     const runtime = createRuntime({ streamFn: fn1 });
-    let result = await runtime.run(createRequest('hi', { sessionKey: 'set3' }));
+    let result = await runtime.run(createRequest('hi'));
     assert.equal(result.content, 'fn1');
     runtime.setStreamFn(fn2);
-    result = await runtime.run(createRequest('hi', { sessionKey: 'set3' }));
+    result = await runtime.run(createRequest('hi'));
     assert.equal(result.content, 'fn2');
   });
 
@@ -631,7 +633,7 @@ describe('parallelToolCalls=false 串行执行工具', () => {
       tools,
       parallelToolCalls: false,
     });
-    await runtime.run(createRequest('run both', { sessionKey: 'par1' }));
+    await runtime.run(createRequest('run both'));
     // 串行：a-start -> a-end -> b-start -> b-end
     assert.deepEqual(order, ['a-start', 'a-end', 'b-start', 'b-end']);
   });
@@ -656,7 +658,7 @@ describe('prepareArguments', () => {
       streamFn: toolCallStreamFn([{ id: 'tc1', name: 'echo', args: { original: 1 } }]),
       tools: [tool],
     });
-    await runtime.run(createRequest('echo', { sessionKey: 'prep1' }));
+    await runtime.run(createRequest('echo'));
     assert.deepEqual(capturedArgs, { original: 1, injected: true });
   });
 });
@@ -671,7 +673,7 @@ describe('Runtime hooks', () => {
       seenMessage = req.message;
       return req;
     });
-    await runtime.run(createRequest('original', { sessionKey: 'hook1' }));
+    await runtime.run(createRequest('original'));
     assert.equal(seenMessage, 'original');
   });
 
@@ -681,7 +683,7 @@ describe('Runtime hooks', () => {
     runtime.hooks.done.tapPromise('test', async (result) => {
       doneResult = result;
     });
-    await runtime.run(createRequest('hi', { sessionKey: 'hook2' }));
+    await runtime.run(createRequest('hi'));
     assert.ok(doneResult);
     assert.equal(doneResult.content, 'result text');
   });
@@ -695,7 +697,7 @@ describe('Runtime hooks', () => {
     runtime.hooks.failed.tapPromise('test', async (err) => {
       failedError = err;
     });
-    await runtime.run(createRequest('hi', { sessionKey: 'hook3' }));
+    await runtime.run(createRequest('hi'));
     assert.ok(failedError);
     assert.equal(failedError!.message, 'stream exploded');
   });
@@ -706,7 +708,7 @@ describe('Runtime hooks', () => {
     let afterEmitCalled = false;
     runtime.hooks.beforeEmit.tapPromise('test', async () => { beforeEmitCalled = true; });
     runtime.hooks.afterEmit.tapPromise('test', async () => { afterEmitCalled = true; });
-    await runtime.run(createRequest('hi', { sessionKey: 'hook4' }));
+    await runtime.run(createRequest('hi'));
     assert.equal(beforeEmitCalled, true);
     assert.equal(afterEmitCalled, true);
   });
@@ -717,7 +719,7 @@ describe('Runtime hooks', () => {
     let afterInitCalled = false;
     runtime.hooks.beforeInitialize.tapPromise('test', async () => { beforeInitCalled = true; });
     runtime.hooks.afterInitialize.tapPromise('test', async () => { afterInitCalled = true; });
-    await runtime.run(createRequest('hi', { sessionKey: 'hook5' }));
+    await runtime.run(createRequest('hi'));
     assert.equal(beforeInitCalled, true);
     assert.equal(afterInitCalled, true);
   });
@@ -733,7 +735,7 @@ describe('Runtime hooks', () => {
         },
       }],
     });
-    await runtime.run(createRequest('hi', { sessionKey: 'hook6' }));
+    await runtime.run(createRequest('hi'));
     assert.equal(applied, true);
   });
 
@@ -748,7 +750,7 @@ describe('Runtime hooks', () => {
         return resources;
       },
     });
-    await runtime.run(createRequest('hi', { sessionKey: 'hook7' }));
+    await runtime.run(createRequest('hi'));
     assert.equal(transformCalled, true);
   });
 });
@@ -758,7 +760,7 @@ describe('Runtime hooks', () => {
 describe('默认 streamFn 未设置', () => {
   it('未提供 streamFn 时 run 返回错误结果', async () => {
     const runtime = createRuntime({});
-    const result = await runtime.run(createRequest('hi', { sessionKey: 'nosf1' }));
+    const result = await runtime.run(createRequest('hi'));
     assert.equal(result.success, false);
     assert.ok(result.error?.includes('streamFn'));
   });
@@ -784,7 +786,6 @@ describe('media URL 附件', () => {
     };
     const runtime = createRuntime({ streamFn });
     await runtime.run(createRequest('看图', {
-      sessionKey: 'url1',
       media: ['https://example.com/img.png'],
     }));
     const userMsg = capturedCtx.messages[0];
@@ -812,7 +813,6 @@ describe('media URL 附件', () => {
     };
     const runtime = createRuntime({ streamFn });
     await runtime.run(createRequest('多图', {
-      sessionKey: 'url2',
       media: [
         'data:image/png;base64,abc',
         'https://example.com/a.jpg',

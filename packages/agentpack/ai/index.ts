@@ -72,3 +72,28 @@ export { BUILTIN_MODELS, BUILTIN_IMAGES_MODELS, BUILTIN_PROVIDERS, getEnvApiKey,
 // ─── 流式实现（供适配器直接复用） ──────────────────────────────
 export { streamOpenAI } from './stream-openai';
 export { streamAnthropic } from './stream-anthropic';
+
+// ─── 统一凭证解析 ─────────────────────────────────────────────
+export {
+  envKeyName,
+  resolveApiKey,
+  resolveApiKeyFromEnv,
+  EnvCredentialStore,
+  createEnvCredentialStore,
+} from './credentials';
+
+// ─── 统一错误分类 ─────────────────────────────────────────────
+export {
+  AgentError,
+  AgentErrorCategory,
+  isAgentError,
+  isRetryableCategory,
+  classifyHttpStatus,
+  classifyErrorMessage,
+  classifyError,
+  isContextOverflowError,
+  categoryLabel,
+  formatCategoryError,
+  formatHttpError,
+} from './errors';
+export type { AgentErrorOptions } from './errors';

@@ -94,7 +94,7 @@ export const BUILTIN_PROVIDERS: ProviderMeta[] = [
   { id: 'deepseek', name: 'DeepSeek', envVar: 'DEEPSEEK_API_KEY', baseUrl: DEEPSEEK_BASE },
   { id: 'anthropic', name: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', baseUrl: ANTHROPIC_BASE },
   { id: 'groq', name: 'Groq', envVar: 'GROQ_API_KEY', baseUrl: GROQ_BASE },
-  { id: 'google', name: 'Google', envVar: 'GEMINI_API_KEY', baseUrl: GOOGLE_BASE },
+  { id: 'google', name: 'Google', envVar: 'GOOGLE_API_KEY', baseUrl: GOOGLE_BASE },
   { id: 'openrouter', name: 'OpenRouter', envVar: 'OPENROUTER_API_KEY', baseUrl: OPENROUTER_BASE },
   { id: 'mistral', name: 'Mistral', envVar: 'MISTRAL_API_KEY', baseUrl: MISTRAL_BASE },
   { id: 'xai', name: 'xAI', envVar: 'XAI_API_KEY', baseUrl: XAI_BASE },

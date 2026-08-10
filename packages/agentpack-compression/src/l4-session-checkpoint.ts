@@ -40,6 +40,12 @@ export interface SessionCheckpoint {
   sessionId: string;
   timestamp: number;
   fullMessages: Message[];
+  /**
+   * 原始 ContextResource 快照（含 pinned/meta/type 等完整信息）。
+   * resourcesToMessages → 存储的往返会丢失 pinned/meta/type，恢复压缩
+   * 保护语义失效；因此持久化时额外保存一份资源级快照。
+   */
+  fullResources?: ContextResource[];
   taskState?: TaskState;
   compactionHistory: CompressionTelemetry[];
   resourceCount: number;
@@ -83,6 +89,8 @@ export class SessionCheckpointLevel {
       sessionId: sessionKey,
       timestamp: Date.now(),
       fullMessages: messages,
+      // 保存完整资源快照：resourcesToMessages 往返会丢失 pinned/meta/type
+      fullResources: resources,
       taskState: findTaskState(resources),
       compactionHistory: [...safety.telemetryHistory],
       resourceCount: resources.length,
@@ -180,6 +188,8 @@ export class SessionCheckpointLevel {
         compactionHistory: checkpoint.compactionHistory,
         resourceCount: checkpoint.resourceCount,
         estimatedTokens: checkpoint.estimatedTokens,
+        // 完整资源快照（含 pinned/meta/type），避免 messages 往返丢失语义
+        fullResources: checkpoint.fullResources ?? null,
       }),
       timestamp: checkpoint.timestamp,
     } as Message;
@@ -223,6 +233,7 @@ export class SessionCheckpointLevel {
       let timestamp = new Date(stored.updatedAt).getTime();
 
       const last = messages[messages.length - 1];
+      let fullResources: ContextResource[] | undefined;
       if (last && last.role === 'system' && typeof last.content === 'string') {
         try {
           const parsed = JSON.parse(last.content) as {
@@ -234,6 +245,7 @@ export class SessionCheckpointLevel {
             compactionHistory?: CompressionTelemetry[];
             resourceCount?: number;
             estimatedTokens?: number;
+            fullResources?: ContextResource[] | null;
           };
           if (parsed.__checkpointMeta) {
             messages.pop(); // 移除 meta message，只保留真实会话
@@ -242,6 +254,10 @@ export class SessionCheckpointLevel {
             resourceCount = parsed.resourceCount ?? messages.length;
             estimatedTokens = parsed.estimatedTokens ?? 0;
             if (parsed.timestamp) timestamp = parsed.timestamp;
+            // 旧格式检查点无 fullResources；有则还原完整资源快照
+            if (Array.isArray(parsed.fullResources)) {
+              fullResources = parsed.fullResources;
+            }
           }
         } catch {
           // 非 JSON 或旧格式：保持原样，taskState/compactionHistory 为空
@@ -253,6 +269,7 @@ export class SessionCheckpointLevel {
         sessionId: '',
         timestamp,
         fullMessages: messages,
+        fullResources,
         taskState,
         compactionHistory,
         resourceCount,

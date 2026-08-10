@@ -121,13 +121,12 @@ export class Consolidator implements ConsolidatorLike {
         continue;
       }
 
-      // 合并所有相似项到当前 entry（作为幸存者）
+      // 原子性修复：先合并内存中的幸存者并 save（原子写入），成功后再 delete
+      // 相似项。旧实现「先逐条 delete 再 save」，中途失败即丢失已删记忆。
       let survivor = entry;
       for (const r of similar) {
         survivor = mergeTwo(survivor, r.entry);
-        await this.store.delete(r.entry.id);
         processed.add(r.entry.id);
-        merged++;
       }
       await this.store.save({
         id: survivor.id,
@@ -141,6 +140,15 @@ export class Consolidator implements ConsolidatorLike {
         expiresAt: survivor.expiresAt,
         recallCount: survivor.recallCount,
       });
+      merged += similar.length;
+      for (const r of similar) {
+        try {
+          await this.store.delete(r.entry.id);
+        } catch (err) {
+          // delete 失败留下重复条目，可被下一轮合并吸收；不中断整体
+          this.onEvent?.({ type: 'consolidate:failed', error: `delete:${(err as Error).message}` });
+        }
+      }
       processed.add(survivor.id);
     }
 

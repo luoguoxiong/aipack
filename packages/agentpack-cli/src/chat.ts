@@ -9,6 +9,7 @@ import readline from 'readline';
 import { createRequest } from 'agentpack';
 import type { AssistantMessage, Runtime } from 'agentpack';
 import type { AgentpackConfig } from './config';
+import { listSessions } from './sessions';
 
 export async function startChat(
   runtime: Runtime,
@@ -82,13 +83,13 @@ export async function startChat(
       return;
     }
     if (trimmed === '/clear') {
-      runtime.clearSession(config.sessionKey);
+      runtime.clearSession();
       console.log('已清空当前会话上下文');
       prompt();
       return;
     }
     if (trimmed === '/sessions') {
-      await showSessions(runtime);
+      await showSessions(config);
       prompt();
       return;
     }
@@ -139,7 +140,7 @@ async function handleMessage(
 
   try {
     for await (const chunk of runtime.stream(
-      createRequest(message, { sessionKey: config.sessionKey, channel: 'cli' }),
+      createRequest(message, { channel: 'cli' }),
     )) {
       if (chunk.type !== 'done') wroteAnything = true;
 
@@ -193,7 +194,7 @@ async function handleMessage(
 
     // LLM 层错误（如 API Key 无效）不会以 chunk 形式抛出，
     // 从最后一条 assistant 消息的 errorMessage 兜底捕获
-    const messages = runtime.getMessages(config.sessionKey);
+    const messages = runtime.getMessages();
     const last = messages[messages.length - 1];
     if (last?.role === 'assistant' && (last as AssistantMessage).errorMessage) {
       wroteAnything = true;
@@ -211,8 +212,8 @@ async function handleMessage(
   }
 }
 
-async function showSessions(runtime: Runtime): Promise<void> {
-  const sessions = await runtime.listSessions();
+async function showSessions(config: AgentpackConfig): Promise<void> {
+  const sessions = await listSessions(config);
   console.log('\n已持久化的会话：');
   if (sessions.length === 0) {
     console.log('  （无）');

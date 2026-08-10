@@ -16,6 +16,8 @@ import { walkDir, globToRegex } from '../utils/text';
 export function createGlobTool(ctx: CodingToolContext): Tool {
   return {
     name: 'glob',
+    // 框架级 PermissionPolicy 能力声明：读取 workspace 内目录
+    permissions: ['fs:read'],
     description:
       '按通配符模式查找文件。返回匹配的文件路径列表（相对 workspace）。' +
       '支持 *（单层）、**（多层）、?（单字符）、{a,b}（分支）。' +
@@ -63,8 +65,9 @@ export function createGlobTool(ctx: CodingToolContext): Tool {
         };
       }
 
-      const maxResults = a.max_results ?? 100;
-      const resolved = resolveWithin(ctx.workspace, a.path ?? '.');
+      // LLM 输入不可信：max_results 代码级 clamp，防止超大值导致遍历失控
+      const maxResults = Math.min(Math.max(a.max_results ?? 100, 1), 1000);
+      const resolved = await resolveWithin(ctx.workspace, a.path ?? '.');
       if (!resolved.ok || !resolved.abs) {
         const err = resolved.error ?? 'resolve failed';
         return {

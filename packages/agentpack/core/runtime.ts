@@ -17,6 +17,7 @@ import type { TaskGraph } from './task-graph';
 import type { Pipeline } from './pipeline';
 import type { ExtensionManager, RuntimeHooks } from './extension';
 import type { SessionStorage } from './session';
+import type { Telemetry } from '../telemetry';
 
 // ─── Compilation - 单次编译上下文 ──────────────────────────────────
 
@@ -85,26 +86,29 @@ export interface Runtime {
   /** 注册转换器 */
   useTransformer(transformer: import('./transformer').ContextTransformer): this;
 
-  /** 获取消息列表 */
+  /** 获取指定会话的消息列表（默认会话；会话不存在返回空数组） */
   getMessages(sessionKey?: string): Message[];
 
-  /** 终止指定会话的运行 */
+  /** 终止指定会话的运行（默认会话） */
   abort(sessionKey?: string): void;
 
-  /** 检查会话是否正在运行 */
+  /** 检查指定会话是否正在运行（默认会话） */
   isBusy(sessionKey?: string): boolean;
 
-  /** 等待会话空闲 */
+  /** 等待指定会话空闲（默认会话） */
   waitForIdle(sessionKey?: string): Promise<void>;
 
-  /** 清除会话消息（仅内存，不影响已持久化数据） */
+  /** 清除指定会话消息（仅内存,不影响已持久化数据） */
   clearSession(sessionKey?: string): void;
 
-  /** 列出所有会话 key（内存 + 存储） */
-  listSessions(): Promise<string[]>;
-
-  /** 删除指定会话（内存 + 存储），返回是否删除成功 */
+  /** 删除指定会话(内存 + 存储),返回是否删除成功 */
   deleteSession(sessionKey?: string): Promise<boolean>;
+
+  /** 当前活跃的会话 key 列表（含默认会话） */
+  getSessionKeys(): string[];
+
+  /** 某会话是否存在于内存 */
+  hasSession(sessionKey: string): boolean;
 
   /** 关闭运行时，释放资源 */
   close(): Promise<void>;
@@ -117,6 +121,13 @@ export interface RuntimeOptions {
   config?: Record<string, unknown>;
   /** 工作区路径 */
   workspace?: string;
+  /** 默认会话 key（默认 'default'）。同一 Runtime 可服务多个会话：
+   *  请求携带 sessionKey 时按该 key 路由到独立会话，未携带时使用默认会话。
+   *  模型/工具/扩展/转换器等资源跨会话共享。 */
+  sessionKey?: string;
+  /** 内存会话状态表 LRU 上限（默认 256）。仅清理内存态，不删除存储；
+   *  超限时淘汰最久未用的非活动会话。 */
+  maxSessions?: number;
   /** 系统提示词 */
   systemPrompt?: string;
   /** 模型 */
@@ -133,6 +144,8 @@ export interface RuntimeOptions {
   pipeline?: Pipeline;
   /** 会话存储适配器（可选，启用后会话自动持久化到存储） */
   sessionStorage?: SessionStorage;
+  /** 遥测（可选，观测 run/工具/模型调用，不干预流程） */
+  telemetry?: Telemetry;
   /** 单次请求最大对话回合数（默认 50，防止失控循环） */
   maxTurns?: number;
   /** 单个工具执行超时（毫秒，默认 120000）。超时后该工具调用以错误结果返回 */
@@ -145,4 +158,7 @@ export interface RuntimeOptions {
   maxResources?: number;
   /** token 预算占 contextWindow 的比例（默认 0.8），超出则按 token 截断 */
   contextBudgetRatio?: number;
+  /** 框架级工具权限策略（可选）。未配置时工具全部放行（向后兼容）；
+   *  生产环境建议配置 createPermissionPolicy / createAllowListPolicy / createDenyAllPolicy。 */
+  permissionPolicy?: import('./permission').PermissionPolicy;
 }

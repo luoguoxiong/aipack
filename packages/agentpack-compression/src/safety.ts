@@ -12,7 +12,11 @@ export interface CompressionSafetyState {
   attemptCount: number;
   /** 上次执行压缩的 turn（用于跨 turn 时重置 attemptCount） */
   lastTurn: number;
-  /** 累计压缩深度（L2/L3/L4/L5 触发时 +1） */
+  /**
+   * 单次 pipeline 内的累计压缩深度（L2/L3/L4/L5 触发时 +1）。
+   * 由 transformer 在每次 run 开始时重置为 0 —— 不跨 turn 累积，
+   * 避免运行几轮后 maxCompressionDepth 判断永久失效。
+   */
   compressionDepth: number;
   /** 断路器是否已触发 */
   circuitBreakerTripped: boolean;

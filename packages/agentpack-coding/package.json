@@ -18,6 +18,7 @@
   "files": [
     "dist"
   ],
+  "sideEffects": false,
   "scripts": {
     "build": "tsup",
     "prebuild": "pnpm --filter agentpack build",
@@ -38,6 +39,9 @@
   },
   "peerDependencies": {
     "agentpack": "workspace:*"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.0"
   },
   "devDependencies": {
     "agentpack": "workspace:*",

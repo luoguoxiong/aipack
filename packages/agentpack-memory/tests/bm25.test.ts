@@ -85,6 +85,28 @@ describe('BM25Retriever', () => {
     assert.ok(results[0].score > 0);
   });
 
+  it('分数归一化到 [0,1]：完全同文≈1，绝对阈值（0.85）对 BM25 成立', async () => {
+    const idx = new BM25Index();
+    const entries = new Map<string, MemoryEntry>();
+    // 高度相似的两条：完全同文查询应映射到接近 1（>0.85），可被合并器按绝对阈值判定
+    const a = entry('a', '用户偏好深色主题和暗色模式');
+    const b = entry('b', '用户偏好深色主题');
+    entries.set('a', a);
+    entries.set('b', b);
+    idx.add('a', tokenize(a.content));
+    idx.add('b', tokenize(b.content));
+    const retriever = new BM25Retriever(idx, entries);
+
+    const results = await retriever.search('用户偏好深色主题', 5);
+    assert.ok(results.length >= 1);
+    for (const r of results) {
+      assert.ok(r.score >= 0 && r.score <= 1, `score 应在 [0,1]，实际 ${r.score}`);
+    }
+    // 完全同文的 b 应得到高分（可合并），而不仅是任意弱匹配
+    const bHit = results.find(r => r.entry.id === 'b');
+    assert.ok(bHit && bHit.score > 0.85, `完全同文分数应 > 0.85（可触发合并），实际 ${bHit?.score}`);
+  });
+
   it('空库返回空', async () => {
     const idx = new BM25Index();
     const retriever = new BM25Retriever(idx, new Map());

@@ -150,7 +150,7 @@
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "Google Gemini API Key（写入 GEMINI_API_KEY）"
+          "description": "Google Gemini API Key（写入 GOOGLE_API_KEY）"
         },
         "agentpack.apiKey.openrouter": {
           "type": "string",

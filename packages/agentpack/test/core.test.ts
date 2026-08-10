@@ -610,7 +610,6 @@ describe('RequestBuilder', () => {
     const req = new RequestBuilder()
       .message('hello')
       .type('stream')
-      .sessionKey('s1')
       .channel('web')
       .chatId('c1')
       .senderId('u1')
@@ -622,7 +621,6 @@ describe('RequestBuilder', () => {
       .build();
     assert.equal(req.message, 'hello');
     assert.equal(req.type, 'stream');
-    assert.equal(req.sessionKey, 's1');
     assert.equal(req.channel, 'web');
     assert.equal(req.chatId, 'c1');
     assert.equal(req.senderId, 'u1');
@@ -630,36 +628,34 @@ describe('RequestBuilder', () => {
     assert.equal(req.ephemeral, true);
     assert.equal(req.model, 'gpt-4o');
     assert.equal(req.modelPreset, 'default');
-    assert.equal(req.metadata.k, 'v');
+    assert.equal(req.metadata!.k, 'v');
   });
 
   it('默认值', () => {
     const req = new RequestBuilder().build();
     assert.equal(req.message, '');
     assert.equal(req.type, 'message');
-    assert.equal(req.sessionKey, 'sdk:default');
     assert.deepEqual(req.metadata, {});
   });
 
   it('metadata 单键设置', () => {
     const req = new RequestBuilder().metadata('a', 1).metadata('b', 2).build();
-    assert.equal(req.metadata.a, 1);
-    assert.equal(req.metadata.b, 2);
+    assert.equal(req.metadata!.a, 1);
+    assert.equal(req.metadata!.b, 2);
   });
 });
 
 describe('createRequest', () => {
   it('带 options 覆盖默认值', () => {
-    const req = createRequest('hi', { sessionKey: 's1', ephemeral: true });
+    const req = createRequest('hi', { ephemeral: true });
     assert.equal(req.message, 'hi');
-    assert.equal(req.sessionKey, 's1');
     assert.equal(req.ephemeral, true);
     assert.equal(req.type, 'message');
   });
 
-  it('无 options 使用默认 sessionKey', () => {
+  it('无 options 使用默认 type', () => {
     const req = createRequest('hi');
-    assert.equal(req.sessionKey, 'sdk:default');
+    assert.equal(req.type, 'message');
   });
 });
 

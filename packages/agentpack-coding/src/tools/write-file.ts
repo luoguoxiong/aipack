@@ -15,6 +15,8 @@ import { resolveWithin } from '../utils/path';
 export function createWriteFileTool(ctx: CodingToolContext): Tool {
   return {
     name: 'write_file',
+    // 框架级 PermissionPolicy 能力声明：写入 workspace 内文件
+    permissions: ['fs:write'],
     description:
       '写入文件（整体覆盖）。content 为完整新内容，会覆盖已有文件。' +
       '父目录不存在时自动创建。路径必须在 workspace 内。',
@@ -35,7 +37,7 @@ export function createWriteFileTool(ctx: CodingToolContext): Tool {
         };
       }
 
-      const resolved = resolveWithin(ctx.workspace, a.path ?? '');
+      const resolved = await resolveWithin(ctx.workspace, a.path ?? '');
       if (!resolved.ok || !resolved.abs) {
         const err = resolved.error ?? 'resolve failed';
         return {

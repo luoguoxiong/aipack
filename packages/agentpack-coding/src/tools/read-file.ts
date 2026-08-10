@@ -14,6 +14,8 @@ import { formatLineNumbers, isBinary, truncateWithHint } from '../utils/text';
 export function createReadFileTool(ctx: CodingToolContext): Tool {
   return {
     name: 'read_file',
+    // 框架级 PermissionPolicy 能力声明：读取 workspace 内文件
+    permissions: ['fs:read'],
     description:
       '读取文本文件内容并返回带行号的格式（cat -n 风格）。' +
       'path 相对 workspace；可选 offset/limit 分页避免大文件超长。' +
@@ -42,7 +44,7 @@ export function createReadFileTool(ctx: CodingToolContext): Tool {
       let limit = a.limit ?? 2000;
       if (limit > 5000) limit = 5000;
 
-      const resolved = resolveWithin(ctx.workspace, a.path ?? '');
+      const resolved = await resolveWithin(ctx.workspace, a.path ?? '');
       if (!resolved.ok || !resolved.abs) {
         const err = resolved.error ?? 'resolve failed';
         return {

@@ -21,6 +21,8 @@ import type {
   ToolCallContext,
   BeforeToolCallDecision,
   AfterToolCallDecision,
+  PermissionRequest,
+  PermissionPolicy,
 } from '../core';
 import {
   ExtensionManager,
@@ -59,6 +61,7 @@ import type {
   StoredSession,
   SessionModel,
 } from '../core';
+import type { Telemetry } from '../telemetry';
 import { validateRequest, normalizeRequest } from '../request';
 import {
   messagesToResources,
@@ -77,6 +80,24 @@ interface SessionState {
   queue: Promise<void>;
   /** 等待空闲的 resolver，isStreaming 变 false 时逐个唤醒 */
   idleResolvers: Array<() => void>;
+  /** 是否持有执行锁（acquire 后 → release 前）。LRU 淘汰时保护刚入队未开始运行的会话 */
+  lockHeld: boolean;
+}
+
+/** 内存会话状态表 LRU 上限（仅清理内存态，不删存储；超限淘汰最久未用） */
+const DEFAULT_MAX_SESSIONS = 256;
+
+function createSessionState(): SessionState {
+  return {
+    messages: [],
+    isStreaming: false,
+    abortController: null,
+    createdAt: new Date().toISOString(),
+    hydrated: false,
+    queue: Promise.resolve(),
+    idleResolvers: [],
+    lockHeld: false,
+  };
 }
 
 // ─── 工具超时信号（Node 18 无 AbortSignal.any，手动桥接）─────────
@@ -151,7 +172,12 @@ export class AgentRuntime implements Runtime {
   private _thinkingLevel: ThinkingLevel;
   private _globalTools: Map<string, Tool> = new Map();
 
-  private _sessions: Map<string, SessionState> = new Map();
+  /** 多会话状态表：key = sessionKey。模型/工具/扩展/转换器等资源跨会话共享 */
+  private _sessions: Map<string, SessionState>;
+  /** 默认会话 key（createRuntime 的 sessionKey；请求未指定 sessionKey 时使用） */
+  private _sessionKey: string;
+  /** 内存会话状态表 LRU 上限 */
+  private _maxSessions: number;
   private _sessionStorage: SessionStorage | undefined;
   /** Extension 应用时的上下文（shared Map 供 ToolCallContext 引用） */
   private _extensionContext?: ExtensionContext;
@@ -160,6 +186,9 @@ export class AgentRuntime implements Runtime {
   private _toolTimeoutMs: number;
   private _parallelToolCalls: boolean;
   private _contextBudgetRatio: number;
+  private _telemetry: Telemetry | undefined;
+  /** 框架级工具权限策略（未配置 → 放行，向后兼容） */
+  private _permissionPolicy: PermissionPolicy | undefined;
 
   private constructor(options: RuntimeOptions) {
     this._config = options.config ?? {};
@@ -188,6 +217,8 @@ export class AgentRuntime implements Runtime {
     this._toolTimeoutMs = options.toolTimeoutMs ?? 120_000;
     this._parallelToolCalls = options.parallelToolCalls ?? true;
     this._contextBudgetRatio = options.contextBudgetRatio ?? 0.8;
+    this._telemetry = options.telemetry;
+    this._permissionPolicy = options.permissionPolicy;
 
     // 注册初始工具
     if (options.tools) {
@@ -195,6 +226,11 @@ export class AgentRuntime implements Runtime {
         this._globalTools.set(tool.name, tool);
       }
     }
+
+    this._sessionKey = options.sessionKey ?? 'default';
+    this._maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
+    // 默认会话预先入表，保证未指定 sessionKey 的请求路由到它
+    this._sessions = new Map([[this._sessionKey, createSessionState()]]);
 
     // 注册转换器
     if (options.transformers) {
@@ -216,7 +252,7 @@ export class AgentRuntime implements Runtime {
     const ctx: ExtensionContext = {
       config: runtime._config,
       workspace: options.workspace ?? process.cwd(),
-      sessionKey: 'runtime',
+      sessionKey: runtime._sessionKey,
       shared: new Map(),
     };
     runtime._extensionContext = ctx;
@@ -286,9 +322,12 @@ export class AgentRuntime implements Runtime {
     return this;
   }
 
-  getMessages(sessionKey: string = 'default'): Message[] {
+  /** 获取指定会话的消息列表（默认会话；会话不存在返回空数组） */
+  getMessages(sessionKey?: string): Message[] {
+    const session = this._sessions.get(sessionKey ?? this._sessionKey);
+    if (!session) return [];
     // 返回深拷贝，避免外部直接修改会话内部状态
-    const messages = this.getSession(sessionKey).messages;
+    const messages = session.messages;
     try {
       return structuredClone(messages);
     } catch {
@@ -297,6 +336,51 @@ export class AgentRuntime implements Runtime {
   }
 
   // ─── 核心运行逻辑 ───────────────────────────────────────────────
+
+  /** 解析请求路由的会话 key：request.sessionKey ?? 默认会话 key */
+  private resolveSessionKey(request: Request): string {
+    return request.sessionKey ?? this._sessionKey;
+  }
+
+  /**
+   * 获取（懒创建）会话状态。同一 Runtime 下不同 sessionKey 的消息历史、
+   * 串行队列、abort 控制相互独立；共享模型/工具/扩展/转换器。
+   * 超过 _maxSessions 时淘汰最久未用的非活动会话（仅清内存态，不删存储）。
+   */
+  private getSession(key: string): SessionState {
+    let session = this._sessions.get(key);
+    if (session) {
+      // 刷新 LRU 顺序（Map 尾 = 最近使用）
+      this._sessions.delete(key);
+      this._sessions.set(key, session);
+      return session;
+    }
+    session = createSessionState();
+    this._sessions.set(key, session);
+    this.evictIdleSessions();
+    return session;
+  }
+
+  /** LRU 淘汰：仅淘汰非活动（未运行、未排队）的最久未用会话 */
+  private evictIdleSessions(): void {
+    if (this._sessions.size <= this._maxSessions) return;
+    for (const [key, session] of this._sessions) {
+      if (this._sessions.size <= this._maxSessions) break;
+      // 运行中 / 已持有锁（入队待执行）不淘汰
+      if (session.isStreaming || session.lockHeld) continue;
+      this._sessions.delete(key);
+    }
+  }
+
+  /** 当前活跃的会话 key 列表（含默认会话） */
+  getSessionKeys(): string[] {
+    return Array.from(this._sessions.keys());
+  }
+
+  /** 某会话是否存在（内存中） */
+  hasSession(sessionKey: string): boolean {
+    return this._sessions.has(sessionKey);
+  }
 
   async run(request: Request): Promise<Result> {
     // 0. 校验请求
@@ -307,12 +391,24 @@ export class AgentRuntime implements Runtime {
         .build();
     }
     const finalRequest = normalizeRequest(request);
+    const sessionKey = this.resolveSessionKey(finalRequest);
+    const startedAt = Date.now();
 
     // 1. 串行化：同一会话的请求依次执行
-    const release = await this.acquire(finalRequest.sessionKey);
+    const session = this.getSession(sessionKey);
+    const release = await this.acquire(session);
 
     try {
-      return await this._run(finalRequest);
+      const result = await this.runWithStorageLock(finalRequest, sessionKey, () =>
+        this._run(finalRequest, sessionKey, session),
+      );
+      await this.emitTelemetry('onRunEnd', {
+        sessionKey,
+        request: finalRequest,
+        durationMs: Date.now() - startedAt,
+        result,
+      });
+      return result;
     } finally {
       release();
     }
@@ -327,18 +423,60 @@ export class AgentRuntime implements Runtime {
       return;
     }
     const finalRequest = normalizeRequest(request);
+    const sessionKey = this.resolveSessionKey(finalRequest);
 
     // 1. 串行化
-    const release = await this.acquire(finalRequest.sessionKey);
+    const session = this.getSession(sessionKey);
+    const release = await this.acquire(session);
 
     try {
-      yield* this._stream(finalRequest);
+      yield* this.streamWithStorageLock(finalRequest, sessionKey, () =>
+        this._stream(finalRequest, sessionKey, session),
+      );
     } finally {
       release();
     }
   }
 
-  private async _run(request: Request): Promise<Result> {
+  /**
+   * 非 ephemeral 请求在"读(load)-改(run)-写(save)"全程持有存储级锁，
+   * 防止多进程并发写同一会话导致 last-write-wins 丢消息。
+   * ephemeral / 无锁支持 / 无存储时直接执行。
+   */
+  private async runWithStorageLock<T>(
+    request: Request,
+    sessionKey: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const storage = this._sessionStorage;
+    if (request.ephemeral || !storage?.withLock) return fn();
+    return storage.withLock(sessionKey, fn);
+  }
+
+  /** 流式版本：无法用回调包住生成器，改用手动锁（acquire/release） */
+  private async *streamWithStorageLock(
+    request: Request,
+    sessionKey: string,
+    gen: () => AsyncGenerator<ResultChunk>,
+  ): AsyncGenerator<ResultChunk> {
+    const storage = this._sessionStorage;
+    if (request.ephemeral || !storage?.acquireLock) {
+      yield* gen();
+      return;
+    }
+    const lock = await storage.acquireLock(sessionKey);
+    try {
+      yield* gen();
+    } finally {
+      await lock.release();
+    }
+  }
+
+  private async _run(
+    request: Request,
+    sessionKey: string,
+    session: SessionState,
+  ): Promise<Result> {
     // 1. 触发 beforeInitialize / afterInitialize
     await this._hooks.beforeInitialize.promise(request);
     await this._hooks.afterInitialize.promise(request);
@@ -348,18 +486,18 @@ export class AgentRuntime implements Runtime {
 
     // 3. 会话持久化：从存储恢复历史消息（ephemeral 跳过）
     if (!finalRequest.ephemeral) {
-      await this.hydrateSession(finalRequest.sessionKey);
+      await this.hydrateSession(sessionKey, session);
     }
 
     // 4. 创建编译上下文
-    const compilation = this.createCompilation(finalRequest);
+    const compilation = this.createCompilation(finalRequest, sessionKey, session);
 
     // 5. 添加用户消息（含媒体附件）
     compilation.messages.push(this.buildUserMessage(finalRequest));
 
     // 6. 运行对话循环
     try {
-      await this.runLoop(compilation, finalRequest);
+      await this.runLoop(compilation, finalRequest, session);
 
       // 7. 构建结果
       const result = this.buildResult(compilation);
@@ -386,11 +524,15 @@ export class AgentRuntime implements Runtime {
         .build();
     } finally {
       // 10. 结束前最终保存会话（ephemeral 不持久化；失败不影响运行结果）
-      await this.persistSessionSafe(finalRequest);
+      await this.persistSessionSafe(finalRequest, sessionKey);
     }
   }
 
-  private async *_stream(request: Request): AsyncGenerator<ResultChunk> {
+  private async *_stream(
+    request: Request,
+    sessionKey: string,
+    session: SessionState,
+  ): AsyncGenerator<ResultChunk> {
     // 1. 钩子
     await this._hooks.beforeInitialize.promise(request);
     await this._hooks.afterInitialize.promise(request);
@@ -398,18 +540,18 @@ export class AgentRuntime implements Runtime {
 
     // 2. 会话持久化：从存储恢复历史消息（ephemeral 跳过）
     if (!finalRequest.ephemeral) {
-      await this.hydrateSession(finalRequest.sessionKey);
+      await this.hydrateSession(sessionKey, session);
     }
 
     // 3. 创建编译上下文
-    const compilation = this.createCompilation(finalRequest);
+    const compilation = this.createCompilation(finalRequest, sessionKey, session);
 
     // 4. 添加用户消息（含媒体附件）
     compilation.messages.push(this.buildUserMessage(finalRequest));
 
     // 5. 流式对话循环
     try {
-      for await (const chunk of this.runLoopStream(compilation, finalRequest)) {
+      for await (const chunk of this.runLoopStream(compilation, finalRequest, session)) {
         yield chunk;
       }
 
@@ -429,28 +571,29 @@ export class AgentRuntime implements Runtime {
       yield { type: 'error', content: error.message };
       yield { type: 'done' };
     } finally {
-      await this.persistSessionSafe(finalRequest);
+      await this.persistSessionSafe(finalRequest, sessionKey);
     }
   }
 
-  createCompilation(request: Request): Compilation {
-    const session = this.getSession(request.sessionKey);
-
+  createCompilation(request: Request, sessionKey?: string, session?: SessionState): Compilation {
     return {
       request,
       graph: createTaskGraph(),
       pipeline: this._pipeline,
       resources: [],
-      messages: session.messages,
+      messages: (session ?? this.getSession(sessionKey ?? this._sessionKey)).messages,
       completed: false,
     };
   }
 
   async close(): Promise<void> {
     // 等待所有会话的在途任务完成，再清理
-    const queues = Array.from(this._sessions.values()).map(s => s.queue);
-    await Promise.allSettled(queues);
+    await Promise.allSettled(Array.from(this._sessions.values(), s => s.queue));
 
+    for (const session of this._sessions.values()) {
+      session.messages = [];
+      session.hydrated = false;
+    }
     this._sessions.clear();
     this._extensions.clear();
     this._pipeline.clear();
@@ -458,17 +601,22 @@ export class AgentRuntime implements Runtime {
 
   // ─── 对话循环（同步） ───────────────────────────────────────────
 
-  private async runLoop(compilation: Compilation, request: Request): Promise<void> {
-    const session = this.getSession(request.sessionKey);
+  private async runLoop(
+    compilation: Compilation,
+    request: Request,
+    session: SessionState,
+  ): Promise<void> {
     session.isStreaming = true;
     session.abortController = new AbortController();
+    // 多会话路由：本次循环所属会话（请求携带的 sessionKey 优先）
+    const sessionKey = this.resolveSessionKey(request);
 
     try {
       let maxTurns = this._maxTurns;
 
       while (maxTurns-- > 0) {
         // 1. Pipeline 转换上下文（原地替换，保持 session 引用）
-        await this.transformMessages(compilation);
+        await this.transformMessages(compilation, sessionKey);
 
         // 2. 构建 LLM 上下文
         const context = this.buildContext(compilation.messages);
@@ -477,11 +625,12 @@ export class AgentRuntime implements Runtime {
         const assistantMessage = await this.streamModel(
           context,
           session.abortController!.signal,
+          sessionKey,
         );
 
         compilation.messages.push(assistantMessage);
         // 3.1 实时持久化：assistant 回复完成即落盘（运行中可查看最新会话）
-        await this.persistSessionSafe(request);
+        await this.persistSessionSafe(request, sessionKey);
 
         // 4. 检查工具调用
         const toolCalls = extractToolCalls(assistantMessage.content);
@@ -497,7 +646,7 @@ export class AgentRuntime implements Runtime {
           session.abortController!.signal,
         );
         // 5.1 实时持久化：工具结果落盘
-        await this.persistSessionSafe(request);
+        await this.persistSessionSafe(request, sessionKey);
         // 5.2 beforeToolCall/afterToolCall 请求终止：停止循环
         if (outcome.terminate) {
           compilation.terminateReason = outcome.terminateReason ?? 'terminated';
@@ -514,17 +663,19 @@ export class AgentRuntime implements Runtime {
   private async *runLoopStream(
     compilation: Compilation,
     request: Request,
+    session: SessionState,
   ): AsyncGenerator<ResultChunk> {
-    const session = this.getSession(request.sessionKey);
     session.isStreaming = true;
     session.abortController = new AbortController();
+    // 多会话路由：本次流式循环所属会话
+    const sessionKey = this.resolveSessionKey(request);
 
     try {
       let maxTurns = this._maxTurns;
 
       while (maxTurns-- > 0) {
         // 1. Pipeline 转换（原地替换，保持 session 引用）
-        await this.transformMessages(compilation);
+        await this.transformMessages(compilation, sessionKey);
 
         // 2. 构建上下文
         const context = this.buildContext(compilation.messages);
@@ -549,7 +700,7 @@ export class AgentRuntime implements Runtime {
         if (!assistantMessage) break;
         compilation.messages.push(assistantMessage);
         // 3.1 实时持久化：assistant 回复完成即落盘（运行中可查看最新会话）
-        await this.persistSessionSafe(request);
+        await this.persistSessionSafe(request, sessionKey);
 
         // 4. 检查工具调用
         const toolCalls = extractToolCalls(assistantMessage.content);
@@ -573,7 +724,7 @@ export class AgentRuntime implements Runtime {
           session.abortController!.signal,
         );
         // 5.1 实时持久化：工具结果落盘
-        await this.persistSessionSafe(request);
+        await this.persistSessionSafe(request, sessionKey);
 
         // 5.2 yield tool_end（block 的工具也产出事件，便于前端展示被拒调用）
         for (let i = 0; i < toolCalls.length; i++) {
@@ -694,6 +845,40 @@ export class AgentRuntime implements Runtime {
         args = tool.prepareArguments(toolCall.arguments);
       }
 
+      // ─── PermissionPolicy：框架级安全底线，先于扩展钩子裁决 ───
+      // 未配置策略 → 放行（向后兼容）；deny / confirm 未批准 → blocked 结果
+      if (this._permissionPolicy) {
+        const permissionReq: PermissionRequest = {
+          toolName: toolCall.name,
+          permissions: tool.permissions ?? [],
+          args,
+          sessionKey: request.sessionKey ?? this._sessionKey,
+          request,
+          shared: this._extensionContext?.shared ?? new Map(),
+        };
+        const decision = await this._permissionPolicy.check(permissionReq);
+        let allowed = decision === 'allow';
+        if (decision === 'confirm') {
+          allowed = this._permissionPolicy.confirm
+            ? await this._permissionPolicy.confirm(permissionReq)
+            : false;
+        }
+        if (!allowed) {
+          const reason = `permission denied by policy for tool "${toolCall.name}"`;
+          await this.emitTelemetry('onPermissionDenied', {
+            sessionKey: permissionReq.sessionKey,
+            toolName: toolCall.name,
+            permissions: permissionReq.permissions,
+            args,
+            reason,
+          });
+          return {
+            result: this.makeBlockedResult(reason),
+            terminate: false,
+          };
+        }
+      }
+
       // ─── beforeToolCall：参数校验后、执行前（可 block / terminate / 改写 args）───
       const beforeCtx = this.buildToolCallContext(toolCall, tool, args, request, timedSignal);
       const before: BeforeToolCallDecision = await this._hooks.beforeToolCall.promise(
@@ -720,6 +905,7 @@ export class AgentRuntime implements Runtime {
       args = before.args;
 
       // ─── 执行工具 ───
+      const toolStartedAt = Date.now();
       let result: ToolResult;
       try {
         result = await tool.execute(toolCall.id, args, timedSignal);
@@ -730,6 +916,14 @@ export class AgentRuntime implements Runtime {
           details: { error: message },
         };
       }
+
+      await this.emitTelemetry('onToolCall', {
+        sessionKey: request.sessionKey ?? this._sessionKey,
+        toolName: toolCall.name,
+        args,
+        durationMs: Date.now() - toolStartedAt,
+        result,
+      });
 
       // ─── afterToolCall：执行后、事件发出前（可改写 result / terminate）───
       // 用更新后的 args 重建 ctx，让 afterToolCall 看到改写后的参数
@@ -781,7 +975,7 @@ export class AgentRuntime implements Runtime {
       toolCall,
       tool,
       args,
-      sessionKey: request.sessionKey,
+      sessionKey: request.sessionKey ?? this._sessionKey,
       request,
       shared: this._extensionContext?.shared ?? new Map(),
       signal,
@@ -823,35 +1017,23 @@ export class AgentRuntime implements Runtime {
 
   // ─── 内部方法 ───────────────────────────────────────────────────
 
-  private getSession(sessionKey: string): SessionState {
-    if (!this._sessions.has(sessionKey)) {
-      this._sessions.set(sessionKey, {
-        messages: [],
-        isStreaming: false,
-        abortController: null,
-        createdAt: new Date().toISOString(),
-        hydrated: false,
-        queue: Promise.resolve(),
-        idleResolvers: [],
-      });
-    }
-    return this._sessions.get(sessionKey)!;
-  }
-
   /**
    * 获取同一会话的执行锁：返回 release 函数，调用后释放。
    * 同一 sessionKey 的 run/stream 会串行执行，避免消息数组交错、
    * abortController 互相覆盖、hydrate 竞态。
    */
-  private async acquire(sessionKey: string): Promise<() => void> {
-    const session = this.getSession(sessionKey);
+  private async acquire(session: SessionState): Promise<() => void> {
     let release!: () => void;
     const prev = session.queue;
     session.queue = new Promise<void>(resolve => {
       release = () => resolve();
     });
     await prev;
-    return release;
+    session.lockHeld = true;
+    return () => {
+      session.lockHeld = false;
+      release();
+    };
   }
 
   /** 标记会话空闲并唤醒所有 waitForIdle 等待者 */
@@ -867,9 +1049,11 @@ export class AgentRuntime implements Runtime {
   // ─── 会话持久化 ─────────────────────────────────────────────────
 
   /** 从存储懒加载会话（串行化后无竞态，每个会话仅恢复一次） */
-  private async hydrateSession(sessionKey: string): Promise<void> {
+  private async hydrateSession(
+    sessionKey: string,
+    session: SessionState,
+  ): Promise<void> {
     if (!this._sessionStorage) return;
-    const session = this.getSession(sessionKey);
     if (session.hydrated) return;
     session.hydrated = true;
 
@@ -880,11 +1064,12 @@ export class AgentRuntime implements Runtime {
     session.createdAt = stored.createdAt;
   }
 
-  /** 整体保存会话（ephemeral 跳过；失败不影响运行结果） */
-  private async persistSession(sessionKey: string): Promise<void> {
+  /** 整体保存指定会话（ephemeral 跳过；失败不影响运行结果） */
+  private async persistSession(
+    sessionKey: string,
+    session: SessionState,
+  ): Promise<void> {
     if (!this._sessionStorage) return;
-    const session = this._sessions.get(sessionKey);
-    if (!session) return;
 
     const stored: StoredSession = {
       key: sessionKey,
@@ -899,14 +1084,19 @@ export class AgentRuntime implements Runtime {
   }
 
   /**
-   * 实时持久化当前会话：每轮 assistant 回复/工具结果完成后调用，
+   * 实时持久化指定会话：每轮 assistant 回复/工具结果完成后调用，
    * 让运行中的会话随时可被持久化数据观测到。ephemeral 跳过；
    * 存储失败仅告警，不影响对话循环继续。
    */
-  private async persistSessionSafe(request: Request): Promise<void> {
+  private async persistSessionSafe(
+    request: Request,
+    sessionKey: string,
+  ): Promise<void> {
     if (request.ephemeral || !this._sessionStorage) return;
     try {
-      await this.persistSession(request.sessionKey);
+      const session = this._sessions.get(sessionKey);
+      if (!session) return; // 会话已被淘汰/删除，跳过
+      await this.persistSession(sessionKey, session);
     } catch (err) {
       console.warn('[Runtime] 会话持久化失败:', (err as Error)?.message);
     }
@@ -952,7 +1142,10 @@ export class AgentRuntime implements Runtime {
   }
 
   /** 通过 Pipeline 转换上下文（原地替换消息数组，保持与 session 的共享引用） */
-  private async transformMessages(compilation: Compilation): Promise<void> {
+  private async transformMessages(
+    compilation: Compilation,
+    sessionKey: string,
+  ): Promise<void> {
     if (this._pipeline.isEmpty) {
       return;
     }
@@ -962,7 +1155,7 @@ export class AgentRuntime implements Runtime {
     const transformed = await this._pipeline.run(resources, {
       graph: compilation.graph,
       runtime: {
-        sessionKey: compilation.request.sessionKey,
+        sessionKey,
         turn: compilation.messages.length,
         contextWindow: this._model.contextWindow,
         maxTokens: this._model.maxTokens,
@@ -988,7 +1181,9 @@ export class AgentRuntime implements Runtime {
   private async streamModel(
     context: Context,
     signal: AbortSignal,
+    sessionKey: string,
   ): Promise<AssistantMessage> {
+    const modelStartedAt = Date.now();
     let assistantMessage: AssistantMessage = {
       role: 'assistant',
       content: [],
@@ -1014,7 +1209,32 @@ export class AgentRuntime implements Runtime {
       }
     }
 
+    await this.emitTelemetry('onModelCall', {
+      sessionKey,
+      modelId: this._model.id,
+      inputTokens: assistantMessage.usage?.input ?? 0,
+      outputTokens: assistantMessage.usage?.output ?? 0,
+      durationMs: Date.now() - modelStartedAt,
+    });
+
     return assistantMessage;
+  }
+
+  /**
+   * 触发遥测回调。全可选、失败不阻断主流程。
+   */
+  private async emitTelemetry<E extends keyof Telemetry>(
+    event: E,
+    info: Parameters<NonNullable<Telemetry[E]>>[0],
+  ): Promise<void> {
+    const fn = this._telemetry?.[event];
+    if (!fn) return;
+    try {
+      await Promise.resolve((fn as (arg: unknown) => unknown)(info));
+    } catch (err) {
+      // 遥测失败不应影响主流程
+      console.warn(`[agentpack] telemetry "${String(event)}" 上报失败:`, err);
+    }
   }
 
   private buildResult(compilation: Compilation): Result {
@@ -1086,54 +1306,47 @@ export class AgentRuntime implements Runtime {
 
   // ─── 便捷方法 ───────────────────────────────────────────────────
 
-  /** 终止指定会话的运行 */
-  abort(sessionKey: string = 'default'): void {
-    const session = this._sessions.get(sessionKey);
-    session?.abortController?.abort();
+  /** 终止指定会话的运行（默认会话；会话不存在为 no-op） */
+  abort(sessionKey?: string): void {
+    this._sessions.get(sessionKey ?? this._sessionKey)?.abortController?.abort();
   }
 
-  /** 检查会话是否正在运行 */
-  isBusy(sessionKey: string = 'default'): boolean {
-    return this.getSession(sessionKey).isStreaming;
+  /** 检查指定会话是否正在运行（默认会话；会话不存在返回 false） */
+  isBusy(sessionKey?: string): boolean {
+    return this._sessions.get(sessionKey ?? this._sessionKey)?.isStreaming ?? false;
   }
 
-  /** 等待会话空闲（基于 promise，无轮询） */
-  async waitForIdle(sessionKey: string = 'default'): Promise<void> {
-    const session = this.getSession(sessionKey);
-    if (!session.isStreaming) return;
+  /** 等待指定会话空闲（默认会话；基于 promise，无轮询） */
+  async waitForIdle(sessionKey?: string): Promise<void> {
+    const session = this._sessions.get(sessionKey ?? this._sessionKey);
+    if (!session || !session.isStreaming) return;
     await new Promise<void>(resolve => {
       session.idleResolvers.push(resolve);
     });
   }
 
-  /** 清除会话消息（仅内存；下次 run 会从存储恢复该会话） */
-  clearSession(sessionKey: string = 'default'): void {
-    const session = this._sessions.get(sessionKey);
-    if (session) {
-      session.messages = [];
-      session.hydrated = false;
-    }
-  }
-
-  /** 列出所有会话 key（内存 + 存储） */
-  async listSessions(): Promise<string[]> {
-    const memoryKeys = Array.from(this._sessions.keys());
-    const storedKeys = this._sessionStorage ? await this._sessionStorage.list() : [];
-    return [...new Set([...storedKeys, ...memoryKeys])];
+  /** 清除指定会话消息（仅内存；下次 run 会从存储恢复） */
+  clearSession(sessionKey?: string): void {
+    const session = this._sessions.get(sessionKey ?? this._sessionKey);
+    if (!session) return;
+    session.messages = [];
+    session.hydrated = false;
   }
 
   /** 删除指定会话（内存 + 存储），返回是否删除成功 */
-  async deleteSession(sessionKey: string = 'default'): Promise<boolean> {
-    const session = this._sessions.get(sessionKey);
+  async deleteSession(sessionKey?: string): Promise<boolean> {
+    const key = sessionKey ?? this._sessionKey;
+    const session = this._sessions.get(key);
+    // 等待在途任务完成后再清理
     if (session) {
-      // 等待在途任务完成后再清理
       await session.queue;
-      this._sessions.delete(sessionKey);
+      this._sessions.delete(key);
     }
-    if (this._sessionStorage) {
-      return this._sessionStorage.delete(sessionKey);
-    }
-    return true;
+    if (!this._sessionStorage) return true;
+    const storage = this._sessionStorage;
+    if (!storage.withLock) return storage.delete(key);
+    // 删除同样持存储锁，避免与另一进程的写入竞争
+    return storage.withLock(key, () => storage.delete(key));
   }
 }
 

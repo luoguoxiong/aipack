@@ -34,7 +34,7 @@
 
 支持的 provider：openai / deepseek / anthropic / groq / google(Gemini) / openrouter / mistral / xai / cerebras / together / fireworks / nvidia / moonshot。
 
-API Key 会按 provider 的 envVar（如 google → `GEMINI_API_KEY`）同步到 `process.env`，复用 agentpack 的 `getEnvApiKey` 兜底逻辑。
+API Key 会按 provider 的 envVar（如 google → `GOOGLE_API_KEY`）同步到 `process.env`，复用 agentpack 的 `getEnvApiKey` 兜底逻辑。
 
 ## 用法
 

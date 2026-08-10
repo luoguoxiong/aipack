@@ -2,11 +2,12 @@
  * packages/agentpack-cli/src/config.ts
  *
  * 配置加载与合并，优先级（低 → 高）：
- *   默认值 < 配置文件（项目级 agentpack.config.js/.json < 全局 ~/.agentpack/config.json）
+ *   默认值 < 配置文件（全局 ~/.agentpack/config.json < 项目级 agentpack.config.json < 项目级 .js）
  *          < 环境变量（AGENTPACK_*）< CLI 参数（--config/--provider/--model 等）
  *
- * 项目级配置文件支持 .js（ESM export default 或 CJS module.exports，可写逻辑）与 .json，
- * .js 优先级高于 .json；全局配置保持 config.json。
+ * 项目级配置优先于全局配置：用户在项目里设置的 provider/model 不应被
+ * 全局 ~/.agentpack/config.json 静默覆盖。项目级配置文件支持 .js（ESM export default
+ * 或 CJS module.exports，可写逻辑）与 .json，.js 优先级高于 .json。
  */
 
 import fs from 'fs';
@@ -182,10 +183,11 @@ export async function loadConfig(cli: CliOptions = {}): Promise<AgentpackConfig>
   const projectJson = path.join(process.cwd(), 'agentpack.config.json');
   const globalFile = path.join(configDir, 'config.json');
 
-  // 文件链：显式 --config 单独生效；否则项目级 .js（优先）> 项目级 .json > 全局
+  // 文件链：显式 --config 单独生效；否则全局 < 项目级 .json < 项目级 .js
+  //（低优先级在前、被高优先级覆盖，项目级优先于全局）
   const fileChain = cli.config
     ? [path.resolve(cli.config)]
-    : [projectJs, projectJson, globalFile];
+    : [globalFile, projectJson, projectJs];
 
   const fileConfig: RawFileConfig = {};
   let effectiveConfigPath: string | undefined;
