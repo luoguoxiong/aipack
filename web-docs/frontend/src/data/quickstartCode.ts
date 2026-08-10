@@ -4,13 +4,13 @@
 
 export const qsInstallCode = [
   '# 使用 pnpm（推荐）',
-  'pnpm add aipack',
+  'pnpm add @aipack/agent',
   '',
   '# 或使用 npm',
-  'npm install aipack',
+  'npm install @aipack/agent',
   '',
   '# 或使用 yarn',
-  'yarn add aipack',
+  'yarn add @aipack/agent',
 ].join('\n');
 
 export const qsEnvCode = [
@@ -101,7 +101,7 @@ export const qsStreamingCode = [
   '        // 文本增量：直接写出，实现打字机效果',
   '        process.stdout.write(chunk.content ?? "");',
   '        break;',
-  '      case "thinking_delta":',
+  '      case "thinking":',
   '        // 推理模型的思考过程增量（可选展示）',
   '        // process.stdout.write(chunk.content ?? "");',
   '        break;',

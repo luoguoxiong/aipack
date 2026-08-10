@@ -36,7 +36,7 @@ export const apiList: ApiItem[] = [
       { name: 'options.extensions', type: 'Extension[]', description: '预注册的扩展插件列表' },
       { name: 'options.transformers', type: 'ContextTransformer[]', description: '预注册的上下文转换器，按数组顺序链式执行（上一个输出作为下一个输入）' },
       { name: 'options.sessionStorage', type: 'SessionStorage', description: '会话存储适配器，启用后会话自动持久化' },
-      { name: 'options.maxSessions', type: 'number', description: '内存会话上限，超限按 LRU 淘汰最久未用会话（默认 64）。仅影响内存态，持久化会话不受影响' },
+      { name: 'options.maxSessions', type: 'number', description: '内存会话上限，超限按 LRU 淘汰最久未用会话（默认 256）。仅影响内存态，持久化会话不受影响' },
       { name: 'options.permissionPolicy', type: 'PermissionPolicy', description: '框架级工具权限策略（可选）。未配置时全部放行（向后兼容），生产环境建议配置；deny 产出 details.blocked 结果、不终止 run，模型可换策略' },
       { name: 'options.telemetry', type: 'Telemetry', description: '轻量可观测：onRunEnd / onToolCall / onModelCall / onPermissionDenied，全可选、上报失败不影响主流程' },
       { name: 'options.maxTurns', type: 'number', description: '单次请求最大对话回合数，默认 50，防止失控循环' },
@@ -106,7 +106,7 @@ console.log(result.usage);    // Token 用量统计`,
     case 'text':
       process.stdout.write(chunk.content ?? '');  // 文本增量
       break;
-    case 'thinking_delta':
+    case 'thinking':
       // 思考过程增量（reasoning 模型）
       break;
     case 'tool_start':
@@ -151,7 +151,7 @@ console.log(result.usage);    // Token 用量统计`,
     id: 'Runtime-session',
     name: '会话管理方法（多会话）',
     kind: 'function',
-    signature: 'getMessages(sessionKey?) / clearSession(sessionKey?) / deleteSession(sessionKey?) / abort(sessionKey?) / isBusy(sessionKey?) / getSessionKeys()',
+    signature: 'getMessages(sessionKey?) / clearSession(sessionKey?) / deleteSession(sessionKey?) / abort(sessionKey?) / isBusy(sessionKey?) / waitForIdle(sessionKey?) / hasSession(key) / getSessionKeys()',
     description: '同一 Runtime 可服务多个会话：请求携带 sessionKey 时按 key 路由到独立会话（消息历史、串行队列、abort/busy 状态互相隔离），未携带则使用默认会话。所有会话方法均可选传 sessionKey 定位到具体会话。配置了 sessionStorage 时，会话操作同时作用于内存和持久化存储（存储级加锁保证多进程安全）。',
     category: 'Runtime 核心',
     example: `// 多会话：同一 Runtime 服务 user-1 和 user-2，历史互相隔离
@@ -221,7 +221,8 @@ const request = new RequestBuilder()
   .message('帮我分析这段代码')
   .channel('vscode')
   .senderId('dev-alice')
-  .metadata({ file: 'src/index.ts', lineStart: 100 })
+  .metadata('file', 'src/index.ts')
+  .metadata('lineStart', 100)
   .build();
 
 await runtime.run(request);`,
@@ -233,19 +234,21 @@ await runtime.run(request);`,
     name: 'createFileSessionStorage()',
     kind: 'function',
     signature: 'createFileSessionStorage(options?: FileSessionStorageOptions): SessionStorage',
-    description: '创建文件系统会话存储适配器。每个会话以独立 JSON 文件保存，采用 temp + rename 原子写入防止损坏。支持 maxAge 过期惰性清理。',
+    description: '创建文件系统会话存储适配器。每个会话以独立 JSON 文件保存（默认目录 <pwd>/.aipack/sessions），采用 temp + rename 原子写入防止损坏。支持 maxAge 过期惰性清理与 maxStoredMessages 条数上限。',
     category: 'Session 会话',
     params: [
-      { name: 'options.baseDir', type: 'string', description: '会话存储根目录，默认 ./sessions' },
+      { name: 'options.baseDir', type: 'string', description: '会话存储根目录，默认 <pwd>/.aipack/sessions' },
       { name: 'options.maxAge', type: 'number', description: '会话最大存活时间（毫秒），超过后在加载时惰性清理。如 30 天 = 30 * 24 * 60 * 60 * 1000' },
+      { name: 'options.maxStoredMessages', type: 'number', description: '持久化消息条数上限（保留最新 N 条，0 表示不限，默认 0）' },
     ],
     returns: 'SessionStorage 实例，可传给 createRuntime 的 sessionStorage 选项',
     example: `import { createFileSessionStorage } from '@aipack/agent';
 
-// 会话持久化到磁盘，30 天后自动清理
+// 会话持久化到磁盘，30 天后自动清理，最多保留 200 条消息
 const storage = createFileSessionStorage({
   baseDir: './data/sessions',
   maxAge: 30 * 24 * 60 * 60 * 1000,  // 30 天（毫秒）
+  maxStoredMessages: 200,
 });
 
 const runtime = createRuntime({
@@ -277,16 +280,16 @@ const storage = createMemorySessionStorage({
     description: '文件会话存储支持存储级锁（O_EXCL 锁文件 + 陈旧锁回收 + 指数退避 jitter），保证多进程/多实例对同一会话的读写互斥。Runtime 的 run/stream/deleteSession 默认开启会话级加锁。',
     category: 'Session 会话',
     params: [
-      { name: 'options.lockWaitMs', type: 'number', description: '获取锁的最大等待时间（默认 5000ms），超时抛错' },
-      { name: 'options.lockStaleMs', type: 'number', description: '锁视为陈旧的阈值（默认 30000ms），超时自动回收（进程崩溃恢复）' },
-      { name: 'options.lockRetryMs', type: 'number', description: '重试间隔（默认 50ms，带指数退避 + jitter）' },
+      { name: 'options.lockWaitMs', type: 'number', description: '获取锁的最大等待时间（默认 30000ms），超时抛错' },
+      { name: 'options.lockStaleMs', type: 'number', description: '锁视为陈旧的阈值（默认 300000ms），超时自动回收（进程崩溃恢复）' },
+      { name: 'options.lockRetryMs', type: 'number', description: '重试间隔（默认 25ms，指数退避至 500ms + jitter）' },
     ],
     example: `import { createFileSessionStorage } from '@aipack/agent';
 
 const storage = createFileSessionStorage({
   baseDir: './sessions',
-  lockWaitMs: 5000,   // 最多等 5s
-  lockStaleMs: 30000, // 30s 未续期视为陈旧，可回收
+  lockWaitMs: 5000,    // 最多等 5s
+  lockStaleMs: 30000,  // 30s 未续期视为陈旧，可回收
 });
 
 // 手动持锁执行临界区（Runtime 内部已自动加锁，通常无需手动）
@@ -361,10 +364,11 @@ await sm.deleteSession('user-9');           // 内存 + 存储`,
     name: 'createPermissionPolicy()',
     kind: 'function',
     signature: 'createPermissionPolicy(options: { rules, defaultDecision? }): PermissionPolicy',
-    description: '创建规则型工具权限策略。规则按顺序匹配，命中即采用该决策（allow/deny/confirm）；无规则匹配时默认 deny（deny-by-default）。配合 Tool.permissions 能力声明与 RuntimeOptions.permissionPolicy 使用，是框架级安全底线。',
+    description: '创建规则型工具权限策略。规则按顺序匹配，命中即采用该决策（allow/deny/confirm）；无规则匹配时默认 deny（deny-by-default）。confirm 决策会调用 confirmFn 完成人工确认（未提供时视为 deny）。配合 Tool.permissions 能力声明与 RuntimeOptions.permissionPolicy 使用，是框架级安全底线。',
     category: '权限安全',
     params: [
       { name: 'options.rules', type: 'PermissionRule[]', required: true, description: '规则列表：name / toolName(正则) / permission(前缀匹配) / matchArgs(参数谓词) / decision' },
+      { name: 'options.confirmFn', type: '(req: PermissionRequest) => Promise<boolean>', description: 'confirm 决策时的人工确认回调（返回 true 放行本次）；未提供则 confirm 视为 deny' },
       { name: 'options.defaultDecision', type: 'PermissionDecision', description: '无规则命中时的决策，默认 deny' },
     ],
     returns: 'PermissionPolicy 实例，传入 createRuntime 的 permissionPolicy 选项',
@@ -387,14 +391,14 @@ const policy = createPermissionPolicy({
     // 其余一律 deny
   ],
   defaultDecision: 'deny',
+  // confirm 决策默认拒绝；提供 confirmFn 后接交互层（返回 true 放行本次）
+  confirmFn: async (req) => showConfirmDialog(req.toolName, req.args),
 });
 
 const runtime = createRuntime({
   model: adaptAiModel(getBuiltinModel('deepseek', 'deepseek-chat')),
   streamFn: createStreamFnFromAi(getBuiltinModel('deepseek', 'deepseek-chat')),
   permissionPolicy: policy,
-  // confirm 决策默认拒绝；可用 policy.confirm 接交互层
-  // policy.confirm = async (req) => showConfirmDialog(req.toolName, req.args),
 });
 
 // 未被规则放行的工具调用将返回 details.blocked 结果，run 不中断
@@ -404,21 +408,24 @@ const result = await runtime.run(createRequest('帮我执行 ls'));`,
     id: 'createAllowListPolicy',
     name: 'createAllowListPolicy()',
     kind: 'function',
-    signature: 'createAllowListPolicy(allow: string[], options?: { confirm?: string[] }): PermissionPolicy',
-    description: '创建白名单策略：列表中的工具（或权限能力，支持前缀匹配如 shell 命中 shell:exec）直接放行，其余全部拒绝。可选 confirm 列表要求人工确认。',
+    signature: 'createAllowListPolicy(options: { allow: readonly string[]; confirmFn?: (req) => Promise<boolean> }): PermissionPolicy',
+    description: '创建白名单策略：列表中的工具名直接放行，其余一律拒绝。可选 confirmFn 把未命中的工具转为人工确认（返回 true 放行本次、false 拒绝）。注意 allow 按工具名精确匹配（而非权限能力）。',
     category: '权限安全',
     params: [
-      { name: 'allow', type: 'string[]', required: true, description: '放行项：工具名或权限能力，如 ["shell:exec"]、["read_file", "grep"]' },
-      { name: 'options.confirm', type: 'string[]', description: '需人工确认的工具/能力列表' },
+      { name: 'options.allow', type: 'string[]', required: true, description: '放行的工具名列表，如 ["read_file", "grep", "glob"]' },
+      { name: 'options.confirmFn', type: '(req: PermissionRequest) => Promise<boolean>', description: '可选：未命中白名单时的人工确认回调。提供后未命中项为 confirm（返回 true 放行），未提供则直接 deny' },
     ],
     returns: 'PermissionPolicy 实例',
     example: `import { createAllowListPolicy } from '@aipack/agent';
 
-// 只放行只读文件工具 + 只读 shell，其余一律拒绝
-const policy = createAllowListPolicy([
-  'fs:read',          // read_file / grep / glob / list_directory
-  'shell:exec',       // 仅当规则细化（此处实际由 createPermissionPolicy 控制）时放行
-], { confirm: ['fs:write'] }); // 写入需 confirm`,
+// 只放行只读文件工具，其余一律拒绝；写入类工具走人工确认
+const policy = createAllowListPolicy({
+  allow: ['read_file', 'grep', 'glob', 'list_directory'],
+  confirmFn: async (req) => {
+    console.log('需确认工具:', req.toolName, req.args);
+    return confirmDialog(req); // 返回 true 放行本次
+  },
+});`,
   },
   {
     id: 'createDenyAllPolicy',
@@ -529,7 +536,7 @@ const runtime = createRuntime({
     category: 'AI 模型层',
     params: [
       { name: 'aiModel', type: 'AiModel', required: true, description: 'AI 模型对象' },
-      { name: 'options.retry', type: 'RetryOptions', description: '重试配置（最大次数、退避策略等）' },
+      { name: 'options', type: 'SimpleStreamOptions', description: '透传给底层流式实现的选项：apiKey / credentials(注入的凭证存储) / headers / baseUrl(经模型) / temperature / maxTokens / reasoning / idleTimeoutMs / timeoutMs 等' },
     ],
     returns: 'Runtime 可用的 StreamFn，可直接传入 createRuntime',
     example: `import {
@@ -544,7 +551,9 @@ const aiModel = getBuiltinModel('openai', 'gpt-4o-mini');
 const runtime = createRuntime({
   model: adaptAiModel(aiModel),
   streamFn: createStreamFnFromAi(aiModel, {
-    retry: { maxRetries: 3, baseDelayMs: 500 },
+    temperature: 0.7,
+    maxTokens: 2048,
+    idleTimeoutMs: 120_000,   // 120s 无数据视为断流
   }),
 });`,
   },
@@ -753,14 +762,15 @@ const runtime = createRuntime({
     id: 'Result',
     name: 'Result 接口',
     kind: 'interface',
-    signature: 'interface Result { content, toolsUsed, usage, stopReason, success, error?, resources? }',
-    description: 'run() 返回的结果结构。包含最终文本、工具使用情况、Token 用量、停止原因、成功标志，以及可选的错误信息和上下文资源快照。',
+    signature: 'interface Result { content, toolsUsed, usage, stopReason, metadata, success, error?, resources? }',
+    description: 'run() 返回的结果结构。包含最终文本、工具使用情况、Token 用量、停止原因、元数据、成功标志，以及可选的错误信息和上下文资源快照。',
     category: 'Result 结果',
     params: [
       { name: 'content', type: 'string', description: '最终回复文本（助手消息纯文本）' },
       { name: 'toolsUsed', type: 'string[]', description: '本次 run 中实际调用过的工具名列表' },
-      { name: 'usage', type: 'Record<string, number>', description: 'Token 用量（input/output/total/cost 等）' },
-      { name: 'stopReason', type: 'string', description: '停止原因：end_turn / max_turns / terminated / error 等' },
+      { name: 'usage', type: 'Record<string, number>', description: 'Token 用量（input/output/total/cacheRead 等）' },
+      { name: 'stopReason', type: 'string', description: '停止原因：completed / end_turn / max_turns / terminated / error 等' },
+      { name: 'metadata', type: 'Record<string, unknown>', description: '附加元数据（如终止原因 terminateReason）' },
       { name: 'success', type: 'boolean', description: '是否成功（无异常）' },
       { name: 'error', type: 'string', description: '失败原因，仅当 success=false 时存在' },
       { name: 'resources', type: 'ContextResource[]', description: '运行结束时的上下文资源快照' },
