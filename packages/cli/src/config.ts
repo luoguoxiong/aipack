@@ -29,10 +29,8 @@ export interface AipackRuntimeConfig {
   tools?: RuntimeOptions['tools'];
   /** 扩展插件列表（如 LoggingExtension） */
   extensions?: RuntimeOptions['extensions'];
-  /** 上下文转换器列表 */
+  /** 上下文转换器列表（按数组顺序链式执行） */
   transformers?: RuntimeOptions['transformers'];
-  /** 转换流水线 */
-  pipeline?: RuntimeOptions['pipeline'];
   /** 会话存储适配器（配置后优先于 sessions.baseDir） */
   sessionStorage?: RuntimeOptions['sessionStorage'];
 }
@@ -231,7 +229,6 @@ export async function loadConfig(cli: CliOptions = {}): Promise<AipackConfig> {
     'tools',
     'extensions',
     'transformers',
-    'pipeline',
     'sessionStorage',
   ];
   const runtime: Partial<RuntimeOptions> = {};

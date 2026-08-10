@@ -1,7 +1,8 @@
 /**
  * 复合压缩转换器 - 五级渐进式降级协调器
  *
- * 作为单个 ContextTransformer (priority=40) 插入 Pipeline，
+ * 作为单个 ContextTransformer 加入 Runtime 的 transformers 数组
+ *（执行顺序由数组顺序决定），
  * 内部按序执行 L1 → L2 → L3 → L4 → L5，每级仅在前一级不足时触发。
  *
  * 关键修复：
@@ -88,7 +89,7 @@ export class ContextCompressionTransformer extends BaseTransformer {
   private telemetryReporter?: TelemetryReporter;
 
   constructor(opts: CompressionTransformerOptions) {
-    super({ priority: 40 });
+    super();
 
     // 防御性校验 contextWindow
     if (!Number.isFinite(opts.contextWindow) || opts.contextWindow <= 0) {

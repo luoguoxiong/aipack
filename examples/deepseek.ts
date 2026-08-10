@@ -16,7 +16,6 @@ import {
   LoggingExtension,
   createFileSessionStorage,
   createDefaultTransformers,
-  createDefaultPipeline,
   adaptAiModel,
   createStreamFnFromAi,
   getBuiltinModel,
@@ -70,9 +69,8 @@ async function main() {
       },
     }],
 
-    // 转换流水线（可选，不传则用框架默认实现）
+    // 上下文转换器（可选；按数组顺序链式执行，上一个输出作为下一个输入）
     transformers: createDefaultTransformers({ maxResources: 200 }),
-    pipeline: createDefaultPipeline({ maxResources: 200 }),
     sessionStorage: createFileSessionStorage(), //
     // 扩展
     extensions: [new LoggingExtension(true)],

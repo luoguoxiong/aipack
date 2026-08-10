@@ -24,7 +24,7 @@ export const apiList: ApiItem[] = [
     name: 'createRuntime()',
     kind: 'function',
     signature: 'createRuntime(options?: RuntimeOptions): Runtime',
-    description: '创建一个 Agent Runtime 实例。Runtime 是整个 Agent 系统的核心调度器，负责接收请求、构建任务图、执行 Pipeline 转换、调用模型、执行工具、产出结果。',
+    description: '创建一个 Agent Runtime 实例。Runtime 是整个 Agent 系统的核心调度器，负责接收请求、构建任务图、链式转换上下文、调用模型、执行工具、产出结果。',
     category: 'Runtime 核心',
     params: [
       { name: 'options.config', type: 'Record<string, unknown>', description: '运行时配置对象，可被 Extension 读取' },
@@ -34,8 +34,7 @@ export const apiList: ApiItem[] = [
       { name: 'options.streamFn', type: 'StreamFn', description: '模型流式函数（模型提供者），若使用 AI 层可通过 createStreamFnFromAi 生成' },
       { name: 'options.tools', type: 'Tool[]', description: '初始工具列表，可在运行时通过 registerTool 追加' },
       { name: 'options.extensions', type: 'Extension[]', description: '预注册的扩展插件列表' },
-      { name: 'options.transformers', type: 'ContextTransformer[]', description: '预注册的上下文转换器' },
-      { name: 'options.pipeline', type: 'Pipeline', description: '自定义 Pipeline，覆盖默认流水线' },
+      { name: 'options.transformers', type: 'ContextTransformer[]', description: '预注册的上下文转换器，按数组顺序链式执行（上一个输出作为下一个输入）' },
       { name: 'options.sessionStorage', type: 'SessionStorage', description: '会话存储适配器，启用后会话自动持久化' },
       { name: 'options.maxSessions', type: 'number', description: '内存会话上限，超限按 LRU 淘汰最久未用会话（默认 64）。仅影响内存态，持久化会话不受影响' },
       { name: 'options.permissionPolicy', type: 'PermissionPolicy', description: '框架级工具权限策略（可选）。未配置时全部放行（向后兼容），生产环境建议配置；deny 产出 details.blocked 结果、不终止 run，模型可换策略' },
@@ -687,37 +686,33 @@ const runtime = createRuntime({
     id: 'BaseTransformer',
     name: 'BaseTransformer',
     kind: 'class',
-    signature: 'class MyTransformer extends BaseTransformer { async transform(ctx, runtime) {...} }',
-    description: '上下文转换器基类。Transformer 在模型调用前执行，按 Pipeline 顺序对上下文（消息/资源）进行转换。典型用途：上下文裁剪、消息摘要、记忆注入、工具配对校验等。',
+    signature: 'class MyTransformer extends BaseTransformer { protected async run(resources, context) {...} }',
+    description: '上下文转换器基类。Transformer 在模型调用前执行，按数组顺序对上下文（消息/资源）进行转换，上一个转换器的输出作为下一个的输入。典型用途：上下文裁剪、消息摘要、记忆注入、工具配对校验等。',
     category: 'Transformer 转换器',
-    example: `import { BaseTransformer, type TransformContext } from '@aipack/agent';
+    example: `import { BaseTransformer, createRuntime, createDefaultTransformers } from '@aipack/agent';
+import type { ContextResource, TransformContext } from '@aipack/agent';
 
 class PrefixInjectTransformer extends BaseTransformer {
   readonly name = 'prefix-inject';
 
-  async transform(ctx: TransformContext) {
-    // 在最新 user 消息前注入上下文前缀
-    const messages = [...ctx.messages];
-    const lastUserIdx = [...messages].reverse().findIndex(
-      m => m.role === 'user'
+  protected async run(
+    resources: ContextResource[],
+    _context: TransformContext,
+  ): Promise<ContextResource[]> {
+    // 给最新一条 user 消息内容加上知识库前缀
+    const latest = [...resources].reverse().find(r => r.role === 'user');
+    if (!latest || typeof latest.content !== 'string') return resources;
+    return resources.map(r =>
+      r === latest ? { ...r, content: '【知识库上下文】\\n' + latest.content } : r,
     );
-    if (lastUserIdx >= 0) {
-      const idx = messages.length - 1 - lastUserIdx;
-      const msg = messages[idx];
-      messages[idx] = {
-        ...msg,
-        content: '【知识库上下文】\\n' + (msg.content as string),
-      };
-    }
-    return { ...ctx, messages };
   }
 }
 
 const runtime = createRuntime({
+  // ...model / streamFn
   transformers: [
-    new PrefixInjectTransformer(),
-    // 也可直接使用内置转换器
-    ...createDefaultTransformers(),
+    new PrefixInjectTransformer(),   // 自定义转换器
+    ...createDefaultTransformers(),  // 内置：工具配对、系统消息清理、截断
   ],
 });`,
   },
@@ -741,105 +736,16 @@ const runtime = createRuntime({
 // 使用推荐默认配置（开箱即用）
 const transformers = createDefaultTransformers();
 
-// 或自定义组合
+// 或自定义组合（顺序即执行顺序：快照注入 → 清理 → 条数截断 → Token 截断 → 配对兜底）
 const runtime = createRuntime({
   transformers: [
-    new ToolPairingTransformer(),          // 工具配对（必要）
-    new SystemMessageCleanerTransformer(), // 清理重复 system
-    new TruncationTransformer(300),        // 最多 300 条资源
-    new TokenBudgetTransformer({ ratio: 0.75 }), // 用 75% 窗口
-    new StateSnapshotTransformer(),
+    new StateSnapshotTransformer(() => null), // 可选：提供快照函数则每轮注入状态快照
+    new SystemMessageCleanerTransformer(),    // 清理重复 system
+    new TruncationTransformer(300),           // 最多 300 条资源
+    new TokenBudgetTransformer(0.75),         // 用 75% 的 contextWindow
+    new ToolPairingTransformer(),             // 工具配对（必要，放最后兜底修复）
   ],
-  maxResources: 300,
-  contextBudgetRatio: 0.75,
-  });`,
-  },
-
-  // ========== Pipeline 流水线 ==========
-  {
-    id: 'Pipeline',
-    name: 'Pipeline 接口',
-    kind: 'interface',
-    signature: 'interface Pipeline { use / useAll / remove / run / getTransformers / clear / isEmpty }',
-    description: '转换流水线。按 Transformer 的 priority 升序串行执行，前一个的输出作为后一个的输入，形成链式处理。Runtime 在每轮模型调用前调用 pipeline.run() 对上下文资源做裁剪 / 配对修复 / 注入等处理。单个 Transformer 抛错会被跳过（warn 日志）并保留当前资源，不会中断整条流水线。createRuntime 的 pipeline 选项可覆盖默认实例。',
-    category: 'Pipeline 流水线',
-    params: [
-      { name: 'use(transformer)', type: 'ContextTransformer', description: '注册单个转换器，注册后按 priority 重新排序（数值越小越先执行）' },
-      { name: 'useAll(transformers)', type: 'ContextTransformer[]', description: '批量注册转换器' },
-      { name: 'remove(name)', type: 'string', description: '按 name 移除转换器，返回是否移除成功' },
-      { name: 'run(resources, context)', type: '(ContextResource[], TransformContext) => Promise<ContextResource[]>', description: '执行流水线，按优先级顺序串行转换并返回最终资源列表' },
-      { name: 'getTransformers()', type: '() => ContextTransformer[]', description: '获取已注册转换器（按优先级排序的拷贝）' },
-      { name: 'clear()', type: 'void', description: '清空所有转换器' },
-      { name: 'isEmpty', type: 'boolean', description: '流水线是否为空（只读）。Runtime 在为空时会跳过转换步骤' },
-    ],
-    example: `import { createPipeline, createDefaultTransformers } from '@aipack/agent';
-
-const pipeline = createPipeline();
-pipeline.useAll(createDefaultTransformers({ maxResources: 200 }));
-
-// 手动运行（Runtime 内部会自动调用，通常无需手动 run）
-const transformed = await pipeline.run(resources, context);`,
-  },
-  {
-    id: 'createPipeline',
-    name: 'createPipeline()',
-    kind: 'function',
-    signature: 'createPipeline(): Pipeline',
-    description: '创建一个空的转换流水线。返回的 Pipeline 不含任何转换器，需通过 use / useAll 注册；若想要内置转换器组合，请改用 createDefaultPipeline。',
-    category: 'Pipeline 流水线',
-    returns: 'Pipeline 实例（空）',
-    example: `import { createPipeline, ToolPairingTransformer } from '@aipack/agent';
-
-const pipeline = createPipeline();
-pipeline.use(new ToolPairingTransformer());
-
-const runtime = createRuntime({
-  // ...model / streamFn
-  pipeline,
 });`,
-  },
-  {
-    id: 'createDefaultPipeline',
-    name: 'createDefaultPipeline()',
-    kind: 'function',
-    signature: 'createDefaultPipeline(options?: { getStateSnapshot?, maxResources?, extraTransformers? }): Pipeline',
-    description: '创建带内置转换器的默认流水线。等价于 createPipeline() + createDefaultTransformers(...)，并可追加 extraTransformers。内置转换器按 priority 升序执行：SystemMessageCleaner(20) → Truncation(90) → TokenBudget(95) → ToolPairing(100)，提供 getStateSnapshot 时还会插入 StateSnapshot(30)。',
-    category: 'Pipeline 流水线',
-    params: [
-      { name: 'options.maxResources', type: 'number', description: '资源条数上限，传给 TruncationTransformer，默认 200' },
-      { name: 'options.getStateSnapshot', type: '() => string | null', description: '状态快照获取函数，提供后会追加 StateSnapshotTransformer，每轮在上下文开头注入快照' },
-      { name: 'options.extraTransformers', type: 'ContextTransformer[]', description: '额外的自定义转换器，追加到内置转换器之后（仍按 priority 排序）' },
-    ],
-    returns: '已注册内置转换器的 Pipeline 实例',
-    example: `import { createRuntime, createDefaultPipeline } from '@aipack/agent';
-
-const runtime = createRuntime({
-  // ...model / streamFn
-  pipeline: createDefaultPipeline({
-    maxResources: 200,          // 最多保留 200 条资源
-    extraTransformers: [        // 追加自定义转换器
-      // new MyRagInjectTransformer(),
-    ],
-  }),
-});`,
-  },
-  {
-    id: 'PipelineRunner',
-    name: 'PipelineRunner / createPipelineRunner()',
-    kind: 'class',
-    signature: 'createPipelineRunner(options?): PipelineRunner  ·  class PipelineRunner { use / useAll / run / getTransformers / getStats / getPipeline }',
-    description: 'Pipeline 的便捷封装，额外提供执行统计（runCount / totalTransformations / transformerCount）。适合在脱离 Runtime 的独立场景运行 Pipeline 并观测转换次数。Runtime 内部不使用 Runner，而是直接持有 Pipeline。',
-    category: 'Pipeline 流水线',
-    example: `import { createPipelineRunner } from '@aipack/agent';
-
-const runner = createPipelineRunner({ maxResources: 200 });
-
-const transformed = await runner.run(resources, context);
-console.log(runner.getStats());
-// { runCount, totalTransformations, transformerCount }
-
-// 也可拿到底层 Pipeline 传给 createRuntime
-const pipeline = runner.getPipeline();`,
   },
 
   // ========== Result 结果 ==========

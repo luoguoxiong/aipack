@@ -111,7 +111,6 @@ export default {
   // tools: [{ name: 'ping', description: '测试', execute: async () => 'pong' }],
   // extensions: [],
   // transformers: [],
-  // pipeline: undefined,
   // sessionStorage: undefined,
 };
 ```
@@ -135,8 +134,7 @@ export default {
 | `config`           | object               | -               | 透传给 Runtime 的配置对象                   |
 | `tools`            | Tool[]               | -               | 自定义工具列表                              |
 | `extensions`       | Extension[]          | -               | 扩展插件（如 `LoggingExtension`）           |
-| `transformers`     | ContextTransformer[] | -               | 上下文转换器                                |
-| `pipeline`         | Pipeline             | -               | 转换流水线                                  |
+| `transformers`     | ContextTransformer[] | -               | 上下文转换器（按数组顺序链式执行）        |
 | `sessionStorage`   | SessionStorage       | 文件存储        | 自定义会话存储（优先于 `sessions.baseDir`） |
 
 ### 会话 Key 说明

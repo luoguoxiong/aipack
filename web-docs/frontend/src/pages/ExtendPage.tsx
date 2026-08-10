@@ -158,8 +158,8 @@ export default function ExtendPage() {
             <tr><td className="param-name">beforeInitialize</td><td>AsyncSeriesHook</td><td>Request</td><td>最早：刚接收请求</td></tr>
             <tr><td className="param-name">afterInitialize</td><td>AsyncSeriesHook</td><td>Request</td><td>会话恢复后</td></tr>
             <tr><td className="param-name">beforeRun</td><td><Tag color="blue">Waterfall</Tag></td><td>Request → Request</td><td>修改请求内容（加前缀/渠道）</td></tr>
-            <tr><td className="param-name">beforeTransform</td><td><Tag color="blue">Waterfall</Tag></td><td>Context → Context</td><td>Pipeline 前修改上下文</td></tr>
-            <tr><td className="param-name">afterTransform</td><td><Tag color="blue">Waterfall</Tag></td><td>Context → Context</td><td>Pipeline 后再加工</td></tr>
+            <tr><td className="param-name">beforeTransform</td><td><Tag color="blue">Waterfall</Tag></td><td>Context → Context</td><td>转换前修改上下文</td></tr>
+            <tr><td className="param-name">afterTransform</td><td><Tag color="blue">Waterfall</Tag></td><td>Context → Context</td><td>转换后再加工</td></tr>
             <tr><td className="param-name">beforeEmit / afterEmit</td><td>AsyncSeriesHook</td><td>—</td><td>每轮模型调用前后</td></tr>
             <tr><td className="param-name">beforeToolCall</td><td><Tag color="blue">Waterfall</Tag></td><td>(Decision, Context)</td><td>工具执行前：block/terminate/改 args</td></tr>
             <tr><td className="param-name">afterToolCall</td><td><Tag color="blue">Waterfall</Tag></td><td>(Decision, Context)</td><td>工具执行后：改 result/terminate</td></tr>
@@ -175,7 +175,7 @@ export default function ExtendPage() {
           <BoxPlotOutlined /> 3. 自定义 Transformer（上下文转换）
         </h2>
         <p style={{ lineHeight: 1.8, color: '#475569' }}>
-          Transformer 在 <b>每轮模型调用前</b> 按 Pipeline 顺序串行执行。
+          Transformer 在 <b>每轮模型调用前</b> 按数组顺序串行执行（上一个转换器的输出作为下一个的输入）。
           典型用途：上下文裁剪、历史摘要、记忆注入、敏感词过滤、知识库 RAG 注入…
           推荐继承 <code>BaseTransformer</code>，务必使用 <code>createDefaultTransformers()</code>
           提供的工具配对、系统消息清理等基础能力。

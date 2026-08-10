@@ -1,8 +1,9 @@
 /**
  * Transformer - 上下文转换器
  *
- * Transformer 负责在 Pipeline 中对 ContextResource 集合进行转换，
+ * Transformer 负责对 ContextResource 集合进行转换，
  * 例如压缩、清理、配对修复、状态快照注入等。
+ * Runtime 按数组顺序链式执行转换器：上一个转换器的输出作为下一个的输入。
  */
 
 import type { ContextResource } from './context-resource';
@@ -41,8 +42,6 @@ export interface TransformRuntime {
 export interface ContextTransformer {
   /** 转换器名称 */
   readonly name: string;
-  /** 转换器优先级（数值越小越先执行） */
-  readonly priority: number;
   /**
    * 执行转换
    * @param resources 输入资源列表
@@ -58,10 +57,6 @@ export interface ContextTransformer {
 // ─── 转换器选项 ───────────────────────────────────────────────────
 
 export interface TransformerOptions {
-  /** 是否启用 */
-  enabled?: boolean;
-  /** 自定义优先级 */
-  priority?: number;
   /** 额外配置 */
   config?: Record<string, unknown>;
 }
@@ -70,14 +65,10 @@ export interface TransformerOptions {
 
 export abstract class BaseTransformer implements ContextTransformer {
   abstract readonly name: string;
-  readonly priority: number;
 
-  protected enabled: boolean;
   protected config: Record<string, unknown>;
 
   constructor(options: TransformerOptions = {}) {
-    this.priority = options.priority ?? 100;
-    this.enabled = options.enabled ?? true;
     this.config = options.config ?? {};
   }
 
@@ -85,7 +76,6 @@ export abstract class BaseTransformer implements ContextTransformer {
     resources: ContextResource[],
     context: TransformContext,
   ): Promise<ContextResource[]> {
-    if (!this.enabled) return resources;
     return this.run(resources, context);
   }
 

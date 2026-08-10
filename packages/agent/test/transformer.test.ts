@@ -180,15 +180,10 @@ describe('TokenBudgetTransformer', () => {
 });
 
 describe('createDefaultTransformers 顺序', () => {
-  it('ToolPairing 优先级最高（最后执行）', () => {
+  it('ToolPairing 排在最后', () => {
     const transformers = createDefaultTransformers();
-    const pairing = transformers.find(t => t.name === 'tool-pairing');
-    const truncation = transformers.find(t => t.name === 'truncation');
-    const tokenBudget = transformers.find(t => t.name === 'token-budget');
-    assert.ok(pairing);
-    assert.ok(truncation);
-    assert.ok(tokenBudget);
-    assert.ok(pairing!.priority > truncation!.priority, 'pairing 应晚于 truncation');
-    assert.ok(pairing!.priority > tokenBudget!.priority, 'pairing 应晚于 token-budget');
+    const names = transformers.map(t => t.name);
+    assert.ok(names.indexOf('tool-pairing') > names.indexOf('truncation'), 'pairing 应晚于 truncation');
+    assert.ok(names.indexOf('tool-pairing') > names.indexOf('token-budget'), 'pairing 应晚于 token-budget');
   });
 });

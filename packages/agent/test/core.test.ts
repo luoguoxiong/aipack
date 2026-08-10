@@ -1,5 +1,5 @@
 /**
- * Core 层测试：类型工具、Tapable 钩子、ExtensionManager、Pipeline、TaskGraph、
+ * Core 层测试：类型工具、Tapable 钩子、ExtensionManager、TaskGraph、
  * ContextResource、Request、Result、BaseTransformer
  */
 import { describe, it } from 'node:test';
@@ -15,8 +15,6 @@ import {
   HookMap,
   ExtensionManager,
   BaseExtension,
-  createPipeline,
-  PipelineImpl,
   TaskGraphImpl,
   createTaskGraph,
   TaskGraphBuilder,
@@ -273,105 +271,6 @@ describe('BaseExtension', () => {
     const ext = new TestExt();
     ext.apply({} as RuntimeHooks, makeExtCtx());
     assert.equal(setupCalled, true);
-  });
-});
-
-// ─── Pipeline ──────────────────────────────────────────────────────
-
-class DoublerTransformer extends BaseTransformer {
-  readonly name = 'doubler';
-  constructor(priority = 50) {
-    super({ priority });
-  }
-  protected async run(resources: ContextResource[]): Promise<ContextResource[]> {
-    return [...resources, ...resources];
-  }
-}
-
-class FailTransformer extends BaseTransformer {
-  readonly name = 'fail';
-  constructor(priority = 50) {
-    super({ priority });
-  }
-  protected async run(): Promise<ContextResource[]> {
-    throw new Error('transform fail');
-  }
-}
-
-describe('PipelineImpl', () => {
-  it('use 按 priority 排序', () => {
-    const pipeline = new PipelineImpl();
-    const t1 = new DoublerTransformer(100);
-    const t2 = new DoublerTransformer(10);
-    const t3 = new DoublerTransformer(50);
-    pipeline.use(t1);
-    pipeline.use(t2);
-    pipeline.use(t3);
-    const ts = pipeline.getTransformers();
-    assert.equal(ts[0].priority, 10);
-    assert.equal(ts[1].priority, 50);
-    assert.equal(ts[2].priority, 100);
-  });
-
-  it('useAll 批量注册并排序', () => {
-    const pipeline = new PipelineImpl();
-    pipeline.useAll([
-      new DoublerTransformer(100),
-      new DoublerTransformer(10),
-    ]);
-    const ts = pipeline.getTransformers();
-    assert.equal(ts.length, 2);
-    assert.equal(ts[0].priority, 10);
-  });
-
-  it('remove 按名称移除', () => {
-    const pipeline = new PipelineImpl();
-    pipeline.use(new DoublerTransformer());
-    assert.equal(pipeline.remove('doubler'), true);
-    assert.equal(pipeline.remove('doubler'), false);
-    assert.equal(pipeline.getTransformers().length, 0);
-  });
-
-  it('isEmpty / clear', () => {
-    const pipeline = new PipelineImpl();
-    assert.equal(pipeline.isEmpty, true);
-    pipeline.use(new DoublerTransformer());
-    assert.equal(pipeline.isEmpty, false);
-    pipeline.clear();
-    assert.equal(pipeline.isEmpty, true);
-  });
-
-  it('run 串联执行所有转换器', async () => {
-    const pipeline = new PipelineImpl();
-    pipeline.use(new DoublerTransformer(10));
-    pipeline.use(new DoublerTransformer(20));
-    const input = [createMessageResource('user', 'hi')];
-    const result = await pipeline.run(input, ctx());
-    assert.equal(result.length, 4); // 1 -> 2 -> 4
-  });
-
-  it('run 中单个转换器抛错时跳过并保留当前资源', async () => {
-    const pipeline = new PipelineImpl();
-    pipeline.use(new FailTransformer(10));
-    pipeline.use(new DoublerTransformer(20));
-    const input = [createMessageResource('user', 'hi')];
-    const result = await pipeline.run(input, ctx());
-    // 第一个失败被跳过，输入原样进入第二个，第二个翻倍
-    assert.equal(result.length, 2);
-  });
-
-  it('getTransformers 返回拷贝', () => {
-    const pipeline = new PipelineImpl();
-    pipeline.use(new DoublerTransformer());
-    const ts = pipeline.getTransformers();
-    ts.pop();
-    assert.equal(pipeline.getTransformers().length, 1);
-  });
-
-  it('createPipeline 工厂返回 PipelineImpl 实例', () => {
-    const p = createPipeline();
-    assert.ok(p instanceof PipelineImpl);
-    assert.equal(p.isEmpty, true);
   });
 });
 
@@ -751,36 +650,17 @@ describe('BaseTransformer', () => {
   class TestTransformer extends BaseTransformer {
     readonly name = 'test';
     called = false;
-    constructor(options?: { enabled?: boolean; priority?: number }) {
-      super(options ?? {});
-    }
     protected async run(resources: ContextResource[]): Promise<ContextResource[]> {
       this.called = true;
       return resources;
     }
   }
 
-  it('enabled=true 时执行 run', async () => {
+  it('执行 run 并返回转换结果', async () => {
     const t = new TestTransformer();
     const input = [createMessageResource('user', 'hi')];
-    await t.transform(input, ctx());
+    const result = await t.transform(input, ctx());
     assert.equal(t.called, true);
-  });
-
-  it('enabled=false 时跳过 run', async () => {
-    const t = new TestTransformer({ enabled: false });
-    const input = [createMessageResource('user', 'hi')];
-    await t.transform(input, ctx());
-    assert.equal(t.called, false);
-  });
-
-  it('默认 priority=100', () => {
-    const t = new TestTransformer();
-    assert.equal(t.priority, 100);
-  });
-
-  it('自定义 priority', () => {
-    const t = new TestTransformer({ priority: 50 });
-    assert.equal(t.priority, 50);
+    assert.equal(result, input);
   });
 });

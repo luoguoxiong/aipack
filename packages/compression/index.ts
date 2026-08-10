@@ -16,7 +16,8 @@
  *     // 可选：注入 ExtensionContext.shared 让 CompressionTelemetryExtension 自动上报
  *     sharedMap: extensionContext.shared,
  *   });
- *   pipeline.use(transformer);
+ *   // 加入 createRuntime 的 transformers 数组（按数组顺序链式执行）
+ *   transformers: [transformer],
  *
  *   // 可选：注入 handoff 钩子，让 L5 真正切换会话
  *   transformer.setHandoffHook(({ handoff }) => {

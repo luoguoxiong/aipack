@@ -18,8 +18,8 @@ export const packages: PackageInfo[] = [
     icon: '📦',
     install: 'pnpm add aipack',
     features: [
-      'Runtime 核心调度器：请求 → 任务图 → Pipeline → 模型 → 工具 → 结果',
-      'Tapable 扩展机制：Extension 钩子 + ContextTransformer 流水线',
+      'Runtime 核心调度器：请求 → 任务图 → 转换器链 → 模型 → 工具 → 结果',
+      'Tapable 扩展机制：Extension 钩子 + ContextTransformer 链式转换',
       '内存/文件双会话存储，maxAge 过期惰性清理 + 存储级锁（多进程互斥）',
       'SessionManager 多会话门面：多会话共享同一 Runtime，历史/队列/状态按 key 隔离',
       '框架级 PermissionPolicy 权限层：deny-by-default + confirm 钩子 + 能力声明',

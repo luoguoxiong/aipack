@@ -8,7 +8,7 @@
 
 ## 一、总体评价
 
-架构设计是**加分项**：`Runtime + Extension(Tapable) + Transformer(Pipeline)` 三层模型清晰、开闭原则贯彻得好；会话串行队列、原子写、工具配对修复、五级压缩降级、BM25+向量混合检索、KeyedMutex 并发控制等细节体现了很强的工程意识。核心调度（`packages/aipack/runtime/index.ts`）质量在同类自研框架中属上乘。
+架构设计是**加分项**：`Runtime + Extension(Tapable) + Transformer(链式转换)` 三层模型清晰、开闭原则贯彻得好；会话串行队列、原子写、工具配对修复、五级压缩降级、BM25+向量混合检索、KeyedMutex 并发控制等细节体现了很强的工程意识。核心调度（`packages/aipack/runtime/index.ts`）质量在同类自研框架中属上乘。
 
 **但距离"生产级别"还有明显差距**，主要集中在三块：① AI 层存在几个"声明了但不生效"的正确性 Bug；② 安全边界（coding 包）有可被利用的绕过；③ 可观测性、发布工程化、CI 完全缺失。当前版本更适合定位 **v0.1 内部可用**。
 

@@ -5,8 +5,8 @@ Agent 框架：`Runtime + Extension + Transformer`，配置入口 + 执行入口
 
 ## 特性
 
-- **Runtime 核心调度器**：接收请求 → 构建任务图 → Pipeline 转换上下文 → 调用模型 → 执行工具 → 产出结果
-- **扩展机制**：`Extension`（插件）通过 Tapable 钩子挂载生命周期，`ContextTransformer` 通过 Pipeline 流水线转换上下文
+- **Runtime 核心调度器**：接收请求 → 构建任务图 → 链式转换上下文 → 调用模型 → 执行工具 → 产出结果
+- **扩展机制**：`Extension`（插件）通过 Tapable 钩子挂载生命周期，`ContextTransformer` 按数组顺序链式转换上下文
 - **会话持久化**：内存 / 文件两种 `SessionStorage` 适配器，`maxAge` 过期惰性清理
 - **流式与同步双入口**：`runtime.run()` 一次性返回，`runtime.stream()` 流式返回增量事件
 - **工具循环**：模型输出 tool call → 自动执行工具 → 结果回填上下文，直到无工具调用或终止
@@ -53,9 +53,7 @@ const result = await runtime.run(createRequest('你好'));
 console.log(result.content);
 
 // 流式调用
-for await (const chunk of runtime.stream(
-  createRequest('写一首诗'),
-)) {
+for await (const chunk of runtime.stream(createRequest('写一首诗'))) {
   if (chunk.type === 'text') process.stdout.write(chunk.content ?? '');
 }
 
@@ -70,9 +68,8 @@ await runtime.close();
 | `Request`            | 请求入口（`createRequest`）                    |
 | `ContextResource`    | 上下文资源单元                                 |
 | `TaskGraph`          | 任务依赖图                                     |
-| `ContextTransformer` | 上下文转换器                                   |
+| `ContextTransformer` | 上下文转换器（按数组顺序链式执行）             |
 | `Extension`          | 扩展插件                                       |
-| `Pipeline`           | 转换流水线                                     |
 | `Result`             | 运行结果                                       |
 | `Tapable`            | 事件钩子系统                                   |
 
@@ -117,8 +114,7 @@ interface RuntimeOptions {
   streamFn?: StreamFn; // 模型提供者（若不使用 adapters/ai 则必须提供）
   tools?: Tool[]; // 初始工具列表
   extensions?: Extension[]; // 预注册扩展
-  transformers?: ContextTransformer[]; // 预注册转换器
-  pipeline?: Pipeline;
+  transformers?: ContextTransformer[]; // 预注册转换器（按数组顺序链式执行）
   sessionStorage?: SessionStorage; // 启用后会话自动持久化
 }
 ```
@@ -158,10 +154,7 @@ interface RuntimeOptions {
 
 - `BaseTransformer` 基类，实现 `ContextTransformer` 接口（transform/transformBatch）
 - 内置转换器：`ToolPairingTransformer`、`StateSnapshotTransformer`、`TruncationTransformer`、`SystemMessageCleanerTransformer`、`ensureToolPairing`、`createDefaultTransformers`
-
-### Pipeline
-
-- `PipelineRunner` / `createPipelineRunner` / `createDefaultPipeline` — 顺序执行上下文转换
+- 执行顺序由 `transformers` 数组顺序决定（含 `RuntimeOptions.transformers` 与 `useTransformer()` 追加），上一个转换器的输出作为下一个的输入；单个转换器失败会被跳过并告警，不影响后续转换器
 
 ### Extension
 
@@ -237,7 +230,8 @@ const runtime = createRuntime({
 
 ```ts
 const runtime = createRuntime({
-  model, streamFn,
+  model,
+  streamFn,
   sessionKey: 'u1',
   sessionStorage: createFileSessionStorage({ baseDir: './sessions' }),
 });
@@ -250,8 +244,18 @@ console.log(r2.content); // 输出：张三
 跨会话场景（如不同用户的独立上下文）请创建多个 `Runtime` 实例，各自持有不同的 `sessionKey`：
 
 ```ts
-const runtime1 = createRuntime({ model, streamFn, sessionKey: 'user-a', sessionStorage });
-const runtime2 = createRuntime({ model, streamFn, sessionKey: 'user-b', sessionStorage });
+const runtime1 = createRuntime({
+  model,
+  streamFn,
+  sessionKey: 'user-a',
+  sessionStorage,
+});
+const runtime2 = createRuntime({
+  model,
+  streamFn,
+  sessionKey: 'user-b',
+  sessionStorage,
+});
 ```
 
 - `maxAge` 单位为**毫秒**；需要按天配置时请自行换算（如 30 天 = `30 * 24 * 60 * 60 * 1000`）
