@@ -50,7 +50,7 @@ export const packages: PackageInfo[] = [
       'createCodingAgent() 工厂：一键组装模型 + Runtime + 工具集 + 系统提示词',
       'createCodingPlugin() 插件：注入 agentpack.config.js',
       'run_command 无 shell 执行：spawn 直启子进程，多语句/管道/重定向/通配符一律拒绝',
-      'run_command 权限策略：allow/deny/confirm + 自定义规则 + allow-always',
+      'run_command 权限策略：只读命令直接 allow，高危/变更性命令（rm/sudo/写系统路径/curl|sh 等）一律 confirm 人工确认 + allow-always',
       'workspace 沙箱：路径校验 + realpath 解析，防 ../../ 与 symlink 逃逸',
       '工具声明 permissions 能力（shell:exec / fs:write / fs:read），配合框架级 PermissionPolicy',
       'agentpack-coding CLI：交互式 chat + 一次性 run + --memory 集成',

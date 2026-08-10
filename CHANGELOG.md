@@ -21,6 +21,7 @@
 ### agentpack-coding
 - **run_command 无 shell 执行**：`parseCommandToArgv` 解析 argv + `spawn(file, args, { shell: false })`，多语句（`;`/`&&`/`||`/换行）/管道/重定向/命令替换/未引用通配符一律拒绝并提示替代工具；前导 `NAME=value` 收集为子进程 env
 - **工具声明权限能力**：read_file/write_file/edit_file/list_directory/grep/glob 声明 `fs:read`/`fs:write`，run_command 声明 `shell:exec`，可被框架级 PermissionPolicy 统一裁决
+- **权限策略默认改为全 confirm**：高危命令不再硬性拦截——`rm`、写系统路径（`/etc/` 等）、`curl|sh`、`sudo` 由 deny 改为 confirm（需人工确认，无确认回调时兜底拒绝）；无规则匹配的默认决策同样由 deny 改为 confirm。只读命令仍直接 allow，`allow-always` 支持整条命令永久放行
 
 ### 测试
 - 新增 SessionManager 多会话测试、存储级锁多进程互斥测试、PermissionPolicy 单测 + Runtime 集成（deny/allowList/confirm/流式/telemetry）、parseCommandToArgv 与无 shell 执行用例（引号/env 前缀/多语句/管道/通配符/重定向）、symlink 沙箱逃逸用例、Models credentials 注入 + getAuth + google envVar 回归

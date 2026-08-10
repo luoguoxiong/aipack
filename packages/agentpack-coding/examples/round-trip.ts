@@ -132,7 +132,7 @@ async function main(): Promise<void> {
   const rc1 = await runCmd.execute('c12', { command: 'ls' });
   assert(!textOf(rc1).includes('失败') && !textOf(rc1).includes('拒绝'), `ls 放行: ${textOf(rc1).slice(0, 60)}`);
 
-  // deny：rm（deny-rm）
+  // confirm 无 fn → deny：rm（confirm-rm 无确认回调时兜底拒绝）
   const rc2 = await runCmd.execute('c13', { command: 'rm -rf foo' });
   assert(textOf(rc2).includes('拒绝'), `rm 被拒绝: ${textOf(rc2).slice(0, 60)}`);
 
