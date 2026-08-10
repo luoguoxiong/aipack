@@ -20,6 +20,5 @@ export default {
   // tools: [],
   // extensions: [],
   // transformers: [],
-  // pipeline: undefined,
   // sessionStorage: undefined,
 };

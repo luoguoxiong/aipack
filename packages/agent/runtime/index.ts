@@ -13,11 +13,11 @@ import type {
   Request,
   Result,
   ResultChunk,
-  Pipeline,
   Extension,
   RuntimeHooks,
   ExtensionContext,
   ContextTransformer,
+  TransformContext,
   ToolCallContext,
   BeforeToolCallDecision,
   AfterToolCallDecision,
@@ -26,7 +26,6 @@ import type {
 } from '../core';
 import {
   ExtensionManager,
-  createPipeline,
   createTaskGraph,
   ResultBuilder,
   isErrorToolResult,
@@ -164,7 +163,8 @@ export class AgentRuntime implements Runtime {
   private _config: Record<string, unknown>;
   private _extensions: ExtensionManager;
   private _hooks: RuntimeHooks;
-  private _pipeline: Pipeline;
+  /** 上下文转换器列表，按数组顺序链式执行（上一个输出作为下一个输入） */
+  private _transformers: ContextTransformer[];
 
   private _model: Model;
   private _streamFn: StreamFn;
@@ -194,7 +194,8 @@ export class AgentRuntime implements Runtime {
     this._config = options.config ?? {};
     this._extensions = new ExtensionManager();
     this._hooks = this._extensions.getHooks();
-    this._pipeline = options.pipeline ?? createPipeline();
+    // 转换器按传入顺序链式执行（上一个输出作为下一个输入）
+    this._transformers = [...(options.transformers ?? [])];
 
     this._model = options.model ?? {
       id: 'unknown',
@@ -231,11 +232,6 @@ export class AgentRuntime implements Runtime {
     this._maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
     // 默认会话预先入表，保证未指定 sessionKey 的请求路由到它
     this._sessions = new Map([[this._sessionKey, createSessionState()]]);
-
-    // 注册转换器
-    if (options.transformers) {
-      this._pipeline.useAll(options.transformers);
-    }
   }
 
   // ─── 静态工厂 ───────────────────────────────────────────────────
@@ -318,7 +314,7 @@ export class AgentRuntime implements Runtime {
   }
 
   useTransformer(transformer: ContextTransformer): this {
-    this._pipeline.use(transformer);
+    this._transformers.push(transformer);
     return this;
   }
 
@@ -579,7 +575,6 @@ export class AgentRuntime implements Runtime {
     return {
       request,
       graph: createTaskGraph(),
-      pipeline: this._pipeline,
       resources: [],
       messages: (session ?? this.getSession(sessionKey ?? this._sessionKey)).messages,
       completed: false,
@@ -596,7 +591,7 @@ export class AgentRuntime implements Runtime {
     }
     this._sessions.clear();
     this._extensions.clear();
-    this._pipeline.clear();
+    this._transformers = [];
   }
 
   // ─── 对话循环（同步） ───────────────────────────────────────────
@@ -615,7 +610,7 @@ export class AgentRuntime implements Runtime {
       let maxTurns = this._maxTurns;
 
       while (maxTurns-- > 0) {
-        // 1. Pipeline 转换上下文（原地替换，保持 session 引用）
+        // 1. 链式转换上下文（原地替换，保持 session 引用）
         await this.transformMessages(compilation, sessionKey);
 
         // 2. 构建 LLM 上下文
@@ -674,7 +669,7 @@ export class AgentRuntime implements Runtime {
       let maxTurns = this._maxTurns;
 
       while (maxTurns-- > 0) {
-        // 1. Pipeline 转换（原地替换，保持 session 引用）
+        // 1. 链式转换上下文（原地替换，保持 session 引用）
         await this.transformMessages(compilation, sessionKey);
 
         // 2. 构建上下文
@@ -1141,18 +1136,17 @@ export class AgentRuntime implements Runtime {
     return usage;
   }
 
-  /** 通过 Pipeline 转换上下文（原地替换消息数组，保持与 session 的共享引用） */
+  /** 链式执行上下文转换器（按数组顺序，上一个输出作为下一个输入） */
   private async transformMessages(
     compilation: Compilation,
     sessionKey: string,
   ): Promise<void> {
-    if (this._pipeline.isEmpty) {
+    if (this._transformers.length === 0) {
       return;
     }
 
-    const resources = messagesToResources(compilation.messages);
-
-    const transformed = await this._pipeline.run(resources, {
+    let resources = messagesToResources(compilation.messages);
+    const context: TransformContext = {
       graph: compilation.graph,
       runtime: {
         sessionKey,
@@ -1161,9 +1155,21 @@ export class AgentRuntime implements Runtime {
         maxTokens: this._model.maxTokens,
         contextBudgetRatio: this._contextBudgetRatio,
       },
-    });
+    };
 
-    const messages = resourcesToMessages(transformed);
+    for (const transformer of this._transformers) {
+      try {
+        resources = await transformer.transform(resources, context);
+      } catch (err) {
+        // 单个转换器失败时跳过，保持当前资源不变，但需可观测
+        console.warn(
+          `[Runtime] 转换器 "${transformer.name}" 失败，已跳过:`,
+          (err as Error)?.message ?? err,
+        );
+      }
+    }
+
+    const messages = resourcesToMessages(resources);
     // 原地替换而非重新赋值：createCompilation 将 session.messages 按引用共享，
     // 重新赋值会导致后续 push 的 assistant/tool 消息脱离会话（持久化丢失）
     compilation.messages.splice(0, compilation.messages.length, ...messages);

@@ -74,10 +74,6 @@ export type { TaskGraph, GraphNode } from './task-graph';
 export { BaseTransformer } from './transformer';
 export type { ContextTransformer, TransformContext, TransformRuntime, TransformerOptions } from './transformer';
 
-// ─── Pipeline: 转换流水线 ─────────────────────────────────────────
-export { PipelineImpl, createPipeline } from './pipeline';
-export type { Pipeline } from './pipeline';
-
 // ─── Extension: 扩展插件 ──────────────────────────────────────────
 export { ExtensionManager, BaseExtension } from './extension';
 export type { Extension, ExtensionContext, RuntimeHooks } from './extension';

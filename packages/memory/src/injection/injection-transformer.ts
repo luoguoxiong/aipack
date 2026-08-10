@@ -1,7 +1,7 @@
 /**
  * 记忆注入转换器。
  *
- * 在 Pipeline 中最先执行（priority 5），每轮「先剥后注」：
+ * 需放在 transformers 数组最前（先剥后注），每轮：
  *   1. 剥除所有 user_message 资源内容中已存在的 sentinel 记忆块（清上轮注入，
  *      含已持久化进 session 的）。
  *   2. 取最新 user_message 的纯文本作为检索 query。
@@ -26,9 +26,6 @@ import {
 } from './sentinels';
 
 export interface InjectionOptions {
-  enabled?: boolean;
-  /** 优先级，默认 5（最先执行） */
-  priority?: number;
   /** 注入 top-K，默认 5 */
   maxMemories?: number;
   /** 最低分数阈值，默认 0.1 */
@@ -49,10 +46,7 @@ export class MemoryInjectionTransformer extends BaseTransformer {
   private onRecall?: (ids: string[]) => void | Promise<void>;
 
   constructor(retriever: HybridRetriever, options: InjectionOptions = {}) {
-    super({
-      enabled: options.enabled ?? true,
-      priority: options.priority ?? 5,
-    });
+    super();
     this.retriever = retriever;
     this.maxMemories = options.maxMemories ?? 5;
     this.minScore = options.minScore ?? 0.1;

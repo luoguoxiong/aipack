@@ -10,7 +10,7 @@
 2. **`transformMessages` 原地 splice** —— `runtime/index.ts:565-578`，且 `compilation.messages` 与 `session.messages` 共享引用（`createCompilation:308-319`）。Transformer 输出会持久化进会话存储（`finally → persistSession:254`）。注入内容若不每轮清理会跨轮累积。
 3. **`meta` 在 message↔resource 往返中丢失** —— `context-resource/index.ts:30-38`（user 消息 → resource 不带 meta）、`112-119`（resource → user 消息只取 role/content/timestamp）。故跨轮标记旧注入不能用 `meta.injectedBy`，必须用**内容内 sentinel**（随 content 持久化，下轮可识别）。
 4. **`done` 钩子签名已扩展为 `AsyncSeriesHook<[Result, Request?]>`** —— `core/extension.ts:35`，框架在 done 阶段透传最终 `Request`（含 `.message`/`.sessionKey`）。capture 在 `beforeRun`（收 `Request`）stash、`done` 用 `request.sessionKey` 精确配对消费。
-5. **Pipeline 按优先级升序** —— `core/pipeline.ts`。内置：ToolPairing(10)、SystemMessageCleaner(20)、StateSnapshot(30)、Truncation(90)。注入器 priority=5 最先执行。
+5. **Transformers 按数组顺序执行** —— Runtime 的 `transformers` 数组（`createRuntime` 传入 + `useTransformer()` 追加）按数组顺序链式执行，不再按 priority 排序。内存注入器需放在 transformers 数组**最前**才能"先剥后注"；其余内置转换器建议按 tool-pairing → system-message-cleaner → state-snapshot → truncation 顺序排布。
 6. **CLI 透传 extensions/transformers/tools** —— `aipack-cli/src/runtime.ts:78-92`（`...runtimeOverrides` 展开）、`config.ts:226-240`（只收配置文件显式字段）。用户在 `aipack.config.js` import 后展开 `install()` 即生效。
 7. **`extractTextFromResource` 已导出** —— `context-resource/index.ts:177-181`，兼容 string 与 `ContentBlock[]`。
 8. **FileSessionStorage 范式** —— `session/file.ts`：`resolveBaseDir`（处理 `~`/绝对/相对）、`encodeURIComponent` 文件名、原子写 `tmp+rename`、`maxAge` 惰性删除。镜像之。
@@ -78,7 +78,7 @@ packages/memory/
 │   │   └── index.ts
 │   ├── injection/
 │   │   ├── sentinels.ts           # MEMORY_BLOCK_START/END 常量 + stripMemoryBlock/wrapMemoryBlock/buildMemoryBlock
-│   │   ├── injection-transformer.ts # MemoryInjectionTransformer extends BaseTransformer (priority 5)
+│   │   ├── injection-transformer.ts # MemoryInjectionTransformer extends BaseTransformer（需放 transformers 数组最前）
 │   │   └── index.ts
 │   ├── consolidation/
 │   │   ├── consolidator.ts        # Consolidator: 增量候选 + 去重/合并（置信度 max+bonus）/修剪
@@ -229,15 +229,13 @@ export function buildMemoryBlock(results: MemorySearchResult[]): string;
 
 ```ts
 export interface InjectionOptions {
-  enabled?: boolean;
-  priority?: number; // 默认 5（最先执行）
   maxMemories?: number; // 默认 5
   minScore?: number; // 默认 0.1（本地阈值，不写回共享 retriever）
   queryTransform?: (text: string) => string;
   onRecall?: (ids: string[]) => void | Promise<void>; // 命中后更新检索统计（fire-and-forget）
 }
 export class MemoryInjectionTransformer extends BaseTransformer {
-  readonly name = 'memory-injection'; // priority 5
+  readonly name = 'memory-injection';
   constructor(retriever: HybridRetriever, options?: InjectionOptions);
   protected async run(
     resources: ContextResource[],

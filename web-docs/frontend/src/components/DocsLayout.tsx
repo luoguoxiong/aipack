@@ -43,7 +43,6 @@ const apiMenu: MenuItem[] = [
   { key: '/api#ai', label: 'AI 模型层', icon: <AppstoreOutlined /> },
   { key: '/api#extension', label: 'Extension 扩展', icon: <SettingOutlined /> },
   { key: '/api#transformer', label: 'Transformer 转换器', icon: <CodeOutlined /> },
-  { key: '/api#pipeline', label: 'Pipeline 流水线', icon: <BoxPlotOutlined /> },
   { key: '/api#result', label: 'Result 结果', icon: <ApiOutlined /> },
 ];
 

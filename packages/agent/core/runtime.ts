@@ -4,7 +4,7 @@
  * Runtime 是整个 Agent 系统的核心调度器，负责：
  * 1. 接收 Request（请求入口）
  * 2. 构建 TaskGraph（任务依赖图）
- * 3. 通过 Pipeline 执行 ContextTransformer（上下文转换）
+ * 3. 按数组顺序链式执行 ContextTransformer（上下文转换）
  * 4. 触发 Extension（扩展插件）钩子
  * 5. 产出 Result（运行结果）
  */
@@ -14,7 +14,6 @@ import type { Request } from './request';
 import type { Result, ResultChunk } from './result';
 import type { ContextResource } from './context-resource';
 import type { TaskGraph } from './task-graph';
-import type { Pipeline } from './pipeline';
 import type { ExtensionManager, RuntimeHooks } from './extension';
 import type { SessionStorage } from './session';
 import type { Telemetry } from '../telemetry';
@@ -26,8 +25,6 @@ export interface Compilation {
   readonly request: Request;
   /** 任务图 */
   readonly graph: TaskGraph;
-  /** 流水线 */
-  readonly pipeline: Pipeline;
   /** 当前编译产生的资源 */
   resources: ContextResource[];
   /** 消息列表 */
@@ -136,8 +133,6 @@ export interface RuntimeOptions {
   extensions?: import('./extension').Extension[];
   /** 预注册的转换器 */
   transformers?: import('./transformer').ContextTransformer[];
-  /** 自定义 Pipeline */
-  pipeline?: Pipeline;
   /** 会话存储适配器（可选，启用后会话自动持久化到存储） */
   sessionStorage?: SessionStorage;
   /** 遥测（可选，观测 run/工具/模型调用，不干预流程） */

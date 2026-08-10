@@ -72,11 +72,6 @@ describe('StateSnapshotTransformer', () => {
     assert.equal(result[0].type, 'state_snapshot');
   });
 
-  it('priority 为 30', () => {
-    const transformer = new StateSnapshotTransformer(() => null);
-    assert.equal(transformer.priority, 30);
-  });
-
   it('快照内容每次调用动态获取', async () => {
     let count = 0;
     const transformer = new StateSnapshotTransformer(() => `state-${++count}`);
@@ -124,11 +119,6 @@ describe('SystemMessageCleanerTransformer', () => {
     ]);
     const result = await transformer.transform(resources, ctx());
     assert.equal(result.length, 2);
-  });
-
-  it('priority 为 20', () => {
-    const transformer = new SystemMessageCleanerTransformer();
-    assert.equal(transformer.priority, 20);
   });
 
   it('非系统消息不受影响', async () => {

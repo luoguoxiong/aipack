@@ -744,7 +744,6 @@ describe('Runtime hooks', () => {
     let transformCalled = false;
     runtime.useTransformer({
       name: 'custom',
-      priority: 50,
       transform: async (resources) => {
         transformCalled = true;
         return resources;

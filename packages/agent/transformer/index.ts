@@ -51,17 +51,13 @@ function resourceText(resource: ContextResource): string {
  * 确保上下文中 tool_call 与 tool_result 的配对完整性。
  * 移除孤立的工具调用或工具结果消息。
  *
- * 优先级: 100（最高，最后执行）。
+ * 建议放在 transformers 数组最后（兜底修复）。
  * 必须晚于 TruncationTransformer：截断会丢弃旧资源，可能打破配对
  * （例如丢掉 toolCall 但保留 toolResult，或反之），需要本转换器作为
  * 最终兜底重新修复，否则破坏后的消息序列会导致下一次模型调用 400。
  */
 export class ToolPairingTransformer extends BaseTransformer {
   readonly name = 'tool-pairing';
-
-  constructor() {
-    super({ priority: 100 });
-  }
 
   protected async run(
     resources: ContextResource[],
@@ -146,14 +142,12 @@ export function ensureToolPairing(messages: Message[]): Message[] {
 
 /**
  * 在上下文开头注入状态快照。
- *
- * 优先级: 30
  */
 export class StateSnapshotTransformer extends BaseTransformer {
   readonly name = 'state-snapshot';
 
   constructor(private getStateSnapshot: () => string | null) {
-    super({ priority: 30 });
+    super();
   }
 
   protected async run(
@@ -186,14 +180,12 @@ export class StateSnapshotTransformer extends BaseTransformer {
  * 截断按"配对组"丢弃：丢弃一个带 toolCall 的 assistant 资源时，会一并丢弃
  * 对应的 toolResult 资源，避免留下孤立结果（孤立结果虽会被 ToolPairingTransformer
  * 兜底清理，但会浪费保留预算）。
- *
- * 优先级: 90
  */
 export class TruncationTransformer extends BaseTransformer {
   readonly name = 'truncation';
 
   constructor(private maxResources: number = 200) {
-    super({ priority: 90 });
+    super();
   }
 
   protected async run(
@@ -248,16 +240,14 @@ export class TruncationTransformer extends BaseTransformer {
  * 按模型 contextWindow 的 token 预算截断上下文。
  *
  * 条数截断（TruncationTransformer）无法防止 token 溢出：200 条消息可能远超
- * 模型上下文窗口。本转换器在条数截断之后运行，按 token 估算从最旧的非关键
+ * 模型上下文窗口。本转换器按 token 估算从最旧的非关键
  * 资源开始丢弃，直到总 token 低于预算（默认 contextWindow * 0.8，预留输出空间）。
- *
- * 优先级: 95（晚于条数截断 90，早于配对修复 100）。
  */
 export class TokenBudgetTransformer extends BaseTransformer {
   readonly name = 'token-budget';
 
   constructor(private ratio: number = 0.8) {
-    super({ priority: 95 });
+    super();
   }
 
   protected async run(
@@ -308,15 +298,9 @@ export class TokenBudgetTransformer extends BaseTransformer {
 
 /**
  * 移除重复的系统消息，只保留最后一条。
- *
- * 优先级: 20
  */
 export class SystemMessageCleanerTransformer extends BaseTransformer {
   readonly name = 'system-message-cleaner';
-
-  constructor() {
-    super({ priority: 20 });
-  }
 
   protected async run(
     resources: ContextResource[],
@@ -342,7 +326,7 @@ export function createDefaultTransformers(options?: {
     new SystemMessageCleanerTransformer(),
     new TruncationTransformer(options?.maxResources ?? 200),
     new TokenBudgetTransformer(options?.contextBudgetRatio ?? 0.8),
-    new ToolPairingTransformer(),  // 优先级 100，最后兜底修复配对
+    new ToolPairingTransformer(),  // 放在最后，兜底修复配对
   ];
 
   if (options?.getStateSnapshot) {

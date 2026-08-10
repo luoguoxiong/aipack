@@ -51,13 +51,6 @@ export {
   createDefaultTransformers,
 } from './transformer';
 
-// ─── Pipeline: 转换流水线 ────────────────────────────────────────
-export {
-  createDefaultPipeline,
-  PipelineRunner,
-  createPipelineRunner,
-} from './pipeline';
-
 // ─── Extension: 扩展插件 ─────────────────────────────────────────
 export {
   LoggingExtension,

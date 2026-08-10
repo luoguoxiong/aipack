@@ -2,7 +2,7 @@
  * TaskGraph - 任务依赖图
  *
  * 管理所有 ContextResource 之间的依赖关系，支持拓扑排序与可达性分析。
- * Runtime 在每次编译时会构建 TaskGraph，Pipeline 与 Transformer 基于图结构操作资源。
+ * Runtime 在每次编译时会构建 TaskGraph，Transformer 基于图结构操作资源。
  */
 
 import type { ContextResource, ResourceType } from './context-resource';

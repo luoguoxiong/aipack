@@ -202,7 +202,6 @@ function buildJsConfigContent(config: RawFileConfig): string {
   lines.push('  // tools: [],');
   lines.push('  // extensions: [],');
   lines.push('  // transformers: [],');
-  lines.push('  // pipeline: undefined,');
   lines.push('  // sessionStorage: undefined,');
 
   lines.push('};');

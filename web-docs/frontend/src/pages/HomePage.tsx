@@ -28,7 +28,7 @@ const features = [
   {
     icon: '🔌',
     title: '可插拔扩展机制',
-    desc: 'Extension（Tapable 钩子）+ ContextTransformer（Pipeline 流水线）双重扩展，任意注入业务逻辑。',
+    desc: 'Extension（Tapable 钩子）+ ContextTransformer（按序链式转换）双重扩展，任意注入业务逻辑。',
     color: 'linear-gradient(135deg, #dbeafe, #bfdbfe)',
   },
   {
@@ -108,7 +108,7 @@ Runtime.beforeRun (Extension 钩子)
    ↓
 从 SessionStorage 恢复历史消息
    ↓
-Pipeline 执行 ContextTransformer 链
+转换器链式执行（ContextTransformer）
    ↓   (工具配对、上下文裁剪、记忆注入、压缩等)
 模型调用 (streamFn) ←→ Tool Call 循环
    ↓
@@ -326,8 +326,8 @@ export default function HomePage() {
                   </div>
                   <div className="arch-box arch-box-core">
                     <CodeOutlined style={{ fontSize: 24 }} />
-                    <div style={{ fontWeight: 700, marginTop: 6 }}>Pipeline</div>
-                    <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Transformer 流水线</div>
+                    <div style={{ fontWeight: 700, marginTop: 6 }}>Transformers</div>
+                    <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>转换器数组（链式执行）</div>
                   </div>
                 </div>
               </div>
@@ -346,7 +346,7 @@ export default function HomePage() {
                   <div className="arch-box arch-box-extension">
                     <CodeOutlined style={{ fontSize: 24 }} />
                     <div style={{ fontWeight: 700, marginTop: 6 }}>Transformer</div>
-                    <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>上下文转换流水线</div>
+                    <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>上下文链式转换</div>
                   </div>
                   <div className="arch-box arch-box-extension">
                     <SafetyCertificateOutlined style={{ fontSize: 24 }} />
@@ -415,7 +415,7 @@ export default function HomePage() {
                         bordered
                       >
                         <p style={{ color: '#475569', lineHeight: 1.8 }}>
-                          Runtime + Extension + Transformer 三层架构核心。自研调度、会话、工具、Pipeline。
+                          Runtime + Extension + Transformer 三层架构核心。自研调度、会话、工具、上下文转换。
                         </p>
                         <Button type="link" icon={<ArrowRightOutlined />} onClick={() => navigate('/packages#aipack')}>
                           查看详情

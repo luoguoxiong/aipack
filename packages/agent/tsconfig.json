@@ -15,7 +15,6 @@
     "task-graph/**/*",
     "transformer/**/*",
     "extension/**/*",
-    "pipeline/**/*",
     "request/**/*",
     "result/**/*",
     "ai/**/*",
