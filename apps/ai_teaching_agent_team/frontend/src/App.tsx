@@ -178,7 +178,7 @@ export default function App() {
         <div className="hero__overlay">
           <h1>👨‍🏫 AI Teaching Agent Team</h1>
           <p className="hero__sub">
-            基于 agentpack 的 4-Agent 教学团队 · Professor 构建知识库 → Advisor 设计路线 → Librarian 策展资源 → TA 出练习 · 可导出 Markdown
+            基于 aipack 的 4-Agent 教学团队 · Professor 构建知识库 → Advisor 设计路线 → Librarian 策展资源 → TA 出练习 · 可导出 Markdown
           </p>
           {!config ? (
             <div className="status">读取服务状态…</div>
@@ -268,7 +268,7 @@ export default function App() {
 
       <footer className="footer">
         <span>
-          Powered by <a href="https://github.com/luoguoxiong/agentpack" target="_blank" rel="noopener noreferrer">agentpack</a>
+          Powered by <a href="https://github.com/luoguoxiong/aipack" target="_blank" rel="noopener noreferrer">aipack</a>
         </span>
       </footer>
     </>

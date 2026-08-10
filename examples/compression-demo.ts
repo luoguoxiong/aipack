@@ -1,5 +1,5 @@
 /**
- * 根目录示例：使用 agentpack-compression + DeepSeek 模型实现多级上下文压缩
+ * 根目录示例：使用 aipack-compression + DeepSeek 模型实现多级上下文压缩
  *
  * 演示五级渐进式降级：
  *   L1: ToolOutputTrim       工具输出裁剪（thinking 剥离 + tool_result 裁剪）
@@ -26,15 +26,15 @@ import {
   createStreamFnFromAi,
   getBuiltinModel,
   hasProviderConfigured,
-} from 'agentpack';
-import type { Model, ContentBlock, Tool } from 'agentpack';
+} from '@aipack/agent';
+import type { Model, ContentBlock, Tool } from '@aipack/agent';
 import {
   createCompressionTransformer,
   loadCompressionConfig,
-} from 'agentpack-compression';
+} from '@aipack/compression';
 
 async function main() {
-  // ── 1. 从 agentpack/ai 内置目录获取 DeepSeek 模型 ──────────────
+  // ── 1. 从 aipack/ai 内置目录获取 DeepSeek 模型 ──────────────
   const modelId = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
   const aiModel = getBuiltinModel('deepseek', modelId);
   if (!aiModel) {
@@ -62,7 +62,7 @@ async function main() {
   const model: Model = { ...realModel, contextWindow: demoContextWindow };
 
   console.log('╔════════════════════════════════════════════════════╗');
-  console.log('║   agentpack-compression + DeepSeek 多级压缩演示    ║');
+  console.log('║   aipack-compression + DeepSeek 多级压缩演示    ║');
   console.log('╚════════════════════════════════════════════════════╝');
   console.log(`  模型: ${model.name} (${model.id})`);
   console.log(`  contextWindow: ${model.contextWindow} tokens${demoContextWindow !== realModel.contextWindow ? ` (覆盖自 ${realModel.contextWindow})` : ''}`);

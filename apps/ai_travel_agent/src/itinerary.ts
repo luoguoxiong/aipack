@@ -65,7 +65,7 @@ export function generateIcs(planText: string, startDate: Date = new Date()): str
   const cal: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//AI Travel Planner//agentpack//',
+    'PRODID:-//AI Travel Planner//aipack//',
     'CALSCALE:GREGORIAN',
   ];
 
@@ -82,7 +82,7 @@ export function generateIcs(planText: string, startDate: Date = new Date()): str
     cal.push(
       event([
         'BEGIN:VEVENT',
-        'UID:travel-0@agentpack-ai-travel',
+        'UID:travel-0@aipack-ai-travel',
         `DTSTAMP:${dtstamp}`,
         'SUMMARY:Travel Itinerary',
         `DESCRIPTION:${escapeIcsText(planText.trim())}`,
@@ -98,7 +98,7 @@ export function generateIcs(planText: string, startDate: Date = new Date()): str
       cal.push(
         event([
           'BEGIN:VEVENT',
-          `UID:travel-day-${day.num}@agentpack-ai-travel`,
+          `UID:travel-day-${day.num}@aipack-ai-travel`,
           `DTSTAMP:${dtstamp}`,
           `SUMMARY:Day ${day.num} Itinerary`,
           `DESCRIPTION:${escapeIcsText(day.content)}`,

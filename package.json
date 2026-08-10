@@ -1,16 +1,17 @@
 {
-  "name": "kobot",
+  "name": "aipack",
   "version": "0.0.2",
   "description": "A lightweight personal AI assistant framework",
   "type": "module",
   "scripts": {
-    "build:agentpack": "pnpm --filter agentpack build",
+    "build": "pnpm -r --filter \"./packages/*\" build",
+    "build:agent": "pnpm --filter @aipack/agent build",
     "example:deepseek": "tsx examples/deepseek.ts",
     "example:agent-memory": "tsx examples/agent-memory.ts",
     "example:compression": "tsx examples/compression-demo.ts",
     "lint": "tsc --noEmit",
-    "example:coding": "tsx packages/agentpack-coding/examples/round-trip.ts",
-    "example:coding:llm": "tsx packages/agentpack-coding/examples/real-llm.ts",
+    "example:coding": "tsx packages/coding/examples/round-trip.ts",
+    "example:coding:llm": "tsx packages/coding/examples/real-llm.ts",
     "docs:dev": "pnpm --dir web-docs dev",
     "docs:build": "pnpm --dir web-docs build",
     "docs:preview": "pnpm --dir web-docs preview",
@@ -26,13 +27,13 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "agentpack": "workspace:*"
+    "@aipack/agent": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.12.0",
-    "agentpack-coding": "workspace:*",
-    "agentpack-compression": "workspace:*",
-    "agentpack-cli": "workspace:*",
+    "@aipack/coding": "workspace:*",
+    "@aipack/compression": "workspace:*",
+    "@aipack/cli": "workspace:*",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0"
   }

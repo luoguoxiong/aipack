@@ -1,6 +1,6 @@
 # 📚 RAG Agent with Database Routing
 
-基于 [agentpack](../../packages/agentpack) 移植的 **RAG 数据库路由** Web 应用,原版来自 [awesome-llm-apps / rag_database_routing](../../../awesome-llm-apps/rag_tutorials/rag_database_routing)。用 TypeScript + 原生 http 重写,零运行时框架依赖。
+基于 [aipack](../../packages/agent) 移植的 **RAG 数据库路由** Web 应用,原版来自 [awesome-llm-apps / rag_database_routing](../../../awesome-llm-apps/rag_tutorials/rag_database_routing)。用 TypeScript + 原生 http 重写,零运行时框架依赖。
 
 ## 特性
 
@@ -12,7 +12,7 @@
 - **RAG 流式回答**:命中数据库后取 top-4 片段作为上下文,通过 SSE 逐字流式生成
 - **本地向量存储**:零依赖 TF-IDF 稀疏向量 + 余弦相似度(替代 Qdrant + OpenAIEmbeddings),JSON 持久化,重启不丢数据
 - **多 LLM 提供商**:默认 DeepSeek,可切换 OpenAI / Anthropic / Google / Groq 等;API Key 可在页面输入(localStorage 记忆),缺省回退服务器 `.env` 配置
-- **极简依赖**:仅 `agentpack`(workspace)+ devDeps(`tsx`/`typescript`/`@types/node`)
+- **极简依赖**:仅 `aipack`(workspace)+ devDeps(`tsx`/`typescript`/`@types/node`)
 
 ## 架构
 
@@ -45,7 +45,7 @@
 
 ### 1. 安装依赖
 
-在仓库根目录(`agentpack/`)执行:
+在仓库根目录(`aipack/`)执行:
 
 ```bash
 pnpm install
@@ -66,11 +66,11 @@ cp .env.example .env
 | `DEEPSEEK_API_KEY`  | DeepSeek Key                            | —                   |
 | `OPENAI_API_KEY`    | OpenAI Key                              | —                   |
 | `ROUTING_THRESHOLD` | 向量路由置信度阈值(0~1,低于则降级 LLM)  | `0.12`              |
-| `VECTOR_DB_DIR`     | 向量存储持久化目录                      | `.agentpack/rag-db` |
+| `VECTOR_DB_DIR`     | 向量存储持久化目录                      | `.aipack/rag-db` |
 | `SERPAPI_KEY`       | SerpAPI Key(可选,不配则走免费搜索)      | —                   |
 | `PORT`              | Web 服务端口                            | `3000`              |
 
-> 完整 provider 与 envVar 对照见 [`packages/agentpack/ai/catalog.ts`](../../packages/agentpack/ai/catalog.ts) 的 `BUILTIN_PROVIDERS`。
+> 完整 provider 与 envVar 对照见 [`packages/agent/ai/catalog.ts`](../../packages/agent/ai/catalog.ts) 的 `BUILTIN_PROVIDERS`。
 
 ### 3. 启动
 
@@ -95,13 +95,13 @@ pnpm --filter ai-rag-database-routing serve
 
 ## 与原版的差异
 
-| 原版(Streamlit/Python)      | 本实现(agentpack/TS)                          |
+| 原版(Streamlit/Python)      | 本实现(aipack/TS)                          |
 | --------------------------- | --------------------------------------------- |
 | Qdrant + OpenAIEmbeddings   | 本地 TF-IDF 稀疏向量 + 余弦相似度(零依赖)     |
 | PDF 上传                    | `.txt` / `.md` 上传 + 粘贴文本                |
-| agno Agent 路由             | agentpack Router Runtime(严格单轮分类)        |
-| LangChain 检索链 + Streamlit| agentpack Answer Runtime + 原生 http + SSE    |
-| LangGraph + DuckDuckGo 兜底 | agentpack 搜索工具链(SerpAPI→Bing→DDG→通用)  |
+| agno Agent 路由             | aipack Router Runtime(严格单轮分类)        |
+| LangChain 检索链 + Streamlit| aipack Answer Runtime + 原生 http + SSE    |
+| LangGraph + DuckDuckGo 兜底 | aipack 搜索工具链(SerpAPI→Bing→DDG→通用)  |
 
 ## 工作原理
 

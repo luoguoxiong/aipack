@@ -1,5 +1,5 @@
 /**
- * agentpack-docs Vite 配置
+ * aipack-docs Vite 配置
  */
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';

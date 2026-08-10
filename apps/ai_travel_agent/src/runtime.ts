@@ -5,7 +5,7 @@
  *   - Researcher:用搜索工具检索目的地活动/住宿,返回研究结果
  *   - Planner:基于研究结果生成结构化行程草稿
  *
- * agentpack 是单 Runtime 框架,故用两个独立 Runtime 实例 + 链式编排。
+ * aipack 是单 Runtime 框架,故用两个独立 Runtime 实例 + 链式编排。
  * Planner 用 stream() 流式输出,通过 onProgress 回调把增量推给 SSE。
  */
 import {
@@ -15,7 +15,7 @@ import {
   type Model,
   type StreamFn,
   type Runtime,
-} from 'agentpack';
+} from '@aipack/agent';
 import { createSearchTool } from './tools/search.js';
 import { buildModel } from './config.js';
 import { createHash } from 'node:crypto';
@@ -62,7 +62,7 @@ export function createResearcherRuntime(model: Model, streamFn: StreamFn, serpap
     systemPrompt: RESEARCHER_SYSTEM_PROMPT,
     tools: [createSearchTool(serpapiKey)],
     sessionStorage: createFileSessionStorage({
-      baseDir: '.agentpack/travel-sessions',
+      baseDir: '.aipack/travel-sessions',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 天
     }),
     maxTurns: 20, // 允许 Researcher 多轮搜索
@@ -78,7 +78,7 @@ export function createPlannerRuntime(model: Model, streamFn: StreamFn): Runtime 
     systemPrompt: PLANNER_SYSTEM_PROMPT,
     tools: [],
     sessionStorage: createFileSessionStorage({
-      baseDir: '.agentpack/travel-sessions',
+      baseDir: '.aipack/travel-sessions',
       maxAge: 30 * 24 * 60 * 60 * 1000,
     }),
     maxTurns: 5,

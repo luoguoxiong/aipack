@@ -1,7 +1,7 @@
-# agentpack
+# aipack
 
 <p align="center">
-  <img src="image/logo.png" alt="agentpack logo" width="200">
+  <img src="image/logo.png" alt="aipack logo" width="200">
 </p>
 
 Agent 框架与命令行工具的 monorepo，核心调度、会话持久化、工具执行、上下文转换均自研实现，不依赖任何外部 Agent 框架。
@@ -10,21 +10,21 @@ Agent 框架与命令行工具的 monorepo，核心调度、会话持久化、�
 
 | 包                                                          | 说明                                                                         |
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [agentpack](packages/agentpack)                             | Agent 框架：`Runtime + Extension + Transformer`，配置入口 + 执行入口         |
-| [agentpack-cli](packages/agentpack-cli)                     | 基于 agentpack 框架的命令行工具（交互式聊天、会话管理、回放等）              |
-| [agentpack-coding](packages/agentpack-coding)               | coding 工具集 + coding agent 工厂 + CLI（文件读写、命令执行、代码搜索）      |
-| [agentpack-memory](packages/agentpack-memory)               | 持久化记忆插件：自动捕获/注入、BM25 + 可选向量混合检索、记忆工具             |
-| [agentpack-compression](packages/agentpack-compression)     | 五级上下文压缩：工具输出裁剪、消息摘要、任务状态提取、会话检查点、新会话交接 |
-| [vscode-agentpack-coding](packages/vscode-agentpack-coding) | VSCode 扩展：基于 agentpack-coding 的 WebView 聊天面板                       |
+| [aipack](packages/agent)                             | Agent 框架：`Runtime + Extension + Transformer`，配置入口 + 执行入口         |
+| [aipack-cli](packages/cli)                     | 基于 aipack 框架的命令行工具（交互式聊天、会话管理、回放等）              |
+| [aipack-coding](packages/coding)               | coding 工具集 + coding agent 工厂 + CLI（文件读写、命令执行、代码搜索）      |
+| [aipack-memory](packages/memory)               | 持久化记忆插件：自动捕获/注入、BM25 + 可选向量混合检索、记忆工具             |
+| [aipack-compression](packages/compression)     | 五级上下文压缩：工具输出裁剪、消息摘要、任务状态提取、会话检查点、新会话交接 |
+| [vscode-aipack-coding](packages/vscode-coding) | VSCode 扩展：基于 aipack-coding 的 WebView 聊天面板                       |
 
-## agentpack（框架）
+## aipack（框架）
 
 安装：
 
 ```bash
-npm install agentpack
+npm install aipack
 # 或
-pnpm add agentpack
+pnpm add aipack
 ```
 
 最小示例：
@@ -37,7 +37,7 @@ import {
   getBuiltinModel,
   adaptAiModel,
   createStreamFnFromAi,
-} from 'agentpack';
+} from 'aipack';
 
 const aiModel = getBuiltinModel('deepseek', 'deepseek-chat'); // 需配置 DEEPSEEK_API_KEY
 
@@ -62,33 +62,33 @@ for await (const chunk of runtime.stream(
 await runtime.close();
 ```
 
-## agentpack-cli（命令行）
+## aipack-cli（命令行）
 
 安装：
 
 ```bash
-npm install -g agentpack-cli
+npm install -g aipack-cli
 # 或
-pnpm add -g agentpack-cli
+pnpm add -g aipack-cli
 ```
 
 使用：
 
 ```bash
 # 交互式聊天（首次运行自动进入 API Key 设置向导）
-agentpack chat
+aipack chat
 
 # 一次性提问
-agentpack run "用一句话介绍 agentpack"
+aipack run "用一句话介绍 aipack"
 
 # 继续历史会话
-agentpack continue <sessionKey>
+aipack continue <sessionKey>
 
 # 初始化项目级配置文件
-agentpack init --local
+aipack init --local
 
 # 查看支持的提供商与模型
-agentpack models
+aipack models
 ```
 
 ## 开发
@@ -98,24 +98,24 @@ agentpack models
 pnpm install
 
 # 构建
-pnpm --filter agentpack build
-pnpm --filter agentpack-cli build
+pnpm --filter aipack build
+pnpm --filter aipack-cli build
 
 # 类型检查
-pnpm --filter agentpack typecheck
-pnpm --filter agentpack-cli typecheck
+pnpm --filter aipack typecheck
+pnpm --filter aipack-cli typecheck
 ```
 
 ## 文档
 
-- [agentpack 框架文档](packages/agentpack/README.md)
-- [agentpack-cli 文档](packages/agentpack-cli/README.md)
-- [agentpack-memory 文档](packages/agentpack-memory/README.md)
-- [agentpack 压缩策略](agentpack-compression-strategy.md)（agentpack-compression 设计文档）
+- [aipack 框架文档](packages/agent/README.md)
+- [aipack-cli 文档](packages/cli/README.md)
+- [aipack-memory 文档](packages/memory/README.md)
+- [aipack 压缩策略](aipack-compression-strategy.md)（aipack-compression 设计文档）
 
 ## 应用示例（apps/）
 
-基于 agentpack 构建的端到端应用：
+基于 aipack 构建的端到端应用：
 
 - [ai_travel_agent](apps/ai_travel_agent/README.md) — 🛫 AI 旅行行程规划 Web 应用（Researcher + Planner 双 Agent + SSE 流式 + ICS 日历导出）
 - [ai_blog_to_podcast_agent](apps/ai_blog_to_podcast_agent/README.md) — 🎙️ AI 博客转播客 Web 应用（博客正文抓取 + 对话式摘要 + Edge TTS 免费语音合成 + SSE 流式）

@@ -1,0 +1,47 @@
+{
+  "name": "@aipack/agent",
+  "version": "0.1.0",
+  "description": "Agent 框架：Runtime + Extension + Transformer，配置入口 + 执行入口",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./ai": {
+      "types": "./dist/ai/index.d.ts",
+      "import": "./dist/ai/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "keywords": [
+    "agent",
+    "ai",
+    "framework",
+    "llm"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.19.0"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.0",
+    "partial-json": "^0.1.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.5.0"
+  }
+}

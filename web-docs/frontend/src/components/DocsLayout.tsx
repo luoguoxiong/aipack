@@ -65,12 +65,12 @@ const examplesMenu: MenuItem[] = [
 
 const packagesMenu: MenuItem[] = [
   { key: '/packages', label: '包概览', icon: <AppstoreOutlined /> },
-  { key: '/packages#agentpack', label: 'agentpack（核心）', icon: <RocketOutlined /> },
-  { key: '/packages#coding', label: 'agentpack-coding', icon: <CodeOutlined /> },
-  { key: '/packages#memory', label: 'agentpack-memory', icon: <DatabaseOutlined /> },
-  { key: '/packages#compression', label: 'agentpack-compression', icon: <AimOutlined /> },
-  { key: '/packages#cli', label: 'agentpack-cli', icon: <SettingOutlined /> },
-  { key: '/packages#vscode', label: 'vscode-agentpack-coding', icon: <ExperimentOutlined /> },
+  { key: '/packages#aipack', label: 'aipack（核心）', icon: <RocketOutlined /> },
+  { key: '/packages#coding', label: 'aipack-coding', icon: <CodeOutlined /> },
+  { key: '/packages#memory', label: 'aipack-memory', icon: <DatabaseOutlined /> },
+  { key: '/packages#compression', label: 'aipack-compression', icon: <AimOutlined /> },
+  { key: '/packages#cli', label: 'aipack-cli', icon: <SettingOutlined /> },
+  { key: '/packages#vscode', label: 'vscode-aipack-coding', icon: <ExperimentOutlined /> },
 ];
 
 export default function DocsLayout({ children }: DocsLayoutProps) {

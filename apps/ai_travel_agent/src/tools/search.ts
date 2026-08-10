@@ -1,7 +1,7 @@
 /**
  * apps/ai_travel_agent/src/tools/search.ts
  *
- * 旅行搜索工具(agentpack Tool):四层降级,符合用户偏好的多层容错。
+ * 旅行搜索工具(aipack Tool):四层降级,符合用户偏好的多层容错。
  *   1. SERPAPI_KEY 存在 → SerpAPI Google 搜索
  *   2. Bing(cn.bing.com,免费,国内网络通常可达)
  *   3. DuckDuckGo HTML(免费,部分网络环境被阻断)
@@ -9,7 +9,7 @@
  *
  * 容错细节:每层 try/catch + fetch 超时(8s,避免阻断层卡死)+ 1 次重试 + User-Agent。
  */
-import type { Tool } from 'agentpack';
+import type { Tool } from '@aipack/agent';
 
 export interface SearchResult {
   title: string;
@@ -182,7 +182,7 @@ function formatResults(query: string, results: SearchResult[], source: string): 
   return lines.join('\n');
 }
 
-// ─── 导出 agentpack Tool ──────────────────────────────────────────
+// ─── 导出 aipack Tool ──────────────────────────────────────────
 
 export function createSearchTool(serpapiKey?: string): Tool {
   return {

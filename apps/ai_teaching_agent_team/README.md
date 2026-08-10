@@ -1,6 +1,6 @@
 # ai_teaching_agent_team — 👨‍🏫 AI 教学代理团队
 
-基于 [agentpack](../..) 框架构建的 **4-Agent 协作教学团队** Web 应用（React 前端）。输入一个学习主题，四位"教师"顺序接力、全部流式输出，最终产出一份完整课程文档（Markdown 可下载）。
+基于 [aipack](../..) 框架构建的 **4-Agent 协作教学团队** Web 应用（React 前端）。输入一个学习主题，四位"教师"顺序接力、全部流式输出，最终产出一份完整课程文档（Markdown 可下载）。
 
 ```
 主题 ─▶ ①🧠 Professor 教授     构建知识库（search_web 检索权威资料）
@@ -45,7 +45,7 @@
 ### 安装
 
 ```bash
-cd agentpack
+cd aipack
 pnpm install
 ```
 
@@ -69,17 +69,17 @@ pnpm install
 ### 开发模式（双进程，HMR）
 
 ```bash
-cd agentpack
+cd aipack
 pnpm --filter ai-teaching-agent-team dev
 ```
 
 - 前端：http://localhost:5173 （Vite + React HMR，`/api` 代理到后端 3001）
-- 后端：http://localhost:3001/api （agentpack SSE 服务，`tsx watch`）
+- 后端：http://localhost:3001/api （aipack SSE 服务，`tsx watch`）
 
 ### 生产模式（单端口）
 
 ```bash
-cd agentpack
+cd aipack
 pnpm --filter ai-teaching-agent-team build   # vite build(前端) + tsc(后端)
 pnpm --filter ai-teaching-agent-team serve   # node dist/server.js
 ```
@@ -97,11 +97,11 @@ pnpm --filter ai-teaching-agent-team serve   # node dist/server.js
 
 ```
 apps/ai_teaching_agent_team/
-├── package.json             # 单包:agentpack + react/vite devDeps
+├── package.json             # 单包:aipack + react/vite devDeps
 ├── tsconfig.json            # 后端 TS 配置(rootDir: src, outDir: dist)
 ├── vite.config.ts           # Vite:root frontend/, outDir ../dist/frontend, /api 代理
 ├── .env.example             # 环境变量模板
-├── src/                     # ── 后端(agentpack) ──
+├── src/                     # ── 后端(aipack) ──
 │   ├── loadEnv.ts           # 零依赖 .env 加载器
 │   ├── config.ts            # 模型/streamFn 装配 + 模型目录 + 选择校验
 │   ├── runtime.ts           # 4 个 Runtime 工厂 + RuntimeRegistry + generateCourse 编排
@@ -145,7 +145,7 @@ event: error  data: {"message":"..."}                      # 出错时
 ### 多 Agent 协作与会话
 
 - 4 个 agent 各为独立 `Runtime`，由 [runtime.ts](src/runtime.ts) 中的 `generateCourse` 顺序编排，前一阶段产出作为后一阶段输入（TA 同时接收知识库 + 路线图）。
-- 会话按 `agent:topic:model` 持久化到 `.agentpack/teaching-sessions/`（30 天），切换模型会隔离历史。
+- 会话按 `agent:topic:model` 持久化到 `.aipack/teaching-sessions/`（30 天），切换模型会隔离历史。
 - `createRuntimeRegistry` 按 `(provider, modelId, apiKey哈希)` 缓存 4-Runtime 团队，支持运行时切换模型、Key 变更自动重建。
 
 ## 与其他 apps 对比

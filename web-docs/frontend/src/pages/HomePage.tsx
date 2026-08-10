@@ -58,13 +58,13 @@ const features = [
 ];
 
 const quickInstallCode = `# 安装核心框架
-pnpm add agentpack
+pnpm add aipack
 
 # 或使用 npm
-npm install agentpack
+npm install aipack
 
 # （可选）全局安装命令行工具
-pnpm add -g agentpack-cli`;
+pnpm add -g aipack-cli`;
 
 const minimalExample = `import {
   createRuntime,
@@ -73,7 +73,7 @@ const minimalExample = `import {
   getBuiltinModel,
   adaptAiModel,
   createStreamFnFromAi,
-} from 'agentpack';
+} from '@aipack/agent';
 
 // 1. 获取内置模型（需配置环境变量：DEEPSEEK_API_KEY）
 const aiModel = getBuiltinModel('deepseek', 'deepseek-chat');
@@ -88,7 +88,7 @@ const runtime = createRuntime({
 
 // 3. 同步调用
 const result = await runtime.run(
-  createRequest('用一句话介绍 agentpack')
+  createRequest('用一句话介绍 aipack')
 );
 console.log(result.content);
 
@@ -122,7 +122,7 @@ export default function HomePage() {
   const navigate = useNavigate();
 
   const copyInstall = async () => {
-    await navigator.clipboard.writeText('pnpm add agentpack');
+    await navigator.clipboard.writeText('pnpm add aipack');
     message.success('安装命令已复制');
   };
 
@@ -137,7 +137,7 @@ export default function HomePage() {
             </Tag>
           </div>
           <h1 className="hero-title">
-            用 agentpack，<br />快速构建你的 AI Agent
+            用 aipack，<br />快速构建你的 AI Agent
           </h1>
           <p className="hero-subtitle">
             一款轻量、可扩展、零魔法的 TypeScript Agent 框架。<br />
@@ -204,7 +204,7 @@ export default function HomePage() {
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 48 }}>
             <h2 style={{ fontSize: '2.25rem', fontWeight: 800, margin: 0, color: '#0f172a' }}>
-              为什么选择 agentpack
+              为什么选择 aipack
             </h2>
             <p style={{ fontSize: '1.1rem', color: '#64748b', marginTop: 16, lineHeight: 1.8 }}>
               从简单聊天到复杂编码 Agent，用统一的抽象、一致的 API，构建属于你自己的 AI 应用。
@@ -241,7 +241,7 @@ export default function HomePage() {
               <div className="install-block" onClick={copyInstall} style={{ cursor: 'pointer' }}>
                 <div className="install-code">
                   <span className="prompt">$</span>
-                  pnpm add agentpack
+                  pnpm add aipack
                 </div>
                 <Button size="small" type="primary" ghost onClick={(e) => { e.stopPropagation(); copyInstall(); }}>
                   复制
@@ -293,7 +293,7 @@ export default function HomePage() {
                   <div className="arch-box arch-box-adapter">
                     <ExperimentOutlined style={{ fontSize: 24 }} />
                     <div style={{ fontWeight: 700, marginTop: 6 }}>CLI</div>
-                    <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>agentpack chat/run</div>
+                    <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>aipack chat/run</div>
                   </div>
                   <div className="arch-box arch-box-adapter">
                     <RobotOutlined style={{ fontSize: 24 }} />
@@ -409,7 +409,7 @@ export default function HomePage() {
                       <Card
                         title={
                           <span>
-                            📦 agentpack <Tag color="blue" style={{ marginLeft: 8 }}>核心</Tag>
+                            📦 aipack <Tag color="blue" style={{ marginLeft: 8 }}>核心</Tag>
                           </span>
                         }
                         bordered
@@ -417,7 +417,7 @@ export default function HomePage() {
                         <p style={{ color: '#475569', lineHeight: 1.8 }}>
                           Runtime + Extension + Transformer 三层架构核心。自研调度、会话、工具、Pipeline。
                         </p>
-                        <Button type="link" icon={<ArrowRightOutlined />} onClick={() => navigate('/packages#agentpack')}>
+                        <Button type="link" icon={<ArrowRightOutlined />} onClick={() => navigate('/packages#aipack')}>
                           查看详情
                         </Button>
                       </Card>
@@ -426,13 +426,13 @@ export default function HomePage() {
                       <Card
                         title={
                           <span>
-                            ⌨️ agentpack-cli <Tag color="purple" style={{ marginLeft: 8 }}>CLI</Tag>
+                            ⌨️ aipack-cli <Tag color="purple" style={{ marginLeft: 8 }}>CLI</Tag>
                           </span>
                         }
                         bordered
                       >
                         <p style={{ color: '#475569', lineHeight: 1.8 }}>
-                          交互式聊天、会话管理、历史回放、一次性提问、配置向导。支持 agentpack.config.js。
+                          交互式聊天、会话管理、历史回放、一次性提问、配置向导。支持 aipack.config.js。
                         </p>
                         <Button type="link" icon={<ArrowRightOutlined />} onClick={() => navigate('/packages#cli')}>
                           查看详情
@@ -510,7 +510,7 @@ export default function HomePage() {
                       <Card
                         title={
                           <span>
-                            🎯 vscode-agentpack-coding <Tag color="magenta" style={{ marginLeft: 8 }}>VSCode</Tag>
+                            🎯 vscode-aipack-coding <Tag color="magenta" style={{ marginLeft: 8 }}>VSCode</Tag>
                           </span>
                         }
                         bordered
@@ -535,7 +535,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="footer">
         <div style={{ maxWidth: 900, margin: '0 auto' }}>
-          <div style={{ fontSize: 24, marginBottom: 12 }}>📦 agentpack</div>
+          <div style={{ fontSize: 24, marginBottom: 12 }}>📦 aipack</div>
           <p style={{ lineHeight: 1.8 }}>
             一款轻量、可扩展、零魔法的 TypeScript Agent 框架。<br />
             MIT License · 文档构建于 React + Ant Design。

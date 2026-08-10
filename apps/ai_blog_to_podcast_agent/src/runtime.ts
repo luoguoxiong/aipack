@@ -15,7 +15,7 @@ import {
   type Model,
   type StreamFn,
   type Runtime,
-} from 'agentpack';
+} from '@aipack/agent';
 import { createScrapeTool } from './tools/scrape.js';
 import { buildModel } from './config.js';
 import { createHash } from 'node:crypto';
@@ -57,7 +57,7 @@ export function createSummarizerRuntime(model: Model, streamFn: StreamFn, firecr
     systemPrompt: SUMMARIZER_SYSTEM_PROMPT,
     tools: [createScrapeTool(firecrawlKey)],
     sessionStorage: createFileSessionStorage({
-      baseDir: '.agentpack/podcast-sessions',
+      baseDir: '.aipack/podcast-sessions',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 天
     }),
     maxTurns: 10, // 允许抓取 + 生成,无需太多轮

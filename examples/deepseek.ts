@@ -1,10 +1,10 @@
 /**
- * 根目录示例：使用 agentpack + DeepSeek 模型
+ * 根目录示例：使用 aipack + DeepSeek 模型
  *
  * 演示：
- *   1. 从 agentpack/ai 内置目录拿 DeepSeek 标准化模型（deepseek-chat）
+ *   1. 从 aipack/ai 内置目录拿 DeepSeek 标准化模型（deepseek-chat）
  *   2. 通过 adapters/ai 适配器零手写 streamFn 接入框架
- *   3. 注册工具，观察 agentpack 的 tool_call / tool_result 循环
+ *   3. 注册工具，观察 aipack 的 tool_call / tool_result 循环
  *   4. 流式输出最终回复
  *
  * 运行: DEEPSEEK_API_KEY=sk-xxx npx tsx examples/deepseek.ts
@@ -21,10 +21,10 @@ import {
   createStreamFnFromAi,
   getBuiltinModel,
   hasProviderConfigured,
-} from 'agentpack';
+} from '@aipack/agent';
 
 async function main() {
-  // ── 1. 从 agentpack/ai 内置目录获取 DeepSeek 模型 ──────────────
+  // ── 1. 从 aipack/ai 内置目录获取 DeepSeek 模型 ──────────────
   const modelId = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
   const aiModel = getBuiltinModel('deepseek', modelId);
   if (!aiModel) {

@@ -90,7 +90,7 @@ async function main() {
     const banner = [
       '',
       '╔══════════════════════════════════════════════════╗',
-      '║   👨‍🏫  AI Teaching Agent Team (agentpack)        ║',
+      '║   👨‍🏫  AI Teaching Agent Team (aipack)        ║',
       '╠══════════════════════════════════════════════════╣',
       `║  模型:     ${pad(`${config.provider}/${config.modelId}`, 38)}║`,
       `║  LLM 就绪: ${pad(config.llmReady ? '✅ 是' : '❌ 否(请配置 API Key)', 38)}║`,

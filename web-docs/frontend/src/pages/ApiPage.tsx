@@ -134,7 +134,7 @@ export default function ApiPage() {
         <ApiOutlined style={{ color: '#6366f1' }} /> API 文档
       </h1>
       <p className="section-subtitle">
-        完整的 agentpack 核心 API 列表，按模块分类展示。包含函数签名、参数说明、返回值和可运行示例。
+        完整的 aipack 核心 API 列表，按模块分类展示。包含函数签名、参数说明、返回值和可运行示例。
       </p>
 
       <Input

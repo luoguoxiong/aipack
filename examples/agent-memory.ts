@@ -1,5 +1,5 @@
 /**
- * 根目录示例：使用 agentpack-memory 实现跨会话长期记忆
+ * 根目录示例：使用 aipack-memory 实现跨会话长期记忆
  *
  * 演示完整闭环：capture → compress → index → recall/inject → consolidate
  *   1. 用 createMemoryPlugin 装配记忆插件（FileMemoryStore 持久化 + BM25 检索）
@@ -21,7 +21,7 @@ import {
   extractText,
   createEmptyUsage,
   createFileSessionStorage,
-} from 'agentpack';
+} from '@aipack/agent';
 import type {
   StreamFn,
   Context,
@@ -30,8 +30,8 @@ import type {
   ContentBlock,
   TextContent,
   Tool,
-} from 'agentpack';
-import { createMemoryPlugin, MEMORY_BLOCK_START } from 'agentpack-memory';
+} from '@aipack/agent';
+import { createMemoryPlugin, MEMORY_BLOCK_START } from '@aipack/memory';
 
 // ─── 假 streamFn：无 API Key 时降级使用，返回固定中文回复 ─────────────
 
@@ -65,7 +65,7 @@ async function maybeCreateRealStreamFn(): Promise<{ model: Model; streamFn: Stre
   const useReal = process.env.USE_REAL_LLM === '1' || process.env.DEEPSEEK_API_KEY;
   if (!useReal) return null;
   try {
-    const { getBuiltinModel, hasProviderConfigured, adaptAiModel, createStreamFnFromAi } = await import('agentpack');
+    const { getBuiltinModel, hasProviderConfigured, adaptAiModel, createStreamFnFromAi } = await import('@aipack/agent');
     const aiModel = getBuiltinModel('deepseek', 'deepseek-chat');
     if (!aiModel || !hasProviderConfigured('deepseek')) return null;
     console.log('✅ 检测到 DEEPSEEK_API_KEY，使用真实 DeepSeek 模型\n');
@@ -90,12 +90,12 @@ function latestUserText(ctx: Context): string {
 
 async function main() {
   console.log('╔════════════════════════════════════════════════════╗');
-  console.log('║   agentpack-memory 跨会话记忆实例                   ║');
+  console.log('║   aipack-memory 跨会话记忆实例                   ║');
   console.log('╚════════════════════════════════════════════════════╝\n');
 
-  // 1. 装配记忆插件（FileMemoryStore 持久化到 ./.agentpack/memory）
+  // 1. 装配记忆插件（FileMemoryStore 持久化到 ./.aipack/memory）
   const mem = createMemoryPlugin({
-    baseDir: './.agentpack/memory',
+    baseDir: './.aipack/memory',
     maxMemories: 3,          // 每轮注入 top-3
     consolidateEvery: 5,     // 每 5 次捕获自动合并一次
   });
@@ -144,7 +144,7 @@ async function main() {
       extensions: installed.extensions,
       transformers: installed.transformers,
       tools: [...installed.tools, getWeather],
-      sessionStorage: createFileSessionStorage({ baseDir: './.agentpack/sessions' }),
+      sessionStorage: createFileSessionStorage({ baseDir: './.aipack/sessions' }),
     });
   }
   console.log(`🛠 已注入 ${installed.tools.length + 1} 个工具（${installed.tools.length} 记忆 + 1 自定义 get_weather）\n`);
@@ -228,7 +228,7 @@ async function main() {
   console.log('╔════════════════════════════════════════════════════╗');
   console.log('║   ✅ 实例运行完成                                   ║');
   console.log(`║   记忆存储: ${mem.store.constructor.name}`);
-  console.log(`║   记忆目录: ./.agentpack/memory`);
+  console.log(`║   记忆目录: ./.aipack/memory`);
   console.log('╚════════════════════════════════════════════════════╝');
 
   await runtime1.close();

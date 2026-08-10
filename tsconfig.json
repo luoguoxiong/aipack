@@ -17,11 +17,11 @@
     "lib": ["ES2022"],
     "types": ["node"],
     "paths": {
-      "agentpack": ["./packages/agentpack/index.ts"],
-      "agentpack/*": ["./packages/agentpack/*"],
-      "agentpack-memory": ["./packages/agentpack-memory/index.ts"],
-      "agentpack-coding": ["./packages/agentpack-coding/index.ts"],
-      "agentpack-compression": ["./packages/agentpack-compression/index.ts"]
+      "@aipack/agent": ["./packages/agent/index.ts"],
+      "@aipack/agent/*": ["./packages/agent/*"],
+      "@aipack/memory": ["./packages/memory/index.ts"],
+      "@aipack/coding": ["./packages/coding/index.ts"],
+      "@aipack/compression": ["./packages/compression/index.ts"]
     }
   },
   "include": ["packages/**/*", "examples/**/*"],

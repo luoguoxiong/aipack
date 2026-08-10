@@ -1,7 +1,7 @@
 /**
  * apps/ai_teaching_agent_team/src/config.ts
  *
- * 环境变量解析 + agentpack 模型/streamFn 装配。
+ * 环境变量解析 + aipack 模型/streamFn 装配。
  * 对齐 apps/ai_travel_agent/config.ts 的「getBuiltinModel → adaptAiModel → createStreamFnFromAi」模式。
  * 多层容错:缺 Key 时给出明确提示而非崩溃,允许降级到无搜索 Key 模式。
  */
@@ -13,8 +13,8 @@ import {
   adaptAiModel,
   createStreamFnFromAi,
   BUILTIN_PROVIDERS,
-} from 'agentpack';
-import type { Model, StreamFn } from 'agentpack';
+} from '@aipack/agent';
+import type { Model, StreamFn } from '@aipack/agent';
 import { describeSearchBackend } from './tools/search.js';
 
 /** 各 provider 的默认模型 id(与 ai/catalog.ts 对齐) */
