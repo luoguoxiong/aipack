@@ -16,6 +16,8 @@ import { countOccurrences } from '../utils/text';
 export function createEditFileTool(ctx: CodingToolContext): Tool {
   return {
     name: 'edit_file',
+    // 框架级 PermissionPolicy 能力声明：修改 workspace 内文件
+    permissions: ['fs:write'],
     description:
       '通过 old_string 替换为 new_string 精确修改文件局部内容。' +
       'old_string 必须在文件中唯一匹配（否则报错，需补充更多上下文使其唯一，或设 replace_all=true）。' +
@@ -55,7 +57,7 @@ export function createEditFileTool(ctx: CodingToolContext): Tool {
         };
       }
 
-      const resolved = resolveWithin(ctx.workspace, a.path ?? '');
+      const resolved = await resolveWithin(ctx.workspace, a.path ?? '');
       if (!resolved.ok || !resolved.abs) {
         const err = resolved.error ?? 'resolve failed';
         return {

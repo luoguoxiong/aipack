@@ -10,10 +10,37 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { execFile } from 'child_process';
 import type { ToolResult, TextContent } from 'agentpack';
 import { createCodingTools } from '../src/tools';
 import { PermissionManager } from '../src/permission';
 import type { ConfirmContext, ConfirmResult } from '../src/permission';
+
+/** 在 cwd 中初始化 git 仓库并创建初始提交（run_command git 测试依赖） */
+function gitInit(cwd: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'git',
+      ['init', '-q'],
+      { cwd },
+      (err) => {
+        if (err) return resolve(); // git 不可用则跳过（对应测试会失败）
+        execFile('git', ['config', 'user.email', 'test@test'], { cwd }, (e1) => {
+          if (e1) return reject(e1);
+          execFile('git', ['config', 'user.name', 'test'], { cwd }, (e2) => {
+            if (e2) return reject(e2);
+            execFile('git', ['add', '-A'], { cwd }, (e3) => {
+              if (e3) return reject(e3);
+              execFile('git', ['commit', '-qm', 'init'], { cwd }, (e4) =>
+                e4 ? reject(e4) : resolve(),
+              );
+            });
+          });
+        });
+      },
+    );
+  });
+}
 
 let tmpDir: string;
 // 工具实例（在 before 中创建，因为依赖 tmpDir）
@@ -37,6 +64,9 @@ describe('coding tools', () => {
     );
     await fs.promises.mkdir(path.join(tmpDir, 'sub'), { recursive: true });
     await fs.promises.writeFile(path.join(tmpDir, 'sub/bar.ts'), 'export const y = 1;\n');
+
+    // run_command 的 git 测试依赖已初始化的临时仓库
+    await gitInit(tmpDir);
 
     tools = createCodingTools({ workspace: tmpDir, permission: new PermissionManager() });
   });
@@ -308,6 +338,66 @@ describe('coding tools', () => {
       assert.ok(!textOf(r).includes('拒绝'));
       assert.ok(fs.existsSync(path.join(tmpDir, 'approved-dir')));
     });
+
+    // ─── 无 shell 执行（Phase 3-3）──────────────────────────────
+
+    it('无 shell：引号参数保持单个 argv', async () => {
+      // git show "HEAD" → argv = [git, show, HEAD]（引号被解析器剥除）
+      const r = await byName('run_command').execute('t34', {
+        command: 'git show "HEAD"',
+        cwd: tmpDir,
+      });
+      const text = textOf(r);
+      assert.match(text, /exit 0/, `应执行成功: ${text}`);
+    });
+
+    it('无 shell：env 前缀传给子进程', async () => {
+      const r = await byName('run_command').execute('t35', {
+        command: 'GIT_PAGER=cat git log -n 1',
+        cwd: tmpDir,
+      });
+      assert.match(textOf(r), /exit 0/);
+    });
+
+    it('多语句串联（;）被拒绝', async () => {
+      const r = await byName('run_command').execute('t36', {
+        command: 'git status; rm -rf ~',
+      });
+      const text = textOf(r);
+      assert.match(text, /多语句|串联/, `应拒绝多语句: ${text}`);
+      assert.match(text, /失败/);
+    });
+
+    it('多语句串联（&&）被拒绝', async () => {
+      const r = await byName('run_command').execute('t37', {
+        command: 'ls && git status',
+      });
+      assert.match(textOf(r), /多语句|串联/);
+    });
+
+    it('管道 | 被拒绝（无 shell 执行）', async () => {
+      // git status 命中只读 allow，但管道语法被无 shell 解析器拒绝
+      const r = await byName('run_command').execute('t38', {
+        command: 'git status | grep foo',
+      });
+      assert.match(textOf(r), /管道/);
+    });
+
+    it('通配符被拒绝（提示 glob 工具）', async () => {
+      // ls 命中只读 allow，但未引用通配符被拒绝
+      const r = await byName('run_command').execute('t39', { command: 'ls *.ts' });
+      assert.match(textOf(r), /glob/);
+    });
+
+    it('重定向被拒绝（confirmFn 放行权限后由解析器拦截）', async () => {
+      const pm = new PermissionManager({ confirmFn: async () => true });
+      const localTools = createCodingTools({ workspace: tmpDir, permission: pm });
+      const runCmd = localTools.find((t) => t.name === 'run_command')!;
+      const r = await runCmd.execute('t40', { command: 'git diff > patch.txt' });
+      assert.match(textOf(r), /重定向/);
+      // 且不应真实写出文件
+      assert.ok(!fs.existsSync(path.join(tmpDir, 'patch.txt')), '重定向不应写出文件');
+    });
   });
 
   // ─── 沙箱边界（跨工具）──────────────────────────────────────────
@@ -326,6 +416,48 @@ describe('coding tools', () => {
       });
       assert.match(textOf(r), /失败/);
       assert.match(textOf(r), /边界/);
+    });
+
+    it('read_file 经 symlink 指向 workspace 外被拒绝', async () => {
+      // 外部目录 + workspace 内 symlink
+      const outside = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'outside-'));
+      await fs.promises.writeFile(path.join(outside, 'secret.txt'), 'top secret');
+      const link = path.join(tmpDir, 'evil-link');
+      await fs.promises.symlink(outside, link, 'dir');
+
+      try {
+        const r = await byName('read_file').execute('t41', {
+          path: 'evil-link/secret.txt',
+        });
+        const text = textOf(r);
+        assert.match(text, /符号链接|边界/, `应拒绝 symlink 逃逸: ${text}`);
+      } finally {
+        await fs.promises.rm(outside, { recursive: true, force: true });
+        await fs.promises.unlink(link).catch(() => {});
+      }
+    });
+
+    it('write_file 经 symlink 指向 workspace 外被拒绝', async () => {
+      const outside = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'outside-'));
+      const link = path.join(tmpDir, 'evil-write-link');
+      await fs.promises.symlink(outside, link, 'dir');
+
+      try {
+        const r = await byName('write_file').execute('t42', {
+          path: 'evil-write-link/pwned.txt',
+          content: 'pwned',
+        });
+        const text = textOf(r);
+        assert.match(text, /符号链接|边界/, `应拒绝 symlink 逃逸: ${text}`);
+        // 外部目录不应被写入
+        assert.ok(
+          !fs.existsSync(path.join(outside, 'pwned.txt')),
+          '外部目录不应被写入',
+        );
+      } finally {
+        await fs.promises.rm(outside, { recursive: true, force: true });
+        await fs.promises.unlink(link).catch(() => {});
+      }
     });
   });
 });
