@@ -32,12 +32,25 @@ export interface StoredSession {
   updatedAt: string;
 }
 
+/** 跨进程锁句柄：调用方需在 finally 中 release() */
+export interface StorageLock {
+  release(): Promise<void>;
+}
+
 /** 会话存储适配器接口 */
 export interface SessionStorage {
   load(key: string): Promise<StoredSession | null>;
   save(key: string, session: StoredSession): Promise<void>;
   delete(key: string): Promise<boolean>;
   list(): Promise<string[]>;
+  /**
+   * 跨进程互斥锁（可选）：fn 执行期间独占该 key 的"读-改-写"，
+   * 防止多进程并发写同一会话导致 last-write-wins 丢消息。
+   * 单进程存储（如内存实现）可省略；Runtime 在非 ephemeral 请求下自动调用。
+   */
+  withLock?<T>(key: string, fn: () => Promise<T>): Promise<T>;
+  /** 手动锁（可选，供流式等无法用回调包住的场景）：finally 中 release() */
+  acquireLock?(key: string): Promise<StorageLock>;
 }
 
 /** 文件存储选项 */
@@ -48,6 +61,13 @@ export interface FileSessionStorageOptions {
   maxAge?: number;
   /** 持久化消息条数上限（保留最新 N 条，0 表示不限，默认 0） */
   maxStoredMessages?: number;
+  /** 获取跨进程锁的最大等待时间（毫秒，默认 30000）。超时抛错 */
+  lockWaitMs?: number;
+  /** 锁文件视为"陈旧"的阈值（毫秒，默认 300000）。
+   *  持有锁的进程崩溃后留下的锁文件在超过该时长后会被接管 */
+  lockStaleMs?: number;
+  /** 锁获取重试的基础间隔（毫秒，默认 25，指数退避至 500） */
+  lockRetryMs?: number;
 }
 
 /** 内存存储选项 */
