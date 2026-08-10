@@ -25,6 +25,9 @@ export const qsEnvCode = [
   '',
   '# Anthropic',
   'ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxx',
+  '',
+  '# Google（约定名，Gemini 模型）',
+  'GOOGLE_API_KEY=AIzaxxxxxxxxxxxxxxxxxxxxx',
 ].join('\n');
 
 export const qsFirstAppCode = [
@@ -137,7 +140,7 @@ export const qsMultiTurnCode = [
   'const runtime = createRuntime({',
   '  model: adaptAiModel(aiModel),',
   '  streamFn: createStreamFnFromAi(aiModel),',
-  '  // 单会话标识（多会话请创建多个 Runtime 实例）',
+  '  // 默认会话标识（同一 Runtime 可服务多会话：请求带 sessionKey 即路由到独立会话）',
   '  sessionKey: "user-001",',
   '  // 开启文件持久化（maxAge 单位：毫秒。30 天如下）',
   '  sessionStorage: createFileSessionStorage({',
