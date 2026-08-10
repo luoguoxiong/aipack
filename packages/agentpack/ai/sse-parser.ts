@@ -9,7 +9,7 @@ export interface SSEEvent {
 }
 
 /**
- * 按 `\n\n` 分隔解析完整的 SSE 事件块。
+ * 按事件终止符（`\n\n` 或规范的 `\r\n\r\n`）分隔解析完整的 SSE 事件块。
  * 每块可包含 event:、data:、id:、retry: 等行。
  * 适用于 Anthropic 风格的流式响应。
  */
@@ -18,11 +18,13 @@ export function parseSSEEvents(buffer: string): { events: SSEEvent[]; remaining:
   let remaining = buffer;
 
   while (true) {
-    const dblNl = remaining.indexOf('\n\n');
-    if (dblNl === -1) break;
+    // SSE 规范终止符为 \r\n\r\n，其内部是 \n\r 序列，不匹配 \n\n；
+    // 用 \r?\n\r?\n 同时兼容 LF 与 CRLF 两种实现。
+    const m = /\r?\n\r?\n/.exec(remaining);
+    if (!m) break;
 
-    const block = remaining.slice(0, dblNl);
-    remaining = remaining.slice(dblNl + 2);
+    const block = remaining.slice(0, m.index);
+    remaining = remaining.slice(m.index + m[0].length);
 
     let eventType: string | undefined;
     let dataStr = '';

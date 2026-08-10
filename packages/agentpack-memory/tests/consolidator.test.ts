@@ -8,7 +8,7 @@ import { Consolidator } from '../src/consolidation/consolidator';
 import { InMemoryStore } from '../src/store/in-memory-store';
 import { HybridRetriever } from '../src/retrieval/hybrid-retriever';
 import type { RetrieverLike } from '../src/retrieval/hybrid-retriever';
-import type { MemoryEntry, MemorySearchResult } from '../src/types';
+import type { MemoryEntry, MemorySearchResult, MemoryStore } from '../src/types';
 
 function entry(id: string, content: string, confidence = 0.6, createdAt = 1000): MemoryEntry {
   return {
@@ -151,5 +151,77 @@ describe('Consolidator', () => {
     const { merged } = await c.run({ similarityThreshold: 0.85 });
     assert.equal(merged, 0);
     assert.equal(await store.count(), 2);
+  });
+});
+
+// ─── 原子性：先存后删 ────────────────────────────────────────────
+
+/** 可注入 delete/save 故障的 MemoryStore 包装 */
+class FaultyStore implements MemoryStore {
+  constructor(
+    private inner: InMemoryStore,
+    private opts: { failDelete?: boolean; failSave?: boolean } = {},
+  ) {}
+  async save(entry: Parameters<MemoryStore['save']>[0]) {
+    if (this.opts.failSave) throw new Error('save failed');
+    return this.inner.save(entry);
+  }
+  async delete(id: string) {
+    if (this.opts.failDelete) throw new Error('delete failed');
+    return this.inner.delete(id);
+  }
+  async get(id: string) { return this.inner.get(id); }
+  async list(limit?: number) { return this.inner.list(limit); }
+  async search(query: string, limit?: number) { return this.inner.search(query, limit); }
+  async searchVectors(vec: number[], limit?: number) { return this.inner.searchVectors(vec, limit); }
+  async touchRecall(id: string, at?: number) { return this.inner.touchRecall(id, at); }
+  async consolidate(opts?: unknown) { return this.inner.consolidate(opts as never); }
+  async prune(opts?: unknown) { return this.inner.prune(opts as never); }
+  async count() { return this.inner.count(); }
+  setConsolidator(c: unknown) { this.inner.setConsolidator(c as never); }
+  markConsolidated(at?: number) { this.inner.markConsolidated(at); }
+  async stats() { return this.inner.stats(); }
+  dispose() { this.inner.dispose(); }
+}
+
+describe('Consolidator 原子性', () => {
+  it('save 失败时被合并记忆不丢失（旧实现先删后存会丢）', async () => {
+    const e1 = entry('e1', '用户偏好深色主题', 0.5, 1000);
+    const e2 = entry('e2', '用户偏好深色主题的界面', 0.6, 2000);
+    const inner = await setupStore([e1, e2]);
+    const store = new FaultyStore(inner, { failSave: true });
+
+    const similarForQuery: Record<string, MemorySearchResult[]> = {
+      [e2.content]: [hit(e1, 0.9), hit(e2, 0.95)],
+    };
+    const retriever = new HybridRetriever({ bm25: scripted(similarForQuery) });
+    const c = new Consolidator(store, retriever);
+
+    await assert.rejects(c.run());
+    // save 失败：两条原始记忆都必须在（旧实现会先删掉 e1 再 save 抛错 → e1 丢失）
+    assert.equal(await store.count(), 2, 'save 失败不应删除任何记忆');
+    assert.ok(await store.get('e1'), 'e1 应保留');
+    assert.ok(await store.get('e2'), 'e2 应保留');
+  });
+
+  it('delete 失败时不中断，幸存者已保存（重复条目可被下一轮吸收）', async () => {
+    const e1 = entry('e1', '用户偏好深色主题', 0.5, 1000);
+    const e2 = entry('e2', '用户偏好深色主题的界面', 0.6, 2000);
+    const inner = await setupStore([e1, e2]);
+    const store = new FaultyStore(inner, { failDelete: true });
+
+    const similarForQuery: Record<string, MemorySearchResult[]> = {
+      [e2.content]: [hit(e1, 0.9), hit(e2, 0.95)],
+    };
+    const retriever = new HybridRetriever({ bm25: scripted(similarForQuery) });
+    const c = new Consolidator(store, retriever);
+
+    const { merged } = await c.run();
+    assert.equal(merged, 1, '合并计数应 +1');
+    // 幸存者已保存（内容为合并后），被删失败的 e1 残留但不丢数据
+    assert.equal(await store.count(), 2, 'delete 失败仅留重复，不丢数据');
+    const survivor = await store.get('e2');
+    assert.ok(survivor && survivor.content.includes('界面'), '幸存者应包含合并后的内容');
+    assert.ok(await store.get('e1'), 'delete 失败的 e1 应保留（可被下一轮合并吸收）');
   });
 });
