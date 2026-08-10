@@ -256,7 +256,7 @@ interface MemoryEntry {
 ## 限制与注意事项
 
 1. **sentinel 块随会话持久化**：每轮注入前会先剥除历史 sentinel 块，保证当前轮只有一个记忆块。历史 user 消息会被清为原文。
-2. **并发多会话**：capture 通过 `done` 钩子携带的 `request.sessionKey` 与 `beforeRun` 暂存消息配对（框架 per-session 串行）。同一 sessionKey 顺序 awaited 下精确；不同 sessionKey 并发互不干扰。极端的同 sessionKey 并发 run 仍为 best-effort。
+2. **并发多会话**：capture 通过 `ExtensionContext.sessionKey`（Runtime 级）与 `beforeRun` 暂存消息配对（框架 per-Runtime 串行）。多会话场景请创建多个 Runtime 实例，各自独立的 sessionKey 互不干扰。
 3. **内存常驻**：索引（BM25 + 向量）全量常驻内存（零依赖约束下无外部磁盘索引）。百万级记忆需自行评估内存，或按 TTL 控制条数。
 4. **自定义 store 的混合检索**：自定义 store 需实现 `searchVectors()` 才能启用向量独立召回；未实现时退化为「BM25 候选 + 向量重排」兼容路径。纯 BM25 检索为词法匹配，跨语言同义召回需配置 `embedder`。
 5. **consolidate 为 best-effort**：增量候选基于 `lastConsolidatedAt`；合并期间新写入的条目留到下一轮处理，跨 id 交错不保证全局原子。

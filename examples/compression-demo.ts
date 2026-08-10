@@ -102,6 +102,7 @@ async function main() {
   const runtime = createRuntime({
     model,
     streamFn,
+    sessionKey: 'demo',
     systemPrompt: '你是一个文件分析助手，使用 read_file 工具读取文件并简要分析内容。',
     transformers,
     tools: [readFileTool],
@@ -124,7 +125,7 @@ async function main() {
 
     // 流式输出本轮回复
     process.stdout.write('  AI: ');
-    const request = createRequest(turns[i], { sessionKey: 'demo' });
+    const request = createRequest(turns[i]);
 
     for await (const chunk of runtime.stream(request)) {
       if (chunk.type === 'text' && chunk.content) process.stdout.write(chunk.content);
@@ -134,7 +135,7 @@ async function main() {
     console.log('\n');
 
     // 估算压缩后的上下文大小
-    const messages = runtime.getMessages('demo');
+    const messages = runtime.getMessages();
     const totalText = messages
       .map(m => {
         const c = (m as any).content;
@@ -166,7 +167,7 @@ async function main() {
   // ── 8. 最终状态报告 ─────────────────────────────────────────────
   logSeparator('最终上下文状态');
 
-  const finalMessages = runtime.getMessages('demo');
+  const finalMessages = runtime.getMessages();
   console.log(`  最终消息数: ${finalMessages.length}`);
   console.log('  消息列表:');
   for (let i = 0; i < finalMessages.length; i++) {

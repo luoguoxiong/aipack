@@ -59,7 +59,6 @@ describe('API key 回退修复 (P0-1)', () => {
     const result = await runtime.run({
       message: 'hi',
       type: 'message',
-      sessionKey: 'apikey-test',
     });
 
     // streamFn 直接返回成功，但我们验证的是 resolveApiKey 逻辑；
@@ -96,7 +95,6 @@ describe('API key 回退修复 (P0-1)', () => {
     const result = await runtime.run({
       message: 'hi',
       type: 'message',
-      sessionKey: 'apikey-test-2',
     });
 
     assert.equal(result.success, true);

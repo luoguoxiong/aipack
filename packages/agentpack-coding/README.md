@@ -90,9 +90,8 @@ agentpack-coding --memory run "总结项目结构"
 `run_command` 执行前调用 `PermissionManager.check(command)`，按规则决策：
 
 - **allow**：只读命令（`git status/log/diff`、`ls/cat/pwd/find`、`node -v`、`tsc --noEmit` 等）
-- **deny**：危险命令（`rm`、写系统路径 `/etc/`、`curl | sh`、`sudo`）
-- **confirm**：变更性命令（`git push/commit`、`npm install`、`mv/cp/mkdir`）需确认回调批准
-- **无规则匹配 → deny**（保守）
+- **confirm**：高危与变更性命令（`rm`、写系统路径 `/etc/`、`curl | sh`、`sudo`、`git push/commit`、`npm install`、`mv/cp/mkdir`）需确认回调批准
+- **无规则匹配 → confirm**（无确认回调时兜底拒绝，保守）
 
 确认回调返回 `allow-always` 时，该条命令永久放行（按整条归一化命令精确匹配加入 allow-always 集合，不会放行整类命令）。
 

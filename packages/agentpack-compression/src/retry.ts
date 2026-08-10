@@ -52,12 +52,20 @@ export const DEFAULT_FORK_RETRY: RetryConfig = {
 /**
  * 判断错误是否可重试。
  *  - AbortError（用户/超时取消）：不重试
- *  - ForkStreamError.retryable=false：不重试
- *  - 429 / 5xx / 网络错误：重试
+ *  - ForkStreamError：status 精细化判断优先（429/5xx 重试、4xx 不重试），
+ *    无 status 时按 retryable 标志
+ *  - 含 status 字段的普通错误：429 / 5xx 重试，其余 4xx 不重试
  *  - 其他 Error：保守重试（默认 retryable=true）
  */
 export function isRetryableStreamError(err: unknown): boolean {
-  if (err instanceof ForkStreamError) return err.retryable;
+  if (err instanceof ForkStreamError) {
+    if (typeof err.status === 'number') {
+      if (err.status === 429) return true;
+      if (err.status >= 500 && err.status < 600) return true;
+      if (err.status >= 400 && err.status < 500 && err.status !== 408) return false;
+    }
+    return err.retryable;
+  }
 
   // AbortError / DOMException: 主动取消不重试
   if (err instanceof Error) {

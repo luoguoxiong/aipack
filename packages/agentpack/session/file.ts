@@ -6,7 +6,8 @@
  * 支持 maxAge 过期清理（加载与列举时清理）。
  *
  * 并发说明：同一进程内由 Runtime 的会话串行队列保证不会并发写同一 key；
- * 多进程同写同一 key 仍为 last-write-wins。如需多进程安全，请在外层加分布式锁。
+ * 多进程场景通过 withLock/acquireLock 文件锁（O_EXCL + 陈旧锁回收）保证
+ * 同 key 的"读-改-写"互斥，Runtime 在非 ephemeral 请求下自动加锁。
  */
 
 import fs from 'node:fs/promises';
@@ -15,8 +16,14 @@ import os from 'node:os';
 import type {
   SessionStorage,
   StoredSession,
+  StorageLock,
   FileSessionStorageOptions,
 } from '../core';
+
+/** 简单 sleep 工具 */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function resolveBaseDir(baseDir?: string): string {
   if (baseDir) {
@@ -47,11 +54,17 @@ export class FileSessionStorage implements SessionStorage {
   private baseDir: string;
   private maxAge?: number;
   private maxStoredMessages: number;
+  private lockWaitMs: number;
+  private lockStaleMs: number;
+  private lockRetryMs: number;
 
   constructor(options: FileSessionStorageOptions = {}) {
     this.baseDir = resolveBaseDir(options.baseDir);
     this.maxAge = options.maxAge;
     this.maxStoredMessages = options.maxStoredMessages ?? 0;
+    this.lockWaitMs = options.lockWaitMs ?? 30_000;
+    this.lockStaleMs = options.lockStaleMs ?? 300_000;
+    this.lockRetryMs = options.lockRetryMs ?? 25;
   }
 
   get dir(): string {
@@ -60,6 +73,11 @@ export class FileSessionStorage implements SessionStorage {
 
   private sessionPath(key: string): string {
     return path.join(this.baseDir, `${encodeKey(key)}.json`);
+  }
+
+  /** 锁文件路径：<baseDir>/.locks/<key>.lock，跨进程用文件独占创建互斥 */
+  private lockPath(key: string): string {
+    return path.join(this.baseDir, '.locks', `${encodeKey(key)}.lock`);
   }
 
   async load(key: string): Promise<StoredSession | null> {
@@ -136,6 +154,73 @@ export class FileSessionStorage implements SessionStorage {
       return keys;
     } catch {
       return []; // 目录不存在
+    }
+  }
+
+  // ─── 跨进程锁 ──────────────────────────────────────────────────
+
+  /**
+   * 跨进程互斥锁（文件锁）：
+   * - 用 O_EXCL 独占创建锁文件实现互斥，多进程共享同一 baseDir 时生效
+   * - 竞争方指数退避 + jitter 重试，直到 lockWaitMs 超时
+   * - 持有进程崩溃遗留的锁文件超过 lockStaleMs 视为陈旧，接管删除后重试
+   */
+  async acquireLock(key: string): Promise<StorageLock> {
+    const lockFile = this.lockPath(key);
+    await fs.mkdir(path.dirname(lockFile), { recursive: true });
+
+    const deadline = Date.now() + this.lockWaitMs;
+    let attempt = 0;
+    for (;;) {
+      try {
+        await fs.writeFile(
+          lockFile,
+          `${process.pid}\n${Date.now()}\n`,
+          { flag: 'wx' }, // 独占创建：已存在则失败
+        );
+        let released = false;
+        return {
+          release: async () => {
+            if (released) return;
+            released = true;
+            // 仅删除自己创建的锁文件（理论上不可能被替换，防御性判断）
+            await fs.unlink(lockFile).catch(() => {});
+          },
+        };
+      } catch (err) {
+        const e = err as NodeJS.ErrnoException;
+        if (e.code !== 'EEXIST') throw err; // 非互斥类错误（权限等）直接抛出
+
+        // 陈旧锁回收：持有进程崩溃留下的锁文件
+        try {
+          const st = await fs.stat(lockFile);
+          if (Date.now() - st.mtimeMs > this.lockStaleMs) {
+            await fs.unlink(lockFile).catch(() => {});
+            continue; // 删除后立即重试
+          }
+        } catch {
+          continue; // stat 失败（锁文件刚被释放）→ 重试
+        }
+
+        if (Date.now() >= deadline) {
+          throw new Error(
+            `[SessionStorage] 获取会话锁超时（${this.lockWaitMs}ms）: ${key}`,
+          );
+        }
+        attempt++;
+        // 指数退避 + jitter，上限 500ms
+        await sleep(Math.min(this.lockRetryMs * 2 ** attempt, 500) + Math.random() * 20);
+      }
+    }
+  }
+
+  /** 便捷形式：fn 执行期间独占该 key */
+  async withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const lock = await this.acquireLock(key);
+    try {
+      return await fn();
+    } finally {
+      await lock.release();
     }
   }
 }

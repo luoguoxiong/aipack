@@ -121,8 +121,8 @@ async function routeByLlm(
   question: string,
   signal?: AbortSignal,
 ): Promise<CollectionId | null> {
-  // 轮询会话隔离 + ephemeral 不落盘
-  const req = createRequest(question, { sessionKey: `router:${Date.now()}`, ephemeral: true });
+  // ephemeral 不落盘，避免轮询会话累积
+  const req = createRequest(question, { ephemeral: true });
   const result = await router.run(req);
   if (signal?.aborted) throw new Error('aborted');
   if (!result.success) {
@@ -149,7 +149,7 @@ async function streamAnswer(
     '请基于以上上下文回答用户问题。',
   ].join('\n');
 
-  const req = createRequest(context, { sessionKey: `answer:${Date.now()}`, ephemeral: true });
+  const req = createRequest(context, { ephemeral: true });
   let answerText = '';
   for await (const chunk of answer.stream(req)) {
     if (signal?.aborted) throw new Error('aborted');

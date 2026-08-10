@@ -72,7 +72,7 @@ describe('EventCaptureExtension', () => {
     const hooks = makeHooks();
     const ext = new EventCaptureExtension();
     ext.apply(hooks, makeCtx());
-    const req = createRequest('hi', { sessionKey: 'ec1' });
+    const req = createRequest('hi');
     await hooks.beforeInitialize.promise(req);
     await hooks.afterInitialize.promise(req);
     await hooks.beforeRun.promise(req);
@@ -138,10 +138,10 @@ describe('RequestInterceptorExtension', () => {
   it('beforeRun 调用 interceptor', async () => {
     const hooks = makeHooks();
     const ext = new RequestInterceptorExtension(async (req) => {
-      return createRequest(req.message + ' [modified]', { sessionKey: req.sessionKey });
+      return createRequest(req.message + ' [modified]');
     });
     ext.apply(hooks, makeCtx());
-    const result = await hooks.beforeRun.promise(createRequest('original', { sessionKey: 'ri1' }));
+    const result = await hooks.beforeRun.promise(createRequest('original'));
     assert.equal(result.message, 'original [modified]');
   });
 });

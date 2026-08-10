@@ -24,9 +24,18 @@ export interface NormalizedError {
 // ─── Body 提取 ─────────────────────────────────────────────────────
 
 /**
+ * 可被消费响应体的对象（fetch Response 或抛出的 Response-like 错误）
+ */
+type BodyReadable = {
+  statusText?: string;
+  text?: () => Promise<string>;
+};
+
+/**
  * 从 Response 对象提取错误 body
  */
-async function extractResponseBody(response: Response): Promise<string> {
+async function extractResponseBody(response: Response | BodyReadable): Promise<string> {
+  if (typeof response.text !== 'function') return '';
   try {
     const text = await response.text();
     if (!text) return '';
@@ -53,16 +62,20 @@ async function extractResponseBody(response: Response): Promise<string> {
 // ─── 错误标准化 ────────────────────────────────────────────────────
 
 /**
- * 从 HTTP Response 标准化错误
+ * 从 HTTP Response 标准化错误。
+ * 兼容 fetch Response 与"被 retry 抛出的 Response-like 错误"（两者均带 status/text）。
+ * 注意：调用会消费 response body，只应调用一次。
  */
-export async function normalizeResponseError(response: Response): Promise<NormalizedError> {
+export async function normalizeResponseError(
+  response: Response | (BodyReadable & { status: number }),
+): Promise<NormalizedError> {
   const body = await extractResponseBody(response);
   const truncated = body.length > MAX_BODY_LENGTH
     ? body.slice(0, MAX_BODY_LENGTH) + '...'
     : body;
 
   // 从 body 中提取更有意义的短消息
-  const shortMessage = truncated.length > 0 ? truncated : response.statusText;
+  const shortMessage = truncated.length > 0 ? truncated : (response.statusText ?? '');
 
   return {
     status: response.status,

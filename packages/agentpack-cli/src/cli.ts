@@ -214,10 +214,15 @@ program
   .command('replay')
   .description('回放历史会话以复现问题')
   .argument('<sessionKey>', '要回放的会话 key')
-  .action(async (sessionKey: string) => {
+  .option('--execute', '真实执行工具（默认只回放对话，不执行任何工具）')
+  .action(async (sessionKey: string, opts: { execute?: boolean }) => {
     const { config, model } = await init();
+    const dryRun = !opts.execute;
 
     console.log(`开始回放会话：${sessionKey}`);
+    if (dryRun) {
+      console.log('（dry-run：不执行任何工具，仅回放对话；使用 --execute 真实执行）');
+    }
     console.log('----------------------------------------');
 
     try {
@@ -245,6 +250,7 @@ program
           console.log('');
         },
         model,
+        { dryRun },
       );
 
       console.log(

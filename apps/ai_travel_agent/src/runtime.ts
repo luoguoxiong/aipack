@@ -102,16 +102,12 @@ export async function planTravel(
 ): Promise<{ research: string; itinerary: string }> {
   const { destination, days } = input;
   const safeDays = Math.max(1, Math.min(30, Math.trunc(days) || 7));
-  // 把模型标识编入 sessionKey,隔离不同模型的会话历史(/ 转为 - 避免路径分隔符)
-  const modelTag = input.modelKey ? `:${input.modelKey.replace(/[^a-z0-9._-]+/gi, '-')}` : '';
 
   // ── 阶段 1:Researcher 同步研究 ───────────────────────────────
   onProgress({ type: 'research_start' });
-  const researcherSession = `researcher:${slug(destination)}${modelTag}`;
   const researchReq = createRequest(
     `请为目的地「${destination}」规划一次 ${safeDays} 天的旅行。` +
       `先列出 3 个相关搜索词,逐个调用 search_web 搜索,然后汇总返回最相关的研究结果(景点、活动、住宿、交通、美食)。`,
-    { sessionKey: researcherSession },
   );
 
   const researchResult = await runtimes.researcher.run(researchReq);
@@ -125,7 +121,6 @@ export async function planTravel(
 
   // ── 阶段 2:Planner 流式生成行程 ───────────────────────────────
   onProgress({ type: 'plan_start' });
-  const plannerSession = `planner:${slug(destination)}${modelTag}`;
   const plannerReq = createRequest(
     [
       `目的地: ${destination}`,
@@ -136,7 +131,6 @@ export async function planTravel(
       '请基于以上研究结果,生成一份详细的、按天组织的行程。',
       '每天用 "Day N:" 作为小标题开头。',
     ].join('\n'),
-    { sessionKey: plannerSession },
   );
 
   let itinerary = '';
@@ -153,15 +147,6 @@ export async function planTravel(
 
   onProgress({ type: 'done', itinerary });
   return { research, itinerary };
-}
-
-/** 把目的地转为 session key 友好的 slug */
-function slug(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40) || 'default';
 }
 
 // ─── Runtime 注册表:按 (provider, modelId) 缓存 Runtime 复用 ──────────

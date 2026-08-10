@@ -1,9 +1,13 @@
 /**
- * run_command 工具：在 workspace 内执行 shell 命令。
+ * run_command 工具：在 workspace 内执行 shell 命令（无 shell 模式）。
  *
- * 执行前经 PermissionManager.check 校验（allow/deny/confirm）。
- * 用 child_process.spawn（shell 模式）执行，支持超时（SIGTERM → 3s 后 SIGKILL）。
- * stdout/stderr 收集上限 100KB，最终截断到 50KB 防止输出爆炸。
+ * 安全设计（Phase 3-3 PermissionPolicy 安全层）：
+ * - 执行前经 PermissionManager.check 校验（allow/deny/confirm，高危命令均走 confirm 人工确认）
+ * - 多语句串联（; && || 换行）一律拒绝（防 `cmd; rm -rf ~` 绕过）
+ * - 无 shell 执行：parseCommandToArgv 解析为 argv 后 spawn(file, args, { shell: false })；
+ *   管道/重定向/命令替换/通配符等 shell 特性一律拒绝（安全面最小化）
+ * - 超时 SIGTERM → 3s 后 SIGKILL（detached 进程组）
+ * - stdout/stderr 收集上限 100KB，最终截断到 50KB 防止输出爆炸
  */
 
 import { spawn } from 'child_process';
@@ -11,6 +15,11 @@ import { createTextContent } from 'agentpack';
 import type { Tool, ToolResult } from 'agentpack';
 import type { CodingToolContext } from '../types';
 import { resolveWithin } from '../utils/path';
+import {
+  splitCommandStatements,
+  hasShellMeta,
+  parseCommandToArgv,
+} from '../permission';
 import { truncateWithHint } from '../utils/text';
 
 /** 收集上限（字节），最终截断到 50KB */
@@ -25,16 +34,22 @@ interface SpawnResult {
   durationMs: number;
 }
 
+/** 无 shell 执行：spawn(executable, args, { shell: false }) */
 function runSpawn(
-  command: string,
+  argv: string[],
+  env: Record<string, string> | undefined,
   cwd: string,
   timeout: number,
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
     const started = Date.now();
-    const child = spawn(command, {
-      shell: true,
+    // detached: true 使子进程成为独立进程组组长，
+    // 超时后可用 process.kill(-pid) 终止整组（含孙进程），防止挂起的孙进程拖住 close。
+    const child = spawn(argv[0], argv.slice(1), {
+      shell: false,
       cwd,
+      env: env ? { ...process.env, ...env } : undefined,
+      detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -78,21 +93,24 @@ function runSpawn(
       finish({ exitCode: code ?? -1, signaled: signal !== null });
     });
 
+    // 超时终止整组进程
+    const killGroup = (sig: NodeJS.Signals): void => {
+      try {
+        if (child.pid !== undefined && process.platform !== 'win32') {
+          process.kill(-child.pid, sig);
+        } else {
+          child.kill(sig);
+        }
+      } catch {
+        /* 进程已退出，忽略 */
+      }
+    };
+
     if (timeout > 0) {
       timer = setTimeout(() => {
-        try {
-          child.kill('SIGTERM');
-        } catch {
-          /* ignore */
-        }
+        killGroup('SIGTERM');
         // 3s 后仍存活则 SIGKILL
-        killTimer = setTimeout(() => {
-          try {
-            child.kill('SIGKILL');
-          } catch {
-            /* ignore */
-          }
-        }, 3000);
+        killTimer = setTimeout(() => killGroup('SIGKILL'), 3000);
       }, timeout);
     }
   });
@@ -102,9 +120,12 @@ export function createRunCommandTool(ctx: CodingToolContext): Tool {
   return {
     name: 'run_command',
     description:
-      '在 workspace 内执行 shell 命令。只读命令（git status/ls/cat 等）默认放行，' +
-      '高危命令（rm 等）默认拒绝，变更性命令（git push/npm install 等）需确认。' +
+      '在 workspace 内执行 shell 命令（无 shell 模式）。只读命令（git status/ls/cat 等）默认放行，' +
+      '高危/变更性命令（rm/sudo/写系统路径/git push/npm install 等）需人工确认。' +
+      '不支持多语句串联、管道、重定向、通配符（请用 glob 工具）。' +
       '返回 stdout/stderr/exitCode，超时（默认 30s）会被终止。',
+    // 框架级 PermissionPolicy 能力声明：执行任意命令，需显式授权
+    permissions: ['shell:exec'],
     parameters: {
       type: 'object',
       properties: {
@@ -134,19 +155,60 @@ export function createRunCommandTool(ctx: CodingToolContext): Tool {
       let timeout = a.timeout ?? 30000;
       if (timeout > 300000) timeout = 300000;
 
-      // 1. 权限检查
+      // 1. 多语句串联拒绝（防 `cmd; rm -rf ~` / `ls && curl | sh` 绕过权限检查）
+      const statements = splitCommandStatements(command);
+      if (statements.length === 0) {
+        return {
+          content: [createTextContent('run_command 失败：无法解析命令')],
+          details: { error: 'unparsable command', command },
+        };
+      }
+      if (statements.length > 1) {
+        return {
+          content: [
+            createTextContent(
+              'run_command 失败：不支持多语句串联（; && || 换行），请拆分成单条命令执行（原始命令：' +
+                `${command}）`,
+            ),
+          ],
+          details: { error: 'multi-statement command', command, statements },
+        };
+      }
+      const statement = statements[0];
+
+      // 2. 权限检查（单条语句；含重定向/命令替换走 checkUnsafe）
       if (ctx.permission) {
-        const decision = await ctx.permission.check(command);
+        let decision: 'allow' | 'deny';
+        if (hasShellMeta(statement)) {
+          decision = await ctx.permission.checkUnsafe(statement);
+        } else {
+          decision = await ctx.permission.check(statement);
+        }
         if (decision === 'deny') {
           return {
-            content: [createTextContent(`run_command 失败：命令被权限策略拒绝：${command}`)],
-            details: { error: 'permission denied', command },
+            content: [
+              createTextContent(
+                `run_command 失败：命令 "${statement}" 被权限策略拒绝（原始命令：${command}）`,
+              ),
+            ],
+            details: { error: 'permission denied', command, rejectedStatement: statement },
           };
         }
       }
 
-      // 2. 解析 cwd（必须在 workspace 内）
-      const cwdResolved = resolveWithin(ctx.workspace, a.cwd ?? '.');
+      // 3. 无 shell 解析（管道/重定向/通配符等 shell 特性在此拒绝）
+      const parsed = parseCommandToArgv(statement);
+      if (parsed.error) {
+        return {
+          content: [
+            createTextContent(`run_command 失败：${parsed.error}（命令：${statement}）`),
+          ],
+          details: { error: 'unsupported shell syntax', command: statement },
+        };
+      }
+
+      // 4. 解析 cwd（必须在 workspace 内）
+      const cwdResolved = await resolveWithin(ctx.workspace, a.cwd ?? '.');
       if (!cwdResolved.ok || !cwdResolved.abs) {
         const err = cwdResolved.error ?? 'resolve failed';
         return {
@@ -155,10 +217,10 @@ export function createRunCommandTool(ctx: CodingToolContext): Tool {
         };
       }
 
-      // 3. 执行
-      const result = await runSpawn(command, cwdResolved.abs, timeout);
+      // 5. 执行（无 shell）
+      const result = await runSpawn(parsed.argv, parsed.env, cwdResolved.abs, timeout);
 
-      // 4. 截断输出
+      // 6. 截断输出
       const stdout = truncateWithHint(
         result.stdout,
         OUTPUT_LIMIT,
@@ -170,7 +232,7 @@ export function createRunCommandTool(ctx: CodingToolContext): Tool {
         '\n... (stderr 已截断)',
       );
 
-      // 5. 格式化返回
+      // 7. 格式化返回
       const parts: string[] = [];
       if (result.signaled) {
         parts.push(`[超时终止，耗时 ${result.durationMs}ms，exit ${result.exitCode}]`);

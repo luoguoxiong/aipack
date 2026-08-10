@@ -124,6 +124,11 @@ export interface Tool {
   name: string;
   description: string;
   parameters: unknown;  // JSON Schema 或 TypeBox schema
+  /**
+   * 所需权限能力声明（如 'shell:exec' / 'fs:write' / 'memory:write' / 'network:fetch'）。
+   * 供框架级 PermissionPolicy 裁决使用；未声明视为安全工具。
+   */
+  permissions?: string[];
   execute: (
     toolCallId: string,
     args: unknown,

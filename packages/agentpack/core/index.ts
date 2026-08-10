@@ -97,12 +97,29 @@ export type {
 export { ResultBuilder, createResult, createErrorResult } from './result';
 export type { Result, ResultChunk } from './result';
 
+// ─── PermissionPolicy: 框架级工具权限层 ───────────────────────────
+export {
+  createPermissionPolicy,
+  createAllowListPolicy,
+  createDenyAllPolicy,
+  createAllowAllPolicy,
+  hasPermission,
+} from './permission';
+export type {
+  PermissionDecision,
+  PermissionRequest,
+  PermissionPolicy,
+  PermissionRule,
+  CreatePermissionPolicyOptions,
+} from './permission';
+
 // ─── Session: 会话持久化契约 ──────────────────────────────────────
 export { SESSION_VERSION } from './session';
 export type {
   SessionModel,
   StoredSession,
   SessionStorage,
+  StorageLock,
   FileSessionStorageOptions,
   MemorySessionStorageOptions,
 } from './session';

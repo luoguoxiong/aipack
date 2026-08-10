@@ -221,12 +221,19 @@ export type ReasoningLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | '
 export interface SimpleStreamOptions {
   signal?: AbortSignal;
   apiKey?: string;
+  /** 注入的凭证存储（可选）：提供后优先于环境变量解析 API key（如 KMS） */
+  credentials?: CredentialStore;
   reasoning?: ReasoningLevel;
   maxTokens?: number;
   temperature?: number;
   sessionId?: string;
   headers?: Record<string, string>;
   env?: Record<string, string>;
+  /** 流空闲超时（毫秒）：两次数据块之间无新数据视为断流（默认 60000，0 表示禁用） */
+  idleTimeoutMs?: number;
+  /** 流总超时（毫秒）：整个流式响应从开始到结束的最长时限（默认 0 = 禁用）。
+   *  与 idleTimeoutMs 互补：idle 防半开断流，timeoutMs 防整体长时间挂起。 */
+  timeoutMs?: number;
   onPayload?: (payload: unknown) => void;
   onResponse?: (response: unknown) => void;
 }

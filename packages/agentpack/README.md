@@ -40,7 +40,8 @@ const runtime = createRuntime({
   model: adaptAiModel(aiModel),
   streamFn: createStreamFnFromAi(aiModel),
   systemPrompt: '你是一个简洁的 AI 助手',
-  // 启用会话持久化后，同一 sessionKey 的历史会自动恢复为上下文
+  sessionKey: 's1', // 单会话标识（多会话请创建多个 Runtime 实例）
+  // 启用会话持久化后，同一 Runtime 的历史会自动恢复为上下文
   sessionStorage: createFileSessionStorage({
     baseDir: './sessions',
     maxAge: 30 * 24 * 60 * 60 * 1000, // 毫秒
@@ -48,12 +49,12 @@ const runtime = createRuntime({
 });
 
 // 同步调用
-const result = await runtime.run(createRequest('你好', { sessionKey: 's1' }));
+const result = await runtime.run(createRequest('你好'));
 console.log(result.content);
 
 // 流式调用
 for await (const chunk of runtime.stream(
-  createRequest('写一首诗', { sessionKey: 's1' }),
+  createRequest('写一首诗'),
 )) {
   if (chunk.type === 'text') process.stdout.write(chunk.content ?? '');
 }
@@ -131,18 +132,19 @@ interface RuntimeOptions {
 | `registerTool / registerTools`                 | 注册工具                                 |
 | `setModel / setSystemPrompt / setStreamFn`     | 运行时切换模型 / 系统提示词 / 模型提供者 |
 | `registerExtension / useTransformer`           | 注册扩展 / 转换器                        |
-| `getMessages(sessionKey?)`                     | 获取会话消息列表                         |
+| `getMessages()`                                | 获取当前会话消息列表                     |
 | `abort / isBusy / waitForIdle`                 | 会话中止与状态查询                       |
-| `clearSession(sessionKey?)`                    | 清除内存会话（不影响已持久化数据）       |
-| `listSessions()`                               | 列出所有会话 key（内存 + 存储）          |
-| `deleteSession(sessionKey?)`                   | 删除会话（内存 + 存储）                  |
+| `clearSession()`                               | 清除内存会话（不影响已持久化数据）       |
+| `deleteSession()`                              | 删除会话（内存 + 存储）                  |
 | `close()`                                      | 关闭运行时，释放资源                     |
+
+> **单会话架构**：每个 `Runtime` 绑定一个 `sessionKey`（默认 `'default'`），通过 `createRuntime({ sessionKey })` 指定。多会话场景请创建多个 `Runtime` 实例。
 
 ### Request（入口）
 
 - `createRequest(message, options?)` — 构建请求
-- `RequestBuilder` — 链式构建器（`.message()` / `.sessionKey()` / `.channel()` 等）
-- `validateRequest(request)` — 校验（message/sessionKey 非空、长度限制）
+- `RequestBuilder` — 链式构建器（`.message()` / `.channel()` / `.model()` 等）
+- `validateRequest(request)` — 校验（message 非空、长度限制）
 - `normalizeRequest(request)` — 标准化（补齐默认 channel/chatId/senderId 等）
 
 ### 上下文资源 / 任务图
@@ -231,12 +233,25 @@ const runtime = createRuntime({
 
 ## 会话持久化与多轮对话
 
-同一 `sessionKey` 下多次 `run` / `stream` 会自动恢复历史并追加结果：
+同一 `Runtime` 下多次 `run` / `stream` 会自动恢复历史并追加结果：
 
 ```ts
-await runtime.run(createRequest('记住我的名字是张三', { sessionKey: 'u1' }));
-const r2 = await runtime.run(createRequest('我叫什么？', { sessionKey: 'u1' }));
+const runtime = createRuntime({
+  model, streamFn,
+  sessionKey: 'u1',
+  sessionStorage: createFileSessionStorage({ baseDir: './sessions' }),
+});
+
+await runtime.run(createRequest('记住我的名字是张三'));
+const r2 = await runtime.run(createRequest('我叫什么？'));
 console.log(r2.content); // 输出：张三
+```
+
+跨会话场景（如不同用户的独立上下文）请创建多个 `Runtime` 实例，各自持有不同的 `sessionKey`：
+
+```ts
+const runtime1 = createRuntime({ model, streamFn, sessionKey: 'user-a', sessionStorage });
+const runtime2 = createRuntime({ model, streamFn, sessionKey: 'user-b', sessionStorage });
 ```
 
 - `maxAge` 单位为**毫秒**；需要按天配置时请自行换算（如 30 天 = `30 * 24 * 60 * 60 * 1000`）
