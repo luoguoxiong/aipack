@@ -120,11 +120,10 @@ const model: Model = {
 
 // ─── 创建带记忆插件的 Runtime（多 Runtime 共享同一 store） ───────────
 
-function createMemoryRuntime(sessionKey: string, streamFn: StreamFn) {
+function createMemoryRuntime(streamFn: StreamFn) {
   const mem = createMemoryPlugin({ store });
   const installed = mem.install();
   return createRuntime({
-    sessionKey,
     model,
     streamFn,
     extensions: installed.extensions,
@@ -142,14 +141,14 @@ async function main(): Promise<void> {
   console.log('\n=== aipack-memory 往返验证 ===\n');
 
   // s1：捕获会话；s2：检索注入会话（跨会话记忆）
-  const runtime1 = createMemoryRuntime('s1', makeFakeStreamFn('好的，我记住了你用 React + TypeScript。'));
-  const runtime2 = createMemoryRuntime('s2', makeFakeStreamFn('根据之前的记忆，你用的是 React + TypeScript。'));
+  const runtime1 = createMemoryRuntime(makeFakeStreamFn('好的，我记住了你用 React + TypeScript。'));
+  const runtime2 = createMemoryRuntime(makeFakeStreamFn('根据之前的记忆，你用的是 React + TypeScript。'));
 
   // ─── 测试 1：capture ──────────────────────────────────────────────
   console.log('▶ 测试 1：自动捕获（capture）');
 
   await runtime1.run(
-    createRequest('我喜欢用 React + TypeScript 做项目'),
+    createRequest('我喜欢用 React + TypeScript 做项目', { sessionKey: 's1' }),
   );
 
   const memories = await store.list();
@@ -166,7 +165,7 @@ async function main(): Promise<void> {
   capturedContexts.length = 0;
 
   await runtime2.run(
-    createRequest('我之前说过用什么 React 技术栈？'),
+    createRequest('我之前说过用什么 React 技术栈？', { sessionKey: 's2' }),
   );
 
   const ctx2 = capturedContexts[0];
@@ -191,7 +190,7 @@ async function main(): Promise<void> {
   runtime2.setStreamFn(makeFakeStreamFn('没错，你之前提到过 React + TypeScript。'));
 
   await runtime2.run(
-    createRequest('我之前说过用什么 React 技术栈？'),
+    createRequest('我之前说过用什么 React 技术栈？', { sessionKey: 's2' }),
   );
 
   const ctx3 = capturedContexts[0];

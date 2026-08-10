@@ -130,8 +130,8 @@ export default function QuickstartPage() {
         </h2>
         <p style={{ lineHeight: 1.8, color: '#475569' }}>
           同一 <code>Runtime</code> 的多次 <code>run</code> 会自动恢复历史消息。
-          <code>sessionKey</code> 在 <code>createRuntime</code> 时指定（默认 <code>'default'</code>）。
-          配合 <code>createFileSessionStorage</code>，即便重启进程也能继续对话。多会话请创建多个 Runtime 实例。
+          <code>sessionKey</code> 在 <code>createRequest</code> 时指定（默认 <code>'default'</code>）。
+          配合 <code>createFileSessionStorage</code>，即便重启进程也能继续对话。同一 Runtime 可服务多个会话：请求带不同 sessionKey 即路由到独立会话。
         </p>
         <Alert
           type="info"

@@ -88,6 +88,8 @@ export interface CodingAgent {
   tools: Tool[];
   /** 实际解析到的模型（供 /model 等展示用） */
   model: import('@aipack/agent').AiModel;
+  /** 会话标识（由 options.sessionKey 决定，默认 'default'）；调用方据此在 createRequest / getMessages / clearSession 中显式传递 */
+  sessionKey: string;
   /** 关闭 runtime 释放资源 */
   close(): Promise<void>;
 }

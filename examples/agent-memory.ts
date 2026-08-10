@@ -135,11 +135,10 @@ async function main() {
 
   // 4. 创建 Runtime 工厂：多会话通过多 Runtime 实例共享同一 memory store
   //    （也支持后续动态注册：runtime.registerTool(...) / registerTools([...])）
-  function createMemoryRuntime(sessionKey: string, sFn: StreamFn) {
+  function createMemoryRuntime(sFn: StreamFn) {
     return createRuntime({
       model,
       streamFn: sFn,
-      sessionKey,
       systemPrompt: '你是一个简洁的 AI 助手，会参考注入的相关记忆回答用户。',
       extensions: installed.extensions,
       transformers: installed.transformers,
@@ -153,10 +152,10 @@ async function main() {
   console.log('▶ 会话 s1：捕获用户偏好 + 触发自定义工具');
   console.log('  用户: 我喜欢用 React + TypeScript 做项目，顺便查下北京天气');
   const s1StreamFn = real?.streamFn ?? makeFakeStreamFn('好的，我记住了你的技术栈。北京今天晴 26°C。');
-  const runtime1 = createMemoryRuntime('s1', s1StreamFn);
+  const runtime1 = createMemoryRuntime(s1StreamFn);
 
   const r1 = await runtime1.run(
-    createRequest('我喜欢用 React + TypeScript 做项目，顺便查下北京天气'),
+    createRequest('我喜欢用 React + TypeScript 做项目，顺便查下北京天气', { sessionKey: 's1' }),
   );
   console.log(`  助手: ${r1.content}`);
   console.log(`  🔧 使用的工具: ${r1.toolsUsed.length ? r1.toolsUsed.join(', ') : '（假模式未触发）'}\n`);
@@ -182,10 +181,10 @@ async function main() {
     });
     return (real?.streamFn ?? makeFakeStreamFn('根据记忆，你之前提到用 React + TypeScript，深色主题，VSCode。'))(m, ctx);
   };
-  const runtime2 = createMemoryRuntime('s2', observeStreamFn);
+  const runtime2 = createMemoryRuntime(observeStreamFn);
 
   const r2 = await runtime2.run(
-    createRequest('我之前说过用什么技术栈？'),
+    createRequest('我之前说过用什么技术栈？', { sessionKey: 's2' }),
   );
   console.log(`  助手: ${r2.content}\n`);
 

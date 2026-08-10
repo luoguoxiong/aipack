@@ -187,7 +187,7 @@ async function runAgent(
   signal?: AbortSignal,
 ): Promise<string> {
   onProgress({ type: STAGE_START[agent] });
-  const req = createRequest(prompt);
+  const req = createRequest(prompt, { sessionKey });
 
   let text = '';
   for await (const chunk of runtime.stream(req)) {

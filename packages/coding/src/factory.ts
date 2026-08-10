@@ -87,13 +87,14 @@ export async function createCodingAgent(
     }
   }
 
-  // 6. 创建 runtime
+  // 6. 创建 runtime（sessionKey 不再编入 Runtime；由 CodingAgent.sessionKey 持有，
+  //    调用方在 createRequest / getMessages / clearSession 时显式传递）
+  const sessionKey = options.sessionKey ?? 'default';
   const runtime: Runtime = createRuntime({
     model: adaptAiModel(aiModel),
     streamFn,
     systemPrompt: options.systemPrompt ?? DEFAULT_CODING_SYSTEM_PROMPT,
     workspace,
-    sessionKey: options.sessionKey,
     tools: allTools,
     extensions: extensions.length > 0 ? extensions : undefined,
     transformers: transformers.length > 0 ? transformers : undefined,
@@ -107,6 +108,7 @@ export async function createCodingAgent(
     permission,
     tools: allTools,
     model: aiModel,
+    sessionKey,
     async close() {
       await runtime.close();
     },

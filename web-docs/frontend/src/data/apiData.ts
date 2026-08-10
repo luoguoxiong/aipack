@@ -37,7 +37,6 @@ export const apiList: ApiItem[] = [
       { name: 'options.transformers', type: 'ContextTransformer[]', description: '预注册的上下文转换器' },
       { name: 'options.pipeline', type: 'Pipeline', description: '自定义 Pipeline，覆盖默认流水线' },
       { name: 'options.sessionStorage', type: 'SessionStorage', description: '会话存储适配器，启用后会话自动持久化' },
-      { name: 'options.sessionKey', type: 'string', description: '默认会话标识（默认 default）。同一 Runtime 可服务多个会话：请求携带 sessionKey 时按该 key 路由到独立会话（历史隔离 + 串行队列独立）' },
       { name: 'options.maxSessions', type: 'number', description: '内存会话上限，超限按 LRU 淘汰最久未用会话（默认 64）。仅影响内存态，持久化会话不受影响' },
       { name: 'options.permissionPolicy', type: 'PermissionPolicy', description: '框架级工具权限策略（可选）。未配置时全部放行（向后兼容），生产环境建议配置；deny 产出 details.blocked 结果、不终止 run，模型可换策略' },
       { name: 'options.telemetry', type: 'Telemetry', description: '轻量可观测：onRunEnd / onToolCall / onModelCall / onPermissionDenied，全可选、上报失败不影响主流程' },

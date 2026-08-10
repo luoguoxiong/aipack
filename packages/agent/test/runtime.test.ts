@@ -130,11 +130,10 @@ describe('实时持久化（运行中即可读到会话）', () => {
       streamFn: mockToolStreamFn([{ id: 'tc1', name: 'probe', args: {} }]),
       tools: [probeTool],
       sessionStorage: store,
-      sessionKey: 'live1',
     });
 
     // 只消费到第一个 tool_end 即暂停（模拟运行中查看会话；此时本轮结果已落盘）
-    const gen = runtime.stream(createRequest('hi'));
+    const gen = runtime.stream(createRequest('hi', { sessionKey: 'live1' }));
     let sawToolEnd = false;
     for await (const chunk of gen) {
       if (chunk.type === 'tool_end') {
@@ -158,10 +157,9 @@ describe('实时持久化（运行中即可读到会话）', () => {
         { role: 'assistant', content: [{ type: 'text', text: 'hello' }], stopReason: 'stop', usage: { input: 1, output: 1, total: 2 }, timestamp: Date.now() } as AssistantMessage,
       ]),
       sessionStorage: store,
-      sessionKey: 'live2',
     });
 
-    const gen = runtime.stream(createRequest('hi'));
+    const gen = runtime.stream(createRequest('hi', { sessionKey: 'live2' }));
     for await (const chunk of gen) {
       if (chunk.type === 'done') break;
     }
@@ -231,13 +229,13 @@ describe('会话并发串行化', () => {
       };
     };
 
-    const runtime1 = createRuntime({ streamFn, sessionKey: 's1' });
-    const runtime2 = createRuntime({ streamFn, sessionKey: 's2' });
-    const runtime3 = createRuntime({ streamFn, sessionKey: 's3' });
+    const runtime1 = createRuntime({ streamFn });
+    const runtime2 = createRuntime({ streamFn });
+    const runtime3 = createRuntime({ streamFn });
     await Promise.all([
-      runtime1.run(createRequest('a')),
-      runtime2.run(createRequest('b')),
-      runtime3.run(createRequest('c')),
+      runtime1.run(createRequest('a', { sessionKey: 's1' })),
+      runtime2.run(createRequest('b', { sessionKey: 's2' })),
+      runtime3.run(createRequest('c', { sessionKey: 's3' })),
     ]);
 
     assert.ok(maxConcurrent >= 2, `不同会话应可并行，实际最大并发 ${maxConcurrent}`);
