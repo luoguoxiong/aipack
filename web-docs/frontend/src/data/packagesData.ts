@@ -12,11 +12,11 @@ export interface PackageInfo {
 export const packages: PackageInfo[] = [
   {
     id: 'aipack',
-    name: 'aipack',
+    name: '@aipack/agent',
     tag: '核心框架',
     description: 'Agent 框架：Runtime + Extension + Transformer 三层架构。核心调度、会话持久化、工具执行、上下文转换均自研实现，不依赖任何外部 Agent 框架。',
     icon: '📦',
-    install: 'pnpm add aipack',
+    install: 'pnpm add @aipack/agent',
     features: [
       'Runtime 核心调度器：请求 → 任务图 → 转换器链 → 模型 → 工具 → 结果',
       'Tapable 扩展机制：Extension 钩子 + ContextTransformer 链式转换',
@@ -40,17 +40,17 @@ export const packages: PackageInfo[] = [
   },
   {
     id: 'aipack-coding',
-    name: 'aipack-coding',
+    name: '@aipack/coding',
     tag: '编码工具集',
     description: 'coding 工具集 + coding agent 工厂 + CLI。提供 7 个零依赖 coding 工具（文件读写、命令执行、代码搜索），内置权限策略与 workspace 沙箱。',
     icon: '💻',
-    install: 'pnpm add aipack-coding',
+    install: 'pnpm add @aipack/coding',
     features: [
       '7 个内置工具：read_file / write_file / edit_file / list_directory / run_command / grep / glob',
       'createCodingAgent() 工厂：一键组装模型 + Runtime + 工具集 + 系统提示词',
       'createCodingPlugin() 插件：注入 aipack.config.js',
       'run_command 无 shell 执行：spawn 直启子进程，多语句/管道/重定向/通配符一律拒绝',
-      'run_command 权限策略：只读命令直接 allow，高危/变更性命令（rm/sudo/写系统路径/curl|sh 等）一律 confirm 人工确认 + allow-always',
+      'run_command 权限策略：只读命令直接 allow，高危/变更性命令（rm/sudo/写系统路径/curl|sh 等）需人工确认（未提供确认回调时直接拒绝），可 allow-always 永久放行',
       'workspace 沙箱：路径校验 + realpath 解析，防 ../../ 与 symlink 逃逸',
       '工具声明 permissions 能力（shell:exec / fs:write / fs:read），配合框架级 PermissionPolicy',
       'aipack-coding CLI：交互式 chat + 一次性 run + --memory 集成',
@@ -63,11 +63,11 @@ export const packages: PackageInfo[] = [
   },
   {
     id: 'aipack-memory',
-    name: 'aipack-memory',
+    name: '@aipack/memory',
     tag: '持久化记忆',
     description: '持久化记忆插件：capture → compress → index → recall/inject → consolidate 闭环。自动捕获要点、跨会话检索注入、BM25 + 向量双路混合召回。',
     icon: '🧠',
-    install: 'pnpm add aipack-memory',
+    install: 'pnpm add @aipack/memory',
     features: [
       '自动捕获：每轮对话结束自动提取要点存为可检索记忆',
       '自动注入：每轮开始自动检索相关记忆，sentinel 机制防累积',
@@ -85,11 +85,11 @@ export const packages: PackageInfo[] = [
   },
   {
     id: 'aipack-compression',
-    name: 'aipack-compression',
+    name: '@aipack/compression',
     tag: '上下文压缩',
     description: '五级上下文压缩策略：L1 工具输出裁剪 → L2 消息摘要 → L3 任务状态提取 → L4 会话检查点 → L5 新会话交接。动态 import，默认关闭。',
     icon: '🗜️',
-    install: 'pnpm add aipack-compression',
+    install: 'pnpm add @aipack/compression',
     features: [
       'L1 Tool Output Trim：对超大工具输出做结构保留裁剪',
       'L2 Message Summarize：超过阈值的历史消息滚动摘要',
@@ -105,11 +105,11 @@ export const packages: PackageInfo[] = [
   },
   {
     id: 'aipack-cli',
-    name: 'aipack-cli',
+    name: '@aipack/cli',
     tag: '命令行工具',
     description: '基于 aipack 框架的命令行助手。交互式聊天、会话管理、历史回放、一次性提问、模型列表、配置向导等，支持 aipack.config.js 扩展。',
     icon: '⌨️',
-    install: 'pnpm add -g aipack-cli',
+    install: 'pnpm add -g @aipack/cli',
     features: [
       'aipack chat：交互式聊天（首次启动 API Key 向导）',
       'aipack run [message]：一次性提问，支持 stdin 管道',
@@ -130,7 +130,7 @@ export const packages: PackageInfo[] = [
   },
   {
     id: 'vscode-aipack-coding',
-    name: 'vscode-aipack-coding',
+    name: '@aipack/vscode-coding',
     tag: 'VSCode 扩展',
     description: 'VSCode 扩展：基于 aipack-coding 的 WebView 聊天面板。在编辑器内直接进行编码对话，利用 coding 工具集操作工作区文件与命令。',
     icon: '🎯',
