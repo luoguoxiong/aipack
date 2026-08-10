@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aipack/nanobot-ts",
+    "url": "https://github.com/luoguoxiong/aipack",
     "directory": "packages/vscode-coding"
   },
   "main": "./dist/extension.js",
