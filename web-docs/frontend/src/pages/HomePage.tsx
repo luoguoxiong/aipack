@@ -33,8 +33,8 @@ const features = [
   },
   {
     icon: '💾',
-    title: '会话持久化',
-    desc: '内存/文件双存储适配器，JSON 原子写入 + maxAge 过期惰性清理，开箱即用的多轮对话。',
+    title: '会话持久化 + 多会话',
+    desc: '内存/文件双存储适配器，JSON 原子写入 + 存储级锁（多进程互斥）。SessionManager 让多会话共享同一 Runtime，历史互相隔离。',
     color: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
   },
   {
@@ -51,8 +51,8 @@ const features = [
   },
   {
     icon: '🛡️',
-    title: '工具调用钩子',
-    desc: 'beforeToolCall/afterToolCall 双拦截：block 阻止、terminate 终止、改写参数/结果，支持安全审计。',
+    title: '框架级权限安全',
+    desc: 'PermissionPolicy 统一裁决（deny-by-default + confirm 钩子）+ Tool 能力声明；run_command 无 shell 执行，多语句/管道/重定向一律拒绝。',
     color: 'linear-gradient(135deg, #fff7ed, #fed7aa)',
   },
 ];

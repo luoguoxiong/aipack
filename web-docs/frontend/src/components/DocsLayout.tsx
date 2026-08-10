@@ -38,6 +38,8 @@ const apiMenu: MenuItem[] = [
   { key: '/api#runtime', label: 'Runtime 核心', icon: <RobotOutlined /> },
   { key: '/api#request', label: 'Request 请求', icon: <ThunderboltOutlined /> },
   { key: '/api#session', label: 'Session 会话', icon: <DatabaseOutlined /> },
+  { key: '/api#sessions', label: '多会话管理', icon: <BoxPlotOutlined /> },
+  { key: '/api#permission', label: '权限安全', icon: <SafetyCertificateOutlined /> },
   { key: '/api#ai', label: 'AI 模型层', icon: <AppstoreOutlined /> },
   { key: '/api#extension', label: 'Extension 扩展', icon: <SettingOutlined /> },
   { key: '/api#transformer', label: 'Transformer 转换器', icon: <CodeOutlined /> },

@@ -119,6 +119,8 @@ export default function ApiPage() {
     'Runtime 核心': 'runtime',
     'Request 请求': 'request',
     'Session 会话': 'session',
+    '多会话': 'sessions',
+    '权限安全': 'permission',
     'AI 模型层': 'ai',
     'Extension 扩展': 'extension',
     'Transformer 转换器': 'transformer',
