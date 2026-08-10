@@ -4,11 +4,11 @@
  * run_command 工具在执行前调用 PermissionManager.check(command)，
  * 根据规则列表决定 allow / deny / confirm（需确认回调批准）。
  *
- * 默认策略（保守）：
+ * 默认策略（保守，全部交人工确认）：
  *   - allow：只读 git / ls / cat / node -v / tsc --noEmit 等无副作用命令
- *   - deny：rm（任何形式）/ 写系统路径 / curl | sh
- *   - confirm：git push/commit、npm install、mv/cp 等写入但常规的命令
- *   - 无规则匹配 → deny（保守，避免未知命令绕过）
+ *   - confirm：rm / 写系统路径 / curl | sh / sudo / git push/commit、npm install、mv/cp 等
+ *     所有变更性或高危命令均需人工确认（无 confirmFn 时确认兜底为拒绝）
+ *   - 无规则匹配 → confirm（同样无 confirmFn 时拒绝，避免未知命令绕过）
  *
  * 确认回调 confirmFn 返回 'allow-always' 时，该条命令会加入允许集合，后续免确认
  * （按整条归一化命令精确匹配，避免放行整类命令）。
@@ -78,7 +78,7 @@ export class PermissionManager {
 
     // 2. 规则顺序匹配（用归一化后的命令）
     const rule = this.rules.find((r) => r.match(normalized));
-    if (!rule) return 'deny'; // 无匹配 → 保守拒绝
+    if (!rule) return this.confirm(normalized, command, 'no-rule-match'); // 无匹配 → 交人工确认（无 confirmFn 则拒绝）
 
     if (rule.decision === 'allow') return 'allow';
     if (rule.decision === 'deny') return 'deny';
@@ -181,29 +181,29 @@ const DEFAULT_RULES: PermissionRule[] = [
     match: (c) => /--(noEmit|dryRun|dry-run|check|list-files)\b/.test(c),
     decision: 'allow',
   },
-  // deny：危险删除
+  // confirm：危险删除（rm 需人工确认，不再硬性拦截）
   {
-    name: 'deny-rm',
+    name: 'confirm-rm',
     match: (c) => /^rm\b/.test(c),
-    decision: 'deny',
+    decision: 'confirm',
   },
-  // deny：写入系统路径
+  // confirm：写入系统路径
   {
-    name: 'deny-system-path',
+    name: 'confirm-system-path',
     match: (c) => /(\/etc\/|\/usr\/|\/var\/|\/System\/|\/Library\/)/.test(c),
-    decision: 'deny',
+    decision: 'confirm',
   },
-  // deny：curl/wget 管道到 shell
+  // confirm：curl/wget 管道到 shell
   {
-    name: 'deny-curl-pipe',
+    name: 'confirm-curl-pipe',
     match: (c) => /(curl|wget)\s+.*\|\s*(sh|bash|zsh)/.test(c),
-    decision: 'deny',
+    decision: 'confirm',
   },
-  // deny：sudo
+  // confirm：sudo
   {
-    name: 'deny-sudo',
+    name: 'confirm-sudo',
     match: (c) => /^sudo\b/.test(c),
-    decision: 'deny',
+    decision: 'confirm',
   },
   // confirm：变更性 git
   {
@@ -236,7 +236,7 @@ const DEFAULT_RULES: PermissionRule[] = [
  *
  * 分隔符：`;`、`&&`、`||`、换行（均为顺序执行、独立成句的语义）。
  * 管道 `|` 不拆分：管道各段属于同一数据流任务（如 `cat a | grep foo` 仍只读），
- * 危险管道由 deny-curl-pipe 等整条规则拦截。重定向（`>` `<`）与命令替换（`$(` 反引号）
+ * 危险管道由 confirm-curl-pipe 等整条规则拦截。重定向（`>` `<`）与命令替换（`$(` 反引号）
  * 不拆分，但由 hasShellMeta 单独标记为不安全语句。
  */
 export function splitCommandStatements(command: string): string[] {
@@ -288,7 +288,7 @@ export function splitCommandStatements(command: string): string[] {
       i++;
       continue;
     }
-    // 单 | 管道不拆分：同一数据流任务，由整条规则（如 deny-curl-pipe）拦截
+    // 单 | 管道不拆分：同一数据流任务，由整条规则（如 confirm-curl-pipe）拦截
     current += ch;
   }
   pushCurrent();

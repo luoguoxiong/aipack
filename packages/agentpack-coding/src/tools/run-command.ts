@@ -2,7 +2,7 @@
  * run_command 工具：在 workspace 内执行 shell 命令（无 shell 模式）。
  *
  * 安全设计（Phase 3-3 PermissionPolicy 安全层）：
- * - 执行前经 PermissionManager.check 校验（allow/deny/confirm）
+ * - 执行前经 PermissionManager.check 校验（allow/deny/confirm，高危命令均走 confirm 人工确认）
  * - 多语句串联（; && || 换行）一律拒绝（防 `cmd; rm -rf ~` 绕过）
  * - 无 shell 执行：parseCommandToArgv 解析为 argv 后 spawn(file, args, { shell: false })；
  *   管道/重定向/命令替换/通配符等 shell 特性一律拒绝（安全面最小化）
@@ -121,7 +121,7 @@ export function createRunCommandTool(ctx: CodingToolContext): Tool {
     name: 'run_command',
     description:
       '在 workspace 内执行 shell 命令（无 shell 模式）。只读命令（git status/ls/cat 等）默认放行，' +
-      '高危命令（rm 等）默认拒绝，变更性命令（git push/npm install 等）需确认。' +
+      '高危/变更性命令（rm/sudo/写系统路径/git push/npm install 等）需人工确认。' +
       '不支持多语句串联、管道、重定向、通配符（请用 glob 工具）。' +
       '返回 stdout/stderr/exitCode，超时（默认 30s）会被终止。',
     // 框架级 PermissionPolicy 能力声明：执行任意命令，需显式授权
