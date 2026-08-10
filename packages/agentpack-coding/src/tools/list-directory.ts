@@ -13,6 +13,8 @@ import { resolveWithin } from '../utils/path';
 export function createListDirectoryTool(ctx: CodingToolContext): Tool {
   return {
     name: 'list_directory',
+    // 框架级 PermissionPolicy 能力声明：读取 workspace 内目录
+    permissions: ['fs:read'],
     description:
       '列出目录内容（不递归）。返回格式区分文件与目录，按名称排序。' +
       'path 默认为 workspace 根目录。默认隐藏点开头文件。',
@@ -25,7 +27,7 @@ export function createListDirectoryTool(ctx: CodingToolContext): Tool {
     async execute(_id, args): Promise<ToolResult> {
       const a = (args ?? {}) as { path?: string };
       const rel = a.path ?? '.';
-      const resolved = resolveWithin(ctx.workspace, rel);
+      const resolved = await resolveWithin(ctx.workspace, rel);
       if (!resolved.ok || !resolved.abs) {
         const err = resolved.error ?? 'resolve failed';
         return {

@@ -21,42 +21,73 @@ import {
 describe('resolveWithin', () => {
   const ws = '/tmp/workspace';
 
-  it('正常相对路径解析', () => {
-    const r = resolveWithin(ws, 'src/foo.ts');
+  it('正常相对路径解析', async () => {
+    const r = await resolveWithin(ws, 'src/foo.ts');
     assert.equal(r.ok, true);
     assert.equal(r.abs, '/tmp/workspace/src/foo.ts');
     assert.equal(r.rel, 'src/foo.ts');
   });
 
-  it('根目录（.）', () => {
-    const r = resolveWithin(ws, '.');
+  it('根目录（.）', async () => {
+    const r = await resolveWithin(ws, '.');
     assert.equal(r.ok, true);
     assert.equal(r.abs, '/tmp/workspace');
     assert.equal(r.rel, '.');
   });
 
-  it('多层子目录路径', () => {
-    const r = resolveWithin(ws, 'a/b/c.ts');
+  it('多层子目录路径', async () => {
+    const r = await resolveWithin(ws, 'a/b/c.ts');
     assert.equal(r.ok, true);
     assert.equal(r.rel, 'a/b/c.ts');
   });
 
-  it('越界路径（../../../etc/passwd）应失败', () => {
-    const r = resolveWithin(ws, '../../../etc/passwd');
+  it('越界路径（../../../etc/passwd）应失败', async () => {
+    const r = await resolveWithin(ws, '../../../etc/passwd');
     assert.equal(r.ok, false);
     assert.ok(r.error);
     assert.match(r.error!, /超出 workspace 边界/);
   });
 
-  it('空路径应失败', () => {
-    const r = resolveWithin(ws, '');
+  it('空路径应失败', async () => {
+    const r = await resolveWithin(ws, '');
     assert.equal(r.ok, false);
     assert.ok(r.error);
   });
 
-  it('纯空白路径应失败', () => {
-    const r = resolveWithin(ws, '   ');
+  it('纯空白路径应失败', async () => {
+    const r = await resolveWithin(ws, '   ');
     assert.equal(r.ok, false);
+  });
+});
+
+// ─── resolveWithin（符号链接逃逸防护）──────────────────────────────
+
+describe('resolveWithin symlink 防护', () => {
+  let tmpDir: string;
+  let outsideDir: string;
+
+  before(async () => {
+    tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sandbox-test-'));
+    outsideDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'outside-test-'));
+    await fs.promises.writeFile(path.join(outsideDir, 'secret.txt'), 'top secret');
+    // workspace 内创建指向外部目录的符号链接
+    await fs.promises.symlink(outsideDir, path.join(tmpDir, 'evil'), 'dir');
+  });
+
+  after(async () => {
+    await fs.promises.rm(tmpDir, { recursive: true, force: true });
+    await fs.promises.rm(outsideDir, { recursive: true, force: true });
+  });
+
+  it('正常路径通过', async () => {
+    const r = await resolveWithin(tmpDir, 'foo.txt');
+    assert.equal(r.ok, true);
+  });
+
+  it('经 symlink 指向外部目录应失败', async () => {
+    const r = await resolveWithin(tmpDir, 'evil/secret.txt');
+    assert.equal(r.ok, false);
+    assert.match(r.error!, /符号链接/);
   });
 });
 
