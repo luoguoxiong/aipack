@@ -68,11 +68,13 @@ export function resolveModelForCli(config: AgentpackConfig): AiModel {
 
 /**
  * 创建 agentpack Runtime（可选传入已解析的模型，避免二次解析不一致）
+ * @param overrides 额外覆盖项，优先级最高（如 replay 回放时禁用工具）
  */
 export function createAgentpackRuntime(
   config: AgentpackConfig,
   model?: AiModel,
   sessionKey?: string,
+  overrides?: Record<string, unknown>,
 ): Runtime {
   const aiModel = model ?? resolveAiModel(config);
 
@@ -92,6 +94,7 @@ export function createAgentpackRuntime(
         })
       : undefined,
     ...runtimeOverrides,
+    ...overrides,
   });
 }
 

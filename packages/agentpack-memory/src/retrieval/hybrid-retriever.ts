@@ -173,9 +173,13 @@ export class HybridRetriever {
   }
 
   /**
-   * 原始分数融合（raw 模式）：保留 BM25 / cosine 原始分数，不做 min-max 归一化，
+   * 原始分数融合（raw 模式）：保留检索源原始分数，不做 min-max 归一化，
    * 供合并器按「绝对相似度阈值」判定可合并项。双路命中时取 max
    * （任一来源判定相似即相似），避免归一化把次优分数抹平。
+   *
+   * 量纲说明：BM25 分数在 BM25Retriever 层已按 Σidf 归一化到 [0,1]
+   * （完全同文≈1），cosine 本身在 [0,1]，因此这里的绝对阈值（如 0.85）
+   * 对两路统一成立。
    */
   private fuseRaw(
     bm25Results: MemorySearchResult[],

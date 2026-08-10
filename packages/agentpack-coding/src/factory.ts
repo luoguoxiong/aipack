@@ -80,8 +80,10 @@ export async function createCodingAgent(
       allTools = [...allTools, ...installed.tools];
       extensions = [...extensions, ...installed.extensions];
       transformers = [...transformers, ...installed.transformers];
-    } catch {
-      console.warn('⚠️  启用 memory 集成但未安装 agentpack-memory，已跳过。');
+    } catch (err) {
+      console.warn(
+        `⚠️  启用 memory 集成但加载 agentpack-memory 失败，已跳过：${(err as Error).message}`,
+      );
     }
   }
 

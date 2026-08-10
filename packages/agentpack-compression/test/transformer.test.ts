@@ -419,3 +419,101 @@ test('ConsoleTelemetryReporter: logTokenDelta=false 时不输出 tokenDelta', ()
     console.log = origLog;
   }
 });
+
+// ─── P1 遗留修复测试 ─────────────────────────────────────────────
+
+test('transformer: compressionDepth 跨 turn 重置（L2 不会永久失效）', async () => {
+  // maxCompressionDepth=1：每 turn 只允许一次 L2。
+  // 若 compressionDepth 跨 turn 累积，第二 turn 会被拦截 → L2 永不再次触发。
+  const config = loadCompressionConfig({
+    l1: { enabled: false },
+    l2: {
+      enabled: true, threshold: 0.1, targetRatio: 0.5,
+      forkMaxTokens: 100, minResourcesToCompress: 2,
+      protectedRecentCount: 1, maxCompressionDepth: 1,
+    },
+    l3: { enabled: false }, l4: { enabled: false }, l5: { enabled: false },
+    safety: { maxAttempts: 10, cooldownTurns: 1 },
+  });
+
+  const transformer = createCompressionTransformer({
+    config,
+    model: mockModel,
+    streamFn: makeMockStreamFn('summary'),
+    contextWindow: 1000,
+  });
+
+  const longText = 'x'.repeat(300);
+  const resources = [
+    makeResource('u1', 'user_message', longText),
+    makeResource('a1', 'assistant_message', longText, { deps: ['c1'] }),
+    makeResource('tr1', 'tool_result', longText, { deps: ['c1'] }),
+    makeResource('u2', 'user_message', longText),
+  ];
+
+  // turn 1：应触发一次 L2（compressionDepth 0 → 1）
+  const out1 = await transformer.transform(resources, {
+    graph: {} as any,
+    runtime: { sessionKey: 's1', turn: 1 },
+  });
+  assert.ok(out1.some(r => r.type === 'compaction_summary'), 'turn 1 应生成 compaction_summary');
+
+  // turn 2：compressionDepth 必须重置为 0，L2 才能再次触发
+  const out2 = await transformer.transform(resources, {
+    graph: {} as any,
+    runtime: { sessionKey: 's1', turn: 2 },
+  });
+  assert.ok(out2.some(r => r.type === 'compaction_summary'), 'turn 2 的 L2 不应因深度累积被跳过');
+});
+
+test('transformer: recover 返回 fullResources（pinned/meta/type 不丢失）', async () => {
+  const storage = new MockSessionStorage();
+  const config = loadCompressionConfig({
+    l1: { enabled: false }, l2: { enabled: false }, l3: { enabled: false },
+    l4: {
+      enabled: true, threshold: 0.1, targetRatio: 0.05,
+      checkpointStorage: 'memory', minWorkingSet: 1,
+      failOnPersistError: true,
+    },
+    l5: { enabled: false },
+    safety: { maxAttempts: 10, cooldownTurns: 1 },
+  });
+
+  const transformer = createCompressionTransformer({
+    config,
+    model: mockModel,
+    streamFn: makeMockStreamFn('x'),
+    contextWindow: 10,
+    sessionStorage: storage,
+  });
+
+  // pinned + meta 的关键资源（经 messages 往返会丢失，fullResources 必须保留）
+  const resources = [
+    makeResource('u1', 'user_message', 'r1'),
+    {
+      ...makeResource('sum1', 'compaction_summary', '[merged history]'),
+      pinned: true,
+      meta: { _compressionLevel: 2, _sourceCount: 5 },
+    },
+    makeResource('u2', 'user_message', 'r2'),
+  ];
+
+  const out = await transformer.transform(resources, {
+    graph: {} as any,
+    runtime: { sessionKey: 's1', turn: 1 },
+  });
+
+  const checkpointRef = out.find(r => r.meta._checkpointId);
+  assert.ok(checkpointRef, '应生成 checkpoint_ref');
+  const checkpointId = checkpointRef!.meta._checkpointId as string;
+
+  const recovered = await transformer.recover(checkpointId);
+  assert.ok(recovered, '应能恢复');
+  assert.ok(Array.isArray(recovered!.fullResources), '应还原 fullResources 快照');
+
+  const sum = recovered!.fullResources!.find(r => r.id === 'sum1');
+  assert.ok(sum, 'fullResources 应包含被压缩的 pinned 资源');
+  assert.equal(sum!.pinned, true, 'pinned 语义不应丢失');
+  assert.equal(sum!.meta._compressionLevel, 2, 'meta 不应丢失');
+  assert.equal(sum!.type, 'compaction_summary', 'type 不应丢失');
+});

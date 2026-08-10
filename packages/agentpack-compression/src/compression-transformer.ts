@@ -40,6 +40,8 @@ import { DEFAULT_FORK_RETRY, type RetryConfig } from './retry';
 
 /** safetyStates LRU 上限 */
 const MAX_SESSIONS = 256;
+/** telemetryHistory 上限：避免长会话无限增长（L4 checkpoint 只需最近历史） */
+const MAX_TELEMETRY_HISTORY = 100;
 
 export interface CompressionTransformerOptions {
   config: CompressionConfig;
@@ -192,6 +194,12 @@ export class ContextCompressionTransformer extends BaseTransformer {
 
     if (!this.safetyGuard.canCompress(safetyState, turn)) return resources;
 
+    // P1: compressionDepth 是单次 pipeline 内的本地深度（L2/L3/L4/L5 各 +1），
+    // 跨 turn 必须重置 —— 旧实现持续累积导致运行几轮后 L2 的 maxCompressionDepth
+    // 判断永久失效（与 l2-message-summarize 的注释矛盾）。
+    // doRun 已由外层 chain 保证同 session 串行，此处重置是安全的。
+    safetyState.compressionDepth = 0;
+
     const allTelemetry: CompressionTelemetry[] = [];
     const startTime = Date.now();
 
@@ -254,8 +262,8 @@ export class ContextCompressionTransformer extends BaseTransformer {
       t.messageCountAfter = current.length;
     }
 
-    // ── 存储遥测到 safetyState 历史 ──
-    safetyState.telemetryHistory.push(...allTelemetry);
+    // ── 存储遥测到 safetyState 历史（带上限，避免无限增长） ──
+    this.pushTelemetryHistory(safetyState, allTelemetry);
 
     // ── 上报遥测：优先用 reporter，否则写入 sharedMap 供 Extension 读取 ──
     if (allTelemetry.length > 0 && this.compressionConfig.telemetry.enabled) {
@@ -303,7 +311,7 @@ export class ContextCompressionTransformer extends BaseTransformer {
       telemetry.push(t);
     }
 
-    safetyState.telemetryHistory.push(...telemetry);
+    this.pushTelemetryHistory(safetyState, telemetry);
     if (telemetry.length > 0 && config.telemetry.enabled) {
       this.reportTelemetry(telemetry);
     }
@@ -446,6 +454,15 @@ export class ContextCompressionTransformer extends BaseTransformer {
   /** 是否应触发某级压缩 */
   private shouldTrigger(currentTokens: number, threshold: number): boolean {
     return currentTokens > this.contextWindow * threshold;
+  }
+
+  /** P1: telemetryHistory 只保留最近 MAX_TELEMETRY_HISTORY 条，避免无限增长 */
+  private pushTelemetryHistory(safety: CompressionSafetyState, items: CompressionTelemetry[]): void {
+    if (items.length === 0) return;
+    safety.telemetryHistory.push(...items);
+    if (safety.telemetryHistory.length > MAX_TELEMETRY_HISTORY) {
+      safety.telemetryHistory.splice(0, safety.telemetryHistory.length - MAX_TELEMETRY_HISTORY);
+    }
   }
 
   /** 上报遥测：优先 reporter，否则写入 sharedMap */

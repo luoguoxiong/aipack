@@ -15,6 +15,7 @@
   "files": [
     "dist"
   ],
+  "sideEffects": false,
   "scripts": {
     "build": "tsup",
     "prebuild": "pnpm --filter agentpack build",

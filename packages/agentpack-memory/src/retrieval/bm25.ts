@@ -126,11 +126,30 @@ export class BM25Index {
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
   }
+
+  /**
+   * 单个 token 的 idf（未出现返回 0）。
+   * 供上层计算查询的理论满分（完全同文、tf=1、len≈avgdl 时的分数），
+   * 把无界 BM25 原始分规范化为 [0,1] 相似度。
+   */
+  idf(token: string): number {
+    const df = this.inverted.get(token)?.size ?? 0;
+    if (df === 0) return 0;
+    const N = this.docs.size;
+    return Math.log((N - df + 0.5) / (df + 0.5) + 1);
+  }
 }
 
 /**
  * 基于 BM25Index 的检索器，包装为 MemorySearchResult。
  * entries 与 index 由外部维护（store 持有并增量同步）。
+ *
+ * 分数语义：BM25 原始分无界（取决于词频/idf 与库规模），与 embedding 的
+ * cosine 相似度（0..1）量纲不匹配 —— 若直接作为绝对相似度与
+ * similarityThreshold（如 0.85）比较，合并几乎永远不会触发。这里除以
+ * 查询的理论满分（Σidf，即完全同文时的分数）并截断到 [0,1]：
+ * 完全同文 ≈ 1，部分命中按比例衰减，使绝对阈值对 BM25 / cosine 统一成立。
+ * 该变换是单调的，对普通检索路径的 min-max 归一化幂等（排序不变）。
  */
 export class BM25Retriever {
   constructor(
@@ -141,9 +160,15 @@ export class BM25Retriever {
   async search(query: string, limit = 5): Promise<MemorySearchResult[]> {
     const queryTokens = tokenize(query);
     const hits = this.index.search(queryTokens, limit);
+
+    // 查询的理论满分：所有 query token 的 idf 之和。
+    // 完全同文（tf=1、len≈avgdl）时 BM25 分数 ≈ Σidf，因此 score/Σidf ≈ 1；
+    // 词频高或文档更短的命中可能 >1，截断到 1。
+    const maxPossible = queryTokens.reduce((acc, t) => acc + this.index.idf(t), 0);
+
     return hits.map(({ id, score }) => ({
       entry: this.entries.get(id)!,
-      score,
+      score: maxPossible > 0 ? Math.min(1, score / maxPossible) : 0,
       matchedBy: 'bm25' as const,
     })).filter((r) => r.entry != null);
   }

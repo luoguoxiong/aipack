@@ -25,6 +25,15 @@ export interface ReplayResult {
   totalDurationMs: number;
 }
 
+export interface ReplayOptions {
+  /**
+   * 是否只回放对话（不执行任何工具）。默认 true —— 重放历史时若真实
+   * 执行工具会触发真实副作用（写文件/执行命令等）。设为 false 才真实执行，
+   * 用于需要复现工具调用链的场景。
+   */
+  dryRun?: boolean;
+}
+
 /** 从消息中提取文本内容（兼容 string 与 ContentBlock[] 两种形式） */
 function messageToText(msg: Message): string {
   const content = (msg as { content?: string | Array<{ type?: string; text?: string }> }).content;
@@ -48,7 +57,10 @@ export async function replaySession(
     turn: ReplayTurnResult,
   ) => void,
   model?: AiModel,
+  options: ReplayOptions = {},
 ): Promise<ReplayResult> {
+  const dryRun = options.dryRun !== false;
+
   // 1. 加载历史会话
   const storage = createFileSessionStorage({ baseDir: config.sessions.baseDir });
   const stored = await storage.load(sessionKey);
@@ -69,7 +81,14 @@ export async function replaySession(
   }
 
   // 3. 创建回放 Runtime，直接继续原会话（回放结果追加到原会话历史）
-  const runtime = createAgentpackRuntime(config, model, sessionKey);
+  //    P1: 默认 dry-run —— 禁用全部工具，避免重放触发真实副作用；
+  //    仅当显式 dryRun:false 时才注入原配置的工具集。
+  const runtime = createAgentpackRuntime(
+    config,
+    model,
+    sessionKey,
+    dryRun ? { tools: [] } : undefined,
+  );
   const turns: ReplayTurnResult[] = [];
   let totalErrors = 0;
   const startTime = Date.now();

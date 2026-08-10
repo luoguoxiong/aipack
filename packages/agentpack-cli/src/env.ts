@@ -41,8 +41,9 @@ export function loadEnvFile(): void {
     if (!fs.existsSync(file)) continue;
     try {
       parseEnv(fs.readFileSync(file, 'utf-8'));
-    } catch {
-      // 静默忽略 .env 加载错误
+    } catch (err) {
+      // 解析失败不再完全静默：告警提示文件与原因，便于排障（key 缺失会导致认证失败）
+      console.warn(`⚠️  加载 .env 失败（${file}）：${(err as Error).message}`);
     }
   }
 }

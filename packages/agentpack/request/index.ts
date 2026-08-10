@@ -37,6 +37,7 @@ export function normalizeRequest(request: Request): Request {
     channel: request.channel || 'cli',
     chatId: request.chatId || 'direct',
     senderId: request.senderId || 'user',
+    sessionKey: request.sessionKey,
     media: request.media?.filter(Boolean) || [],
     ephemeral: request.ephemeral ?? false,
     model: request.model || undefined,

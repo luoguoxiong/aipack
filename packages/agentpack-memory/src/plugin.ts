@@ -244,9 +244,16 @@ export function createMemoryPlugin(options: MemoryPluginOptions = {}): MemoryPlu
     transformers.push(
       new MemoryInjectionTransformer(retriever, {
         ...injectOpts,
-        // 命中后更新检索统计（fire-and-forget，不阻塞注入）
+        // 命中后更新检索统计（fire-and-forget，不阻塞注入）；
+        // 失败不静默：告警日志便于排障（检索统计丢失不致命）
         onRecall: async (ids: string[]) => {
-          await Promise.allSettled(ids.map((id) => store.touchRecall(id)));
+          await Promise.allSettled(ids.map(async (id) => {
+            try {
+              await store.touchRecall(id);
+            } catch (err) {
+              console.warn(`[memory] touchRecall 失败（id=${id}）: ${(err as Error).message}`);
+            }
+          }));
         },
       }),
     );

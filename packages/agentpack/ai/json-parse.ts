@@ -175,3 +175,51 @@ export async function parseStreamingJson(partialJson: string): Promise<Record<st
     return {};
   }
 }
+
+// ─── 同步版流式 JSON 解析（供流式循环内的同步位置使用）────────────
+
+type SyncPartialParser = (input: string) => unknown;
+
+let syncParser: SyncPartialParser | null = null;
+let syncParserLoaded = false;
+
+/**
+ * 惰性加载"同步版"四级降级流式 JSON 解析器。
+ *
+ * 降级策略：JSON.parse → repairJson + JSON.parse → partial-json → repairJson + partial-json → {}
+ * 供 stream-openai / stream-anthropic 在流式循环的同步位置解析不完整的工具参数 JSON。
+ */
+export async function getSyncPartialParser(): Promise<SyncPartialParser> {
+  if (syncParserLoaded) return syncParser!;
+  syncParserLoaded = true;
+  const partial = await getPartialParser();
+  syncParser = (s: string) => {
+    // 1) JSON.parse
+    try {
+      return JSON.parse(s);
+    } catch {
+      /* fall through */
+    }
+    // 2) repair + JSON.parse
+    try {
+      const repaired = repairJson(s);
+      if (repaired !== s) return JSON.parse(repaired);
+    } catch {
+      /* fall through */
+    }
+    // 3) partial-json
+    try {
+      return partial(s);
+    } catch {
+      /* fall through */
+    }
+    // 4) repair + partial-json
+    try {
+      return partial(repairJson(s));
+    } catch {
+      /* fall through */
+    }
+    return {};
+  };
+  return syncParser;
+}
