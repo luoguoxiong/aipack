@@ -53,6 +53,8 @@ export interface AppConfig {
   llmReady: boolean;
   /** 内置模型目录(供前端渲染模型选择下拉) */
   models: ModelOption[];
+  /** 可观测性上报配置(未配置时为空,不启用埋点) */
+  observability?: { appId: string; appSecret: string; endpoint: string };
 }
 
 /** 读 env,返回标准化配置对象。缺失关键配置时返回带 warning 的降级配置。 */
@@ -61,6 +63,15 @@ export function loadConfig(): AppConfig {
   const provider = (process.env.LLM_PROVIDER || 'deepseek').toLowerCase();
   const modelId = process.env.LLM_MODEL || DEFAULT_MODEL_BY_PROVIDER[provider] || 'deepseek-chat';
   const serpapiKey = process.env.SERPAPI_KEY || undefined;
+
+  // ── 可观测性上报(可选):appId+appSecret 缺一即不启用 ─────────
+  const appId = process.env.OBS_APP_ID?.trim();
+  const appSecret = process.env.OBS_APP_SECRET?.trim();
+  const observability =
+    appId && appSecret
+      ? { appId, appSecret, endpoint: (process.env.OBS_ENDPOINT || 'http://localhost:8787').trim() }
+      : undefined;
+  if (appId && !appSecret) console.warn('⚠️  检测到 OBS_APP_ID 但缺少 OBS_APP_SECRET,可观测性上报未启用。\n');
 
   // ── 校验 provider 是否在内置列表 ──────────────────────────────
   const knownProviders = new Set(BUILTIN_PROVIDERS.map((p) => p.id));
@@ -110,6 +121,7 @@ export function loadConfig(): AppConfig {
     serpapiKey,
     llmReady,
     models,
+    observability,
   };
 }
 

@@ -15,6 +15,7 @@ import {
   type Model,
   type StreamFn,
   type Runtime,
+  type Telemetry,
 } from '@aipack/agent';
 import { createSearchTool } from './tools/search.js';
 import { buildModel } from './config.js';
@@ -55,7 +56,12 @@ export interface PlanProgress {
 }
 
 /** 构建 Researcher Runtime:带搜索工具 */
-export function createResearcherRuntime(model: Model, streamFn: StreamFn, serpapiKey?: string): Runtime {
+export function createResearcherRuntime(
+  model: Model,
+  streamFn: StreamFn,
+  serpapiKey?: string,
+  telemetry?: Telemetry,
+): Runtime {
   return createRuntime({
     model,
     streamFn,
@@ -67,11 +73,12 @@ export function createResearcherRuntime(model: Model, streamFn: StreamFn, serpap
     }),
     maxTurns: 20, // 允许 Researcher 多轮搜索
     config: { role: 'researcher' },
+    telemetry,
   });
 }
 
 /** 构建 Planner Runtime:纯生成,无工具 */
-export function createPlannerRuntime(model: Model, streamFn: StreamFn): Runtime {
+export function createPlannerRuntime(model: Model, streamFn: StreamFn, telemetry?: Telemetry): Runtime {
   return createRuntime({
     model,
     streamFn,
@@ -83,6 +90,7 @@ export function createPlannerRuntime(model: Model, streamFn: StreamFn): Runtime 
     }),
     maxTurns: 5,
     config: { role: 'planner' },
+    telemetry,
   });
 }
 
@@ -167,7 +175,7 @@ export interface RuntimeRegistry {
  * 创建 Runtime 注册表。模型在首次被选中时按需构建并缓存,
  * 避免每次请求重建,同时支持运行时切换模型。
  */
-export function createRuntimeRegistry(serpapiKey?: string): RuntimeRegistry {
+export function createRuntimeRegistry(serpapiKey?: string, telemetry?: Telemetry): RuntimeRegistry {
   const cache = new Map<string, RuntimePair>();
   return {
     get(provider, modelId, apiKey) {
@@ -178,8 +186,8 @@ export function createRuntimeRegistry(serpapiKey?: string): RuntimeRegistry {
       if (!pair) {
         const { model, streamFn } = buildModel(provider, modelId, apiKey);
         pair = {
-          researcher: createResearcherRuntime(model, streamFn, serpapiKey),
-          planner: createPlannerRuntime(model, streamFn),
+          researcher: createResearcherRuntime(model, streamFn, serpapiKey, telemetry),
+          planner: createPlannerRuntime(model, streamFn, telemetry),
         };
         cache.set(cacheKey, pair);
       }

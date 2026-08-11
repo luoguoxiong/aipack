@@ -111,6 +111,9 @@ importers:
       '@aipack/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@aipack/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
     devDependencies:
       '@types/node':
         specifier: ^20.12.0
