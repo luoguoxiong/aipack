@@ -1,12 +1,13 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from 'antd';
-import { GithubOutlined, BookOutlined, ThunderboltOutlined, RocketOutlined, CodeOutlined } from '@ant-design/icons';
+import { GithubOutlined, BookOutlined, ThunderboltOutlined, RocketOutlined, CodeOutlined, LineChartOutlined } from '@ant-design/icons';
 
 const navItems = [
   { path: '/', label: '首页', icon: <RocketOutlined /> },
   { path: '/quickstart', label: '快速开始', icon: <ThunderboltOutlined /> },
   { path: '/api', label: 'API 文档', icon: <BookOutlined /> },
   { path: '/extend', label: '扩展指南', icon: <CodeOutlined /> },
+  { path: '/observability', label: '可观测性', icon: <LineChartOutlined /> },
   { path: '/examples', label: '示例代码', icon: <GithubOutlined /> },
   { path: '/packages', label: '包介绍', icon: <RocketOutlined /> },
 ];

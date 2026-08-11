@@ -214,6 +214,7 @@ export default function ExtendPage() {
           <li>想让 Agent 多一种"本事" → <b>自定义 Tool</b></li>
           <li>在每次模型调用前加工消息（加知识库/裁剪） → <b>Transformer</b></li>
           <li>要在 run 开始/结束做指标、日志、错误上报 → <b>Extension</b></li>
+          <li>要观测生产指标与 Trace（成本/成功率/耗时/重试） → <b>Telemetry</b>，见<a href="/observability" style={{ color: '#166534', fontWeight: 700 }}>可观测性</a></li>
           <li>需要审查/拦截每个工具的执行与结果（安全/审计） → <b>createToolHookExtension</b></li>
           <li>以上全部都要？当然可以组合，按数组顺序串行运行。</li>
         </ul>

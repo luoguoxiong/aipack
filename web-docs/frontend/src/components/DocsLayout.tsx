@@ -14,6 +14,9 @@ import {
   AppstoreOutlined,
   SafetyCertificateOutlined,
   AimOutlined,
+  LineChartOutlined,
+  NodeIndexOutlined,
+  DashboardOutlined,
 } from '@ant-design/icons';
 
 interface DocsLayoutProps {
@@ -54,6 +57,14 @@ const extendMenu: MenuItem[] = [
   { key: '/extend#hooks', label: '工具调用钩子', icon: <SafetyCertificateOutlined /> },
 ];
 
+const observabilityMenu: MenuItem[] = [
+  { key: '/observability', label: '事件时间线', icon: <NodeIndexOutlined /> },
+  { key: '/observability#setup', label: '接入方式', icon: <ApiOutlined /> },
+  { key: '/observability#events', label: '事件一览', icon: <DashboardOutlined /> },
+  { key: '/observability#trace', label: 'Trace 设计', icon: <LineChartOutlined /> },
+  { key: '/observability#metrics', label: '指标口径', icon: <AimOutlined /> },
+];
+
 const examplesMenu: MenuItem[] = [
   { key: '/examples', label: '最小示例', icon: <CodeOutlined /> },
   { key: '/examples#coding', label: 'Coding Agent', icon: <ExperimentOutlined /> },
@@ -82,6 +93,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     if (path === '/quickstart' || path.startsWith('/quickstart')) items = quickstartMenu;
     else if (path === '/api' || path.startsWith('/api')) items = apiMenu;
     else if (path === '/extend' || path.startsWith('/extend')) items = extendMenu;
+    else if (path === '/observability' || path.startsWith('/observability')) items = observabilityMenu;
     else if (path === '/examples' || path.startsWith('/examples')) items = examplesMenu;
     else if (path === '/packages' || path.startsWith('/packages')) items = packagesMenu;
     const selected = location.pathname + (location.hash || '');
@@ -96,6 +108,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     if (rootPath === '/quickstart') return quickstartMenu;
     if (rootPath === '/api') return apiMenu;
     if (rootPath === '/extend') return extendMenu;
+    if (rootPath === '/observability') return observabilityMenu;
     if (rootPath === '/examples') return examplesMenu;
     if (rootPath === '/packages') return packagesMenu;
     return [];
