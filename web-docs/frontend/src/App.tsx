@@ -7,6 +7,7 @@ import ApiPage from './pages/ApiPage';
 import ExtendPage from './pages/ExtendPage';
 import ExamplesPage from './pages/ExamplesPage';
 import PackagesPage from './pages/PackagesPage';
+import ObservabilityPage from './pages/ObservabilityPage';
 
 export default function App() {
   return (
@@ -42,6 +43,14 @@ export default function App() {
           element={
             <DocsLayout>
               <ExtendPage />
+            </DocsLayout>
+          }
+        />
+        <Route
+          path="/observability"
+          element={
+            <DocsLayout>
+              <ObservabilityPage />
             </DocsLayout>
           }
         />
