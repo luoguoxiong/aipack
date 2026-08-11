@@ -1,0 +1,257 @@
+/**
+ * 收集端（createCollector）— 后台统一收集服务 + 面板 API。
+ *
+ *   POST /api/v1/ingest               客户端埋点上报（appId+Secret 动态鉴权）→ 落盘 + 聚合
+ *   POST /api/auth/login|logout       面板登录/登出（ADMIN_USER/ADMIN_PASS）
+ *   GET  /api/auth/me                 当前会话
+ *   GET/POST/DELETE /api/apps*        应用管理（动态生成 appId/appSecret）
+ *   GET  /metrics/*、/traces/*        查询端点（需面板 Bearer 会话，支持 appId 过滤）
+ *   GET  /*                           静态文件（staticDir 配置时托管面板构建产物）
+ *
+ * 部署形态：本包自带 bin 入口（observability-server），或由宿主应用组装 createCollector。
+ */
+
+import http from 'node:http';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import type { EventBatch } from '@aipack/observability';
+import { Aggregator } from './aggregator';
+import { createApiHandler, type ApiHandler } from './server';
+import { createAdminHandler, type AdminHandler } from './admin';
+import { SessionManager, readBearerToken } from './auth';
+import { SQLiteStore } from './store';
+
+export interface CollectorOptions {
+  /** SQLite 文件路径（必填） */
+  dbPath: string;
+  /** 启动时种入的静态白名单（appId -> appSecret，OBS_APPS），已存在则跳过 */
+  apps?: Record<string, string>;
+  /** 面板登录凭证（observability-web 用）；缺省时不开启登录端点 */
+  admin?: { username: string; password: string };
+  /** 可选：托管面板静态文件目录（构建产物），配置后 GET / 直接返回面板 */
+  staticDir?: string;
+  /** 聚合滑动窗口（ms），默认 60min */
+  windowMs?: number;
+  /** 时间桶粒度（ms），默认 1min */
+  bucketMs?: number;
+}
+
+export interface Collector {
+  /** 挂载到 http server：处理 ingest + 管理 API + 查询 */
+  handler: ApiHandler;
+  close(): Promise<void>;
+}
+
+const MAX_BODY = 10 * 1024 * 1024; // ingest 单次上限 10MB
+
+export function createCollector(opts: CollectorOptions): Collector {
+  const store = new SQLiteStore(opts.dbPath);
+  if (opts.apps) store.seedApps(opts.apps);
+
+  // 全局聚合（所有应用合并）+ 按应用聚合（面板 appId 过滤）
+  const globalAggregator = new Aggregator({ windowMs: opts.windowMs, bucketMs: opts.bucketMs });
+  const byApp = new Map<string, Aggregator>();
+  const aggregatorFor = (appId?: string): Aggregator => {
+    if (!appId) return globalAggregator;
+    let agg = byApp.get(appId);
+    if (!agg) {
+      agg = new Aggregator({ windowMs: opts.windowMs, bucketMs: opts.bucketMs });
+      byApp.set(appId, agg);
+    }
+    return agg;
+  };
+
+  const sessions = opts.admin
+    ? new SessionManager({ username: opts.admin.username, password: opts.admin.password })
+    : undefined;
+  const queryHandler = createApiHandler({ aggregatorFor, store });
+  const adminHandler: AdminHandler | undefined = sessions
+    ? createAdminHandler({ sessions, store })
+    : undefined;
+
+  const handler: ApiHandler = async (req, res) => {
+    try {
+      const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+      const pathname = url.pathname;
+
+      // 面板管理路由（登录公开，其余 Bearer 会话）
+      if (pathname.startsWith('/api/auth/') || pathname.startsWith('/api/apps')) {
+        if (!adminHandler) return json(res, 503, { error: 'admin 未启用（缺少 ADMIN_USER/ADMIN_PASS 配置）' });
+        return adminHandler(req, res);
+      }
+
+      // 客户端埋点上报（appId + appSecret 动态鉴权）
+      if (req.method === 'POST' && pathname === '/api/v1/ingest') {
+        return handleIngest(req, res, { store, aggregatorFor });
+      }
+
+      // 查询端点：需要面板会话
+      if (req.method === 'GET' && (pathname.startsWith('/metrics/') || pathname.startsWith('/traces'))) {
+        if (!sessions || !authenticated(req, sessions)) {
+          return json(res, 401, { error: 'unauthorized: 请先登录面板（POST /api/auth/login）' });
+        }
+        return queryHandler(req, res);
+      }
+
+      // 静态文件（面板构建产物）
+      if (req.method === 'GET' && opts.staticDir) {
+        return serveStatic(url.pathname, opts.staticDir, res);
+      }
+
+      return json(res, 404, { error: 'Not Found' });
+    } catch (err) {
+      return json(res, 500, { error: err instanceof Error ? err.message : 'Internal Error' });
+    }
+  };
+
+  return {
+    handler,
+    close: async () => {
+      store.close();
+    },
+  };
+}
+
+// ─── ingest ────────────────────────────────────────────────────────
+
+async function handleIngest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  ctx: {
+    store: SQLiteStore;
+    aggregatorFor(appId?: string): Aggregator;
+  },
+): Promise<void> {
+  const appId = header(req, 'x-app-id');
+  const secret = header(req, 'x-app-secret');
+  if (!appId || !secret || !ctx.store.verifyApp(appId, secret)) {
+    return json(res, 401, { error: 'unauthorized: invalid appId or appSecret' });
+  }
+
+  let raw = '';
+  try {
+    raw = await readBody(req);
+  } catch (err) {
+    return json(res, 400, { error: (err as Error).message });
+  }
+  let payload: EventBatch & { appId?: string };
+  try {
+    payload = JSON.parse(raw) as EventBatch & { appId?: string };
+  } catch {
+    return json(res, 400, { error: 'invalid json body' });
+  }
+  if (payload.appId !== appId) {
+    return json(res, 400, { error: 'body appId mismatch' });
+  }
+
+  const batch: EventBatch = {
+    runs: Array.isArray(payload.runs) ? payload.runs : [],
+    spans: Array.isArray(payload.spans) ? payload.spans : [],
+    toolCalls: Array.isArray(payload.toolCalls) ? payload.toolCalls : [],
+    permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
+  };
+
+  // 落盘（app_id 盖戳）+ 喂聚合器（全局 + 该应用），与查询互不影响
+  ctx.store.flush(batch, appId);
+  ctx.store.touchApp(appId, Date.now());
+  const global = ctx.aggregatorFor();
+  const appAgg = ctx.aggregatorFor(appId);
+  for (const r of batch.runs) {
+    global.ingestRun(r);
+    appAgg.ingestRun(r);
+  }
+  for (const s of batch.spans) {
+    global.ingestModelCall(s);
+    appAgg.ingestModelCall(s);
+  }
+  for (const t of batch.toolCalls) {
+    global.ingestToolCall(t);
+    appAgg.ingestToolCall(t);
+  }
+  for (const p of batch.permissions) {
+    global.ingestPermission(p);
+    appAgg.ingestPermission(p);
+  }
+
+  return json(res, 200, { ok: true });
+}
+
+// ─── 鉴权 / 静态文件 ──────────────────────────────────────────────
+
+function authenticated(req: http.IncomingMessage, sessions: SessionManager): boolean {
+  const token = readBearerToken(req);
+  return !!token && sessions.verify(token) !== null;
+}
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.map': 'application/json',
+};
+
+async function serveStatic(
+  pathname: string,
+  staticDir: string,
+  res: http.ServerResponse,
+): Promise<void> {
+  // 安全：禁止路径穿越
+  const safe = path.normalize(pathname).replace(/^(\.\.[/\\])+/, '');
+  let filePath = path.join(staticDir, safe);
+  if (filePath === staticDir || filePath === staticDir + '/') {
+    filePath = path.join(staticDir, 'index.html');
+  }
+  try {
+    const stat = await fs.stat(filePath);
+    if (stat.isDirectory()) filePath = path.join(filePath, 'index.html');
+  } catch {
+    // 文件不存在 → 回退 index.html（SPA 路由）
+    filePath = path.join(staticDir, 'index.html');
+  }
+  try {
+    const data = await fs.readFile(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    res.end(data);
+  } catch {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('404 Not Found');
+  }
+}
+
+function header(req: http.IncomingMessage, name: string): string | undefined {
+  const v = req.headers[name.toLowerCase()];
+  return Array.isArray(v) ? v[0] : v;
+}
+
+function readBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let raw = '';
+    req.on('data', (chunk: Buffer) => {
+      raw += chunk;
+      if (raw.length > MAX_BODY) {
+        reject(new Error('body too large'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => resolve(raw));
+    req.on('error', reject);
+  });
+}
+
+function json(
+  res: http.ServerResponse,
+  status: number,
+  body: unknown,
+): Promise<void> {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+  return new Promise((resolve) => {
+    res.end(JSON.stringify(body), () => resolve());
+  });
+}

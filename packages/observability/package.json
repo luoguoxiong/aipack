@@ -1,0 +1,46 @@
+{
+  "name": "@aipack/observability",
+  "version": "0.1.0",
+  "description": "aipack 可观测性上报 SDK(S2)：埋点上报模式，appId+appSecret 一行接入，失败本地缓存补报",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "prebuild": "pnpm --filter @aipack/agent build || true",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/observability.test.ts"
+  },
+  "keywords": [
+    "aipack",
+    "observability",
+    "telemetry",
+    "metrics",
+    "trace"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "@aipack/agent": "workspace:*"
+  },
+  "devDependencies": {
+    "@aipack/agent": "workspace:*",
+    "@types/node": "^20.12.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}

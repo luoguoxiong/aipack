@@ -21,7 +21,9 @@
       "@aipack/agent/*": ["./packages/agent/*"],
       "@aipack/memory": ["./packages/memory/index.ts"],
       "@aipack/coding": ["./packages/coding/index.ts"],
-      "@aipack/compression": ["./packages/compression/index.ts"]
+      "@aipack/compression": ["./packages/compression/index.ts"],
+      "@aipack/observability": ["./packages/observability/src/index.ts"],
+      "@aipack/observability-server": ["./packages/observability-server/src/index.ts"]
     }
   },
   "include": ["packages/**/*", "examples/**/*"],
