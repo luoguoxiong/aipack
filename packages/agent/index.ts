@@ -102,7 +102,11 @@ export { adaptAiModel, createStreamFnFromAi } from './adapters/ai';
 export { noopTelemetry } from './telemetry';
 export type {
   Telemetry,
+  ErrorClass,
+  RunStartTelemetryInfo,
   RunTelemetryInfo,
   ToolTelemetryInfo,
   ModelTelemetryInfo,
+  RetryTelemetryInfo,
+  PermissionDeniedTelemetryInfo,
 } from './telemetry';

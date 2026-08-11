@@ -10,9 +10,11 @@ export interface RetryOptions {
   baseDelayMs?: number;
   /** 最大重试延迟（毫秒，默认 30000） */
   maxDelayMs?: number;
+  /** 重试回调：仅在真正退避重试时调用（可观测/埋点用；重试耗尽由调用方依据最终错误兜底） */
+  onRetryAttempt?: (info: { attempt: number; error: unknown; delayMs: number }) => void;
 }
 
-const DEFAULTS: Required<RetryOptions> = {
+const DEFAULTS: Required<Omit<RetryOptions, 'onRetryAttempt'>> = {
   maxRetries: 2,
   baseDelayMs: 1000,
   maxDelayMs: 30000,
@@ -125,6 +127,7 @@ export async function retry<T>(
 
       if (attempt < maxRetries && isRetryableError(err)) {
         const delay = calculateDelay(attempt, baseDelayMs, maxDelayMs);
+        options?.onRetryAttempt?.({ attempt: attempt + 1, error: err, delayMs: delay });
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
