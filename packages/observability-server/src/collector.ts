@@ -12,6 +12,7 @@
  */
 
 import http from 'node:http';
+import https from 'node:https';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { EventBatch } from '@aipack/observability';
@@ -20,6 +21,30 @@ import { createApiHandler, type ApiHandler } from './server';
 import { createAdminHandler, type AdminHandler } from './admin';
 import { SessionManager, readBearerToken } from './auth';
 import { SQLiteStore } from './store';
+import { createAlertEvaluator, type AlertEvaluator } from './alerts/evaluator';
+import { createNotifier } from './alerts/notify';
+import { renderPrometheusMetrics } from './prometheus';
+import { RateLimiter, type RateLimitOptions } from './rate-limit';
+
+export interface RetentionOptions {
+  /** 明细保留天数；<=0 或未配置则不启用清理 */
+  days: number;
+  /** 清理周期（ms），默认 1h */
+  intervalMs?: number;
+  /** 启动时先清理一次，默认 true */
+  atStartup?: boolean;
+  /** 清理前 VACUUM INTO 快照备份，默认 false */
+  backup?: boolean;
+  /** 备份目录，默认 <db 所在目录>/backup */
+  backupDir?: string;
+}
+
+export interface AlertOptions {
+  /** 评估周期（ms），默认 60s */
+  evaluateIntervalMs?: number;
+  /** 全局默认通知 webhook（规则可覆盖） */
+  defaultWebhookUrl?: string;
+}
 
 export interface CollectorOptions {
   /** SQLite 文件路径（必填） */
@@ -34,12 +59,42 @@ export interface CollectorOptions {
   windowMs?: number;
   /** 时间桶粒度（ms），默认 1min */
   bucketMs?: number;
+  /** 数据保留：配置且 days>0 时启动定时清理 */
+  retention?: RetentionOptions;
+  /** 告警：配置后启动评估器（规则存 DB，面板 CRUD） */
+  alerts?: AlertOptions;
+  /** ingest 限流（per-appId 令牌桶）；配置且 rate>0 时启用 */
+  rateLimit?: RateLimitOptions;
+  /** 面板 Trace 详情"查看日志"跳转模板（%s 替换为 traceId），如 Loki/ELK 查询地址 */
+  logStreamUrlTemplate?: string;
 }
 
 export interface Collector {
   /** 挂载到 http server：处理 ingest + 管理 API + 查询 */
   handler: ApiHandler;
+  /** 告警评估器（alerts 配置时存在），测试可用 evaluateOnce 手动触发 */
+  alerts?: AlertEvaluator;
   close(): Promise<void>;
+}
+
+/** TLS 证书（collector server 启用 HTTPS 用） */
+export interface TlsOptions {
+  key: Buffer;
+  cert: Buffer;
+}
+
+/** 创建收集服务 HTTP(S) server：统一错误兜底，cli 与宿主共用 */
+export function createCollectorServer(collector: Collector, tls?: TlsOptions): http.Server {
+  const handler = (req: http.IncomingMessage, res: http.ServerResponse) => {
+    void collector.handler(req, res).catch((err: unknown) => {
+      console.error('[observability-server] 处理请求失败:', err);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Internal Server Error' }));
+      }
+    });
+  };
+  return tls ? https.createServer(tls, handler) : http.createServer(handler);
 }
 
 const MAX_BODY = 10 * 1024 * 1024; // ingest 单次上限 10MB
@@ -64,10 +119,64 @@ export function createCollector(opts: CollectorOptions): Collector {
   const sessions = opts.admin
     ? new SessionManager({ username: opts.admin.username, password: opts.admin.password })
     : undefined;
+
+  // 已知应用 id（种子白名单 + 面板动态创建），供 Prometheus 按应用拆分导出
+  const appIds = (): string[] => {
+    const ids = new Set<string>(Object.keys(opts.apps ?? {}));
+    for (const a of store.listApps()) ids.add(a.appId);
+    return Array.from(ids);
+  };
+
+  // ingest 限流（per-appId 令牌桶）
+  const limiter =
+    opts.rateLimit && opts.rateLimit.rate > 0 ? new RateLimiter(opts.rateLimit) : undefined;
+
+  // 告警：评估器 + 通知（规则存 DB，面板 CRUD）；notifier 供面板"测试通知"端点使用
+  let alertEvaluator: AlertEvaluator | undefined;
+  let notifier: ReturnType<typeof createNotifier> | undefined;
+  if (opts.alerts) {
+    notifier = createNotifier({ defaultWebhookUrl: opts.alerts.defaultWebhookUrl });
+    alertEvaluator = createAlertEvaluator({
+      aggregatorFor,
+      store,
+      notifier,
+      intervalMs: opts.alerts.evaluateIntervalMs,
+    });
+    alertEvaluator.start();
+  }
+
   const queryHandler = createApiHandler({ aggregatorFor, store });
   const adminHandler: AdminHandler | undefined = sessions
-    ? createAdminHandler({ sessions, store })
+    ? createAdminHandler({ sessions, store, notifier, logStreamUrlTemplate: opts.logStreamUrlTemplate })
     : undefined;
+
+  // 数据保留：启动先清一次 + 周期清理（unref 定时器，不阻塞进程退出）
+  let pruneTimer: NodeJS.Timeout | undefined;
+  if (opts.retention && opts.retention.days > 0) {
+    const prune = () => {
+      try {
+        const before = Date.now() - opts.retention!.days * 24 * 3600 * 1000;
+        if (opts.retention!.backup) {
+          try {
+            store.backup(opts.retention!.backupDir || '.aipack/backup');
+          } catch (err) {
+            console.warn('[observability-server] 数据清理前备份失败:', (err as Error).message);
+          }
+        }
+        const cleared = store.prune(before);
+        if (cleared > 0) {
+          console.log(
+            `[observability-server] 数据清理: 删除 ${cleared} 条过期明细（< ${opts.retention!.days} 天）`,
+          );
+        }
+      } catch (err) {
+        console.warn('[observability-server] 数据清理失败:', (err as Error).message);
+      }
+    };
+    if (opts.retention.atStartup !== false) prune();
+    pruneTimer = setInterval(prune, opts.retention.intervalMs ?? 3_600_000);
+    pruneTimer.unref?.();
+  }
 
   const handler: ApiHandler = async (req, res) => {
     try {
@@ -75,14 +184,26 @@ export function createCollector(opts: CollectorOptions): Collector {
       const pathname = url.pathname;
 
       // 面板管理路由（登录公开，其余 Bearer 会话）
-      if (pathname.startsWith('/api/auth/') || pathname.startsWith('/api/apps')) {
+      if (
+        pathname.startsWith('/api/auth/') ||
+        pathname.startsWith('/api/apps') ||
+        pathname.startsWith('/api/alerts') ||
+        pathname === '/api/meta'
+      ) {
         if (!adminHandler) return json(res, 503, { error: 'admin 未启用（缺少 ADMIN_USER/ADMIN_PASS 配置）' });
         return adminHandler(req, res);
       }
 
       // 客户端埋点上报（appId + appSecret 动态鉴权）
       if (req.method === 'POST' && pathname === '/api/v1/ingest') {
-        return handleIngest(req, res, { store, aggregatorFor });
+        return handleIngest(req, res, { store, aggregatorFor, limiter });
+      }
+
+      // Prometheus 抓取端点：无需登录（只暴露聚合指标），独立于 /metrics/* 面板查询
+      if (req.method === 'GET' && pathname === '/metrics/prometheus') {
+        res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' });
+        res.end(renderPrometheusMetrics({ aggregatorFor, appIds, windowMs: opts.windowMs }));
+        return Promise.resolve();
       }
 
       // 查询端点：需要面板会话
@@ -106,7 +227,10 @@ export function createCollector(opts: CollectorOptions): Collector {
 
   return {
     handler,
+    alerts: alertEvaluator,
     close: async () => {
+      if (pruneTimer) clearInterval(pruneTimer);
+      alertEvaluator?.stop();
       store.close();
     },
   };
@@ -120,12 +244,18 @@ async function handleIngest(
   ctx: {
     store: SQLiteStore;
     aggregatorFor(appId?: string): Aggregator;
+    limiter?: RateLimiter;
   },
 ): Promise<void> {
   const appId = header(req, 'x-app-id');
   const secret = header(req, 'x-app-secret');
   if (!appId || !secret || !ctx.store.verifyApp(appId, secret)) {
     return json(res, 401, { error: 'unauthorized: invalid appId or appSecret' });
+  }
+
+  // per-appId 限流：超限 429（客户端 HttpReporter 对 429 走缓存补报）
+  if (ctx.limiter && !ctx.limiter.check(appId)) {
+    return json(res, 429, { error: 'rate limit exceeded' }, { 'Retry-After': '1' });
   }
 
   let raw = '';
@@ -249,8 +379,9 @@ function json(
   res: http.ServerResponse,
   status: number,
   body: unknown,
+  extraHeaders: Record<string, string> = {},
 ): Promise<void> {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...extraHeaders });
   return new Promise((resolve) => {
     res.end(JSON.stringify(body), () => resolve());
   });

@@ -11,14 +11,17 @@
  * 或：bin `observability-server`（需先 build）。
  */
 
-export { createCollector } from './collector';
-export type { Collector, CollectorOptions } from './collector';
+export { createCollector, createCollectorServer } from './collector';
+export type { Collector, CollectorOptions, RetentionOptions, AlertOptions, TlsOptions } from './collector';
 export { Aggregator } from './aggregator';
 export type { AggregatorOptions } from './aggregator';
 export { SQLiteStore } from './store';
 export type {
   AppRecord,
   AppStore,
+  AlertRuleRow,
+  AlertEventRow,
+  AlertStore,
   RunQueryFilter,
   RunListItem,
   TraceDetail,
@@ -30,6 +33,27 @@ export { createAdminHandler } from './admin';
 export type { AdminDeps, AdminHandler } from './admin';
 export { SessionManager, readBearerToken } from './auth';
 export type { AdminCredentials } from './auth';
+export { createAlertEvaluator } from './alerts/evaluator';
+export type { AlertEvaluator, EvaluatorDeps } from './alerts/evaluator';
+export { createNotifier } from './alerts/notify';
+export type { Notifier, NotifierOptions, AlertNotification } from './alerts/notify';
+export {
+  ALERT_METRICS,
+  ALERT_OPERATORS,
+  validateRule,
+  compare,
+  ALERT_METRIC_LABELS,
+  ALERT_OPERATOR_LABELS,
+  DEFAULT_LOOKBACK_MS,
+  DEFAULT_COOLDOWN_MS,
+} from './alerts/rules';
+export type {
+  AlertMetric,
+  AlertOperator,
+  AlertRule,
+  NewAlertRule,
+  ValidateResult,
+} from './alerts/rules';
 export type {
   AggregatedMetrics,
   GroupBy,

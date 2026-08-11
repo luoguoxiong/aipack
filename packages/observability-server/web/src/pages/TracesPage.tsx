@@ -13,7 +13,7 @@ import {
   Tag,
   Typography,
 } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { LinkOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api';
 import type { AppInfo, Span, TraceDetail, TraceItem } from '../types';
 
@@ -43,6 +43,8 @@ export default function TracesPage() {
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<TraceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  /** 服务端配置的日志跳转模板（LOG_STREAM_URL_TEMPLATE），未配置则不显示"查看日志" */
+  const [logStreamUrlTemplate, setLogStreamUrlTemplate] = useState<string | undefined>(undefined);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,6 +73,11 @@ export default function TracesPage() {
     api
       .listApps()
       .then(setApps)
+      .catch(() => {});
+    // 拉取面板元信息（日志跳转模板），失败静默（未配置则隐藏入口）
+    api
+      .meta()
+      .then((m) => setLogStreamUrlTemplate(m.logStreamUrlTemplate))
       .catch(() => {});
   }, []);
 
@@ -216,6 +223,18 @@ export default function TracesPage() {
       >
         {detail ? (
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            {/* 日志关联入口（P1-1）：LOG_STREAM_URL_TEMPLATE 把 %s 替换为 traceId 跳转日志系统 */}
+            {logStreamUrlTemplate ? (
+              <a
+                href={logStreamUrlTemplate.replace('%s', encodeURIComponent(detail.traceId))}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Button icon={<LinkOutlined />} size="small">
+                  查看日志（traceId: {detail.traceId.slice(0, 18)}…）
+                </Button>
+              </a>
+            ) : null}
             <Typography.Text type="secondary">Span 时间线（模型=蓝 / 工具=绿 / 错误=红）</Typography.Text>
             {detail.spans.length ? (
               detail.spans.map((s, i) => (

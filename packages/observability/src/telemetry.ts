@@ -35,6 +35,8 @@ export class ObservabilityTelemetry implements Telemetry {
   private queued: EventBatch = emptyBatch();
   private timer: NodeJS.Timeout | undefined;
   private startedAt = new Map<string, number>(); // traceId -> queuedAt
+  /** in-flight run 顺序（最近开始的排最后），供 logger 关联当前 traceId */
+  private inFlightOrder: string[] = [];
   private batchSize: number;
 
   constructor(private reporter: { send(batch: EventBatch): Promise<boolean> }, opts: FlushQueueOptions = {}) {
@@ -46,11 +48,14 @@ export class ObservabilityTelemetry implements Telemetry {
 
   onRunStart = (info: RunStartTelemetryInfo): void => {
     this.startedAt.set(info.traceId, info.queuedAt);
+    this.inFlightOrder = this.inFlightOrder.filter((id) => id !== info.traceId);
+    this.inFlightOrder.push(info.traceId);
   };
 
   onRunEnd = (info: RunTelemetryInfo): void => {
     const queuedAt = this.startedAt.get(info.traceId) ?? Date.now() - info.durationMs;
     this.startedAt.delete(info.traceId);
+    this.inFlightOrder = this.inFlightOrder.filter((id) => id !== info.traceId);
 
     this.queued.runs.push(this.runRecord(info, queuedAt));
     this.queued.spans.push(this.runSpan(info, queuedAt));
@@ -114,6 +119,15 @@ export class ObservabilityTelemetry implements Telemetry {
     });
     this.maybeFlush();
   };
+
+  /**
+   * 当前 run 上下文（供结构化 logger 注入 traceId）。
+   * 单并发时返回唯一 in-flight run；并发时返回最近开始的（约定语义，文档说明）。
+   */
+  currentContext(): { traceId?: string } {
+    const traceId = this.inFlightOrder[this.inFlightOrder.length - 1];
+    return traceId ? { traceId } : {};
+  }
 
   /** 立即上报队列中残留的数据（fire-and-forget，失败由 reporter 缓存补报） */
   flush(): void {
