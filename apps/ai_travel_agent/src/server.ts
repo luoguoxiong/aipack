@@ -22,6 +22,8 @@ import {
   type RuntimePair,
   type RuntimeRegistry,
 } from './runtime.js';
+import { createObservability } from '@aipack/observability';
+import type { Observability } from '@aipack/observability';
 import { describeSearchBackend } from './tools/search.js';
 import { generateIcs } from './itinerary.js';
 
@@ -42,8 +44,19 @@ const MIME: Record<string, string> = {
 async function main() {
   const config = loadConfig();
 
+  // 可观测性上报(可选):配置了 OBS_APP_ID/OBS_APP_SECRET 才启用
+  let obs: Observability | undefined;
+  if (config.observability) {
+    obs = createObservability({
+      appId: config.observability.appId,
+      appSecret: config.observability.appSecret,
+      endpoint: config.observability.endpoint,
+      cacheDir: '.aipack/observability',
+    });
+  }
+
   // Runtime 注册表:按用户选择的模型按需构建并缓存(支持运行时切换模型)
-  const registry = createRuntimeRegistry(config.serpapiKey);
+  const registry = createRuntimeRegistry(config.serpapiKey, obs?.telemetry);
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -92,6 +105,7 @@ async function main() {
       `║  模型:     ${pad(`${config.provider}/${config.modelId}`, 38)}║`,
       `║  LLM 就绪: ${pad(config.llmReady ? '✅ 是' : '❌ 否(请配置 API Key)', 38)}║`,
       `║  搜索后端: ${pad(describeSearchBackend(config.serpapiKey), 38)}║`,
+      `║  可观测性: ${pad(obs ? `✅ ${config.observability?.endpoint}` : '❌ 未配置', 38)}║`,
       `║  地址:     ${pad(`http://localhost:${config.port}`, 38)}║`,
       '╚══════════════════════════════════════════════════╝',
       '',
@@ -104,6 +118,8 @@ async function main() {
     console.log(`\n[${sig}] 正在关闭...`);
     server.close();
     await registry.closeAll();
+    // 等残留埋点上报完成
+    await obs?.close();
     process.exit(0);
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));
