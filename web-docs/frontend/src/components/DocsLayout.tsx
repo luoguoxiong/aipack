@@ -15,6 +15,7 @@ import {
   SafetyCertificateOutlined,
   AimOutlined,
   LineChartOutlined,
+  CloudServerOutlined,
   NodeIndexOutlined,
   DashboardOutlined,
 } from '@ant-design/icons';
@@ -63,6 +64,7 @@ const observabilityMenu: MenuItem[] = [
   { key: '/observability#events', label: '事件一览', icon: <DashboardOutlined /> },
   { key: '/observability#trace', label: 'Trace 设计', icon: <LineChartOutlined /> },
   { key: '/observability#metrics', label: '指标口径', icon: <AimOutlined /> },
+  { key: '/observability#s2', label: '聚合存储与 REST API', icon: <DatabaseOutlined /> },
 ];
 
 const examplesMenu: MenuItem[] = [
@@ -79,6 +81,8 @@ const packagesMenu: MenuItem[] = [
   { key: '/packages#coding', label: 'aipack-coding', icon: <CodeOutlined /> },
   { key: '/packages#memory', label: 'aipack-memory', icon: <DatabaseOutlined /> },
   { key: '/packages#compression', label: 'aipack-compression', icon: <AimOutlined /> },
+  { key: '/packages#aipack-observability', label: 'aipack-observability', icon: <LineChartOutlined /> },
+  { key: '/packages#aipack-observability-server', label: 'aipack-observability-server', icon: <CloudServerOutlined /> },
   { key: '/packages#cli', label: 'aipack-cli', icon: <SettingOutlined /> },
   { key: '/packages#vscode', label: 'vscode-aipack-coding', icon: <ExperimentOutlined /> },
 ];

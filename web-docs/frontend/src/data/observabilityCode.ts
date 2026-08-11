@@ -100,3 +100,57 @@ export const obsMetricsCode = [
   '// 工具成功率        onToolCall.status       ok / (ok + error)；blocked/skipped 不计入',
   '// 首 token 延迟     onRunEnd.ttftMs         流式体验关键指标',
 ].join('\n');
+
+export const obsS2SetupCode = [
+  '// 客户端 SDK：埋点上报模式，只需 appId + appSecret',
+  'import { createObservability } from "@aipack/observability";',
+  '',
+  'const obs = createObservability({',
+  '  appId: "travel-app",',
+  '  appSecret: "sk-travel123", // 与收集服务 OBS_APPS 白名单匹配',
+  '  endpoint: "http://localhost:8787", // 后台收集服务地址（默认即此）',
+  '});',
+  '',
+  '// 注入 telemetry：6 类事件自动批量上报（5s/50 条），失败本地缓存补报',
+  'const runtime = createRuntime({',
+  '  model: model,',
+  '  telemetry: obs.telemetry,',
+  '});',
+  '',
+  '// 进程退出前上报残余',
+  'process.on("SIGINT", async () => { await obs.close(); process.exit(0); });',
+].join('\n');
+
+export const obsS2CollectorCode = [
+  '// 后台收集服务：@aipack/observability-server（独立包部署）',
+  '// .env',
+  'PORT=8787',
+  'DB_PATH=.aipack/collector.db',
+  'OBS_APPS=travel-app:sk-travel123,blog-app:sk-blog456',
+  '',
+  '$ pnpm --filter @aipack/observability-server dev',
+  '',
+  '// 收到上报：SQLite 落盘（runs/spans/tool_calls）+ 内存聚合（实时指标）',
+  'POST /api/v1/ingest   埋点上报（x-app-id + x-app-secret 鉴权）',
+  'GET  /metrics/*       聚合查询（summary / timeseries / tools）',
+  'GET  /traces/*        Trace 明细查询',
+].join('\n');
+
+export const obsS2RestApiCode = [
+  '// 开箱即用的 5 个 REST 端点（无框架依赖，可任意挂载）',
+  '',
+  'GET /metrics/summary?since=&until=&groupBy=model|tool|session',
+  '  → { requests, successRate, costUsd, p50Ms, p95Ms, p99Ms, avgTurns, retryRate, permissionDenied }',
+  '',
+  'GET /metrics/timeseries?since=&until=&step=5m&metric=requests|successRate|costUsd',
+  '  → [{ t, v }, ...]',
+  '',
+  'GET /metrics/tools?since=&until=',
+  '  → [{ tool, calls, successRate, avgMs, errors }]   // 按成功率升序',
+  '',
+  'GET /traces?since=&until=&status=&model=&tool=&page=1&pageSize=20',
+  '  → { page, total, items: [{ traceId, startedAt, durationMs, status, turns, costUsd, retries }] }',
+  '',
+  'GET /traces/:traceId',
+  '  → { spans: [{ kind, name, startedAt, durationMs, status, errorClass, attempts, costUsd }] }',
+].join('\n');
