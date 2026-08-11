@@ -1,0 +1,67 @@
+{
+  "name": "@aipack/observability-server",
+  "version": "0.1.0",
+  "description": "aipack 可观测性收集服务(S2)：接收 SDK 埋点上报,SQLite 落盘 + 内存聚合 + REST 查询",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "observability-server": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup && vite build --config web/vite.config.ts",
+    "build:web": "vite build --config web/vite.config.ts",
+    "prebuild": "pnpm --filter @aipack/observability build || true",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
+    "test": "node --import tsx --test test/observability-server.test.ts",
+    "dev": "tsx src/cli.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    "start": "tsx src/cli.ts"
+  },
+  "keywords": [
+    "aipack",
+    "observability",
+    "telemetry",
+    "metrics",
+    "trace",
+    "sqlite",
+    "dashboard"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@aipack/observability": "workspace:*",
+    "better-sqlite3": "^11.10.0"
+  },
+  "devDependencies": {
+    "@aipack/agent": "workspace:*",
+    "@ant-design/icons": "^5.4.0",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.12.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "antd": "^5.20.0",
+    "echarts": "^5.5.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.10"
+  }
+}
