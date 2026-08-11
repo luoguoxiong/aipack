@@ -174,6 +174,10 @@ export function createStreamFnFromAi(
       // 运行时值合法；此处类型断言消除联合类型差异
       merged.reasoning = (merged.reasoning ?? streamOptions.reasoning) as ReasoningLevel;
     }
+    // 透传重试回调（遥测用），让 runtime 能感知 provider 内部的退避重试
+    if (streamOptions?.onRetryAttempt) {
+      merged.onRetryAttempt = streamOptions.onRetryAttempt;
+    }
 
     // ── 按 model.api 分派(与 aipack/ai Models.dispatchStream 保持一致) ──
     const stream = hasApi(activeModel, 'anthropic-messages')

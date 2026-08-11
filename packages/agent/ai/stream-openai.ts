@@ -438,7 +438,7 @@ async function* runStream(
         throw res;
       }
       return ok(res);
-    });
+    }, { onRetryAttempt: options.onRetryAttempt });
   } catch (e: any) {
     const aborted = e?.name === 'AbortError' || options.signal?.aborted;
     const error = createEmptyAssistantMessage();

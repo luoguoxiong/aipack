@@ -25,6 +25,8 @@ export interface Compilation {
   readonly request: Request;
   /** 任务图 */
   readonly graph: TaskGraph;
+  /** 本次运行的全局唯一 id（run()/stream() 入口生成，贯穿 runEnd/tool/model/retry 遥测事件） */
+  readonly traceId: string;
   /** 当前编译产生的资源 */
   resources: ContextResource[];
   /** 消息列表 */
@@ -33,6 +35,10 @@ export interface Compilation {
   completed: boolean;
   /** 编译错误 */
   readonly error?: Error;
+  /** 对话轮数（runLoop 累计写入，供 onRunEnd 上报 step 长度） */
+  turnCount?: number;
+  /** 首个模型调用的首 token 延迟 ms（流式路径写入，供 onRunEnd 上报 ttftMs） */
+  ttftMs?: number;
   /**
    * 终止原因。由 beforeToolCall/afterToolCall 的 terminate 决策设置，
    * runLoop 检测到后停止循环，buildResult 据此将 stopReason 标为 'terminated'。
@@ -152,4 +158,6 @@ export interface RuntimeOptions {
   /** 框架级工具权限策略（可选）。未配置时工具全部放行（向后兼容）；
    *  生产环境建议配置 createPermissionPolicy / createAllowListPolicy / createDenyAllPolicy。 */
   permissionPolicy?: import('./permission').PermissionPolicy;
+  /** traceId 生成器（可选，默认 Date+UUID；测试可注入确定性 id） */
+  traceIdGenerator?: () => string;
 }

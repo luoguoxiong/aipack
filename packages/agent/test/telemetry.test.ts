@@ -137,6 +137,212 @@ describe('Telemetry: onModelCall', () => {
   });
 });
 
+// ─── S1: traceId 关联 ─────────────────────────────────────────────
+
+describe('Telemetry: S1 traceId 关联', () => {
+  it('runStart 与 runEnd 的 traceId 一致，且写入 Result.metadata', async () => {
+    const ids: string[] = [];
+    const runtime = createRuntime({
+      streamFn: mockStreamFn([assistant('hello')]),
+      telemetry: {
+        onRunStart: (i) => ids.push(i.traceId),
+        onRunEnd: (i) => ids.push(i.traceId),
+      },
+    });
+
+    const result = await runtime.run(createRequest('hi'));
+    assert.equal(ids.length, 2);
+    assert.equal(ids[0], ids[1]);
+    assert.equal(result.metadata.traceId, ids[0]);
+  });
+
+  it('traceIdGenerator 注入时使用确定性 id', async () => {
+    const onRunEnd = mock.fn(() => undefined);
+    const runtime = createRuntime({
+      streamFn: mockStreamFn([assistant('hello')]),
+      traceIdGenerator: () => 'fixed-trace',
+      telemetry: { onRunEnd },
+    });
+
+    await runtime.run(createRequest('hi'));
+    assert.equal(onRunEnd.mock.calls[0].arguments[0].traceId, 'fixed-trace');
+  });
+});
+
+// ─── S1: step 长度与工具状态 ──────────────────────────────────────
+
+describe('Telemetry: S1 turnCount / 工具状态', () => {
+  it('工具循环 2 轮上报 turnCount=2', async () => {
+    const onRunEnd = mock.fn(() => undefined);
+    const runtime = createRuntime({
+      streamFn: mockToolStreamFn(),
+      tools: [echoTool],
+      telemetry: { onRunEnd },
+    });
+
+    await runtime.run(createRequest('请回显 foo'));
+    assert.equal(onRunEnd.mock.callCount(), 1);
+    assert.equal(onRunEnd.mock.calls[0].arguments[0].turnCount, 2);
+  });
+
+  it('onToolCall 携带 success=true / status=ok / traceId / spanId', async () => {
+    const onToolCall = mock.fn(() => undefined);
+    const runtime = createRuntime({
+      streamFn: mockToolStreamFn(),
+      tools: [echoTool],
+      telemetry: { onToolCall },
+    });
+
+    await runtime.run(createRequest('请回显 foo'));
+    const info = onToolCall.mock.calls[0].arguments[0];
+    assert.equal(info.success, true);
+    assert.equal(info.status, 'ok');
+    assert.ok(info.traceId);
+    assert.ok(info.spanId);
+  });
+
+  it('工具抛错时 onToolCall status=error / success=false / errorClass=tool_error', async () => {
+    const onToolCall = mock.fn(() => undefined);
+    const throwingTool: Tool = {
+      name: 'echo',
+      description: '总是抛错',
+      inputSchema: { type: 'object' },
+      execute: async () => {
+        throw new Error('boom');
+      },
+    };
+    const runtime = createRuntime({
+      streamFn: mockToolStreamFn(),
+      tools: [throwingTool],
+      telemetry: { onToolCall },
+    });
+
+    await runtime.run(createRequest('请回显 foo'));
+    const info = onToolCall.mock.calls[0].arguments[0];
+    assert.equal(info.status, 'error');
+    assert.equal(info.success, false);
+    assert.equal(info.errorClass, 'tool_error');
+  });
+
+  it('权限拒绝时 onPermissionDenied 携带 traceId', async () => {
+    const denied = mock.fn(() => undefined);
+    const runtime = createRuntime({
+      streamFn: mockToolStreamFn(),
+      tools: [echoTool],
+      permissionPolicy: { check: async () => 'deny' },
+      telemetry: { onPermissionDenied: denied },
+    });
+
+    await runtime.run(createRequest('请回显 foo'));
+    assert.equal(denied.mock.callCount(), 1);
+    assert.ok(denied.mock.calls[0].arguments[0].traceId);
+  });
+});
+
+// ─── S1: 重试次数 ─────────────────────────────────────────────────
+
+describe('Telemetry: S1 重试次数', () => {
+  it('provider 内部重试：attempts=2 且 onRetry 触发一次', async () => {
+    const onModelCall = mock.fn(() => undefined);
+    const onRetry = mock.fn(() => undefined);
+    const runtime = createRuntime({
+      streamFn: retryStreamFn(),
+      telemetry: { onModelCall, onRetry },
+    });
+
+    await runtime.run(createRequest('hi'));
+    assert.equal(onModelCall.mock.callCount(), 1);
+    assert.equal(onModelCall.mock.calls[0].arguments[0].attempts, 2);
+    assert.equal(onRetry.mock.callCount(), 1);
+    const retry = onRetry.mock.calls[0].arguments[0];
+    assert.equal(retry.attempt, 1);
+    assert.equal(retry.willRetry, true);
+    assert.ok(retry.traceId);
+    assert.equal(retry.modelId, 'unknown');
+  });
+});
+
+// ─── S1: 流式路径 ─────────────────────────────────────────────────
+
+describe('Telemetry: S1 流式路径', () => {
+  it('stream() 触发 onRunStart/onRunEnd/onModelCall，traceId 一致且 stream=true', async () => {
+    const onRunStart = mock.fn(() => undefined);
+    const onRunEnd = mock.fn(() => undefined);
+    const onModelCall = mock.fn(() => undefined);
+    const runtime = createRuntime({
+      streamFn: mockStreamFn([assistant('hello', { input: 11, output: 3 })]),
+      telemetry: { onRunStart, onRunEnd, onModelCall },
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of runtime.stream(createRequest('hi'))) {
+      chunks.push(chunk.type);
+    }
+    assert.ok(chunks.includes('done'));
+    assert.equal(onRunStart.mock.callCount(), 1);
+    assert.equal(onRunEnd.mock.callCount(), 1);
+    assert.equal(onModelCall.mock.callCount(), 1);
+    assert.equal(onModelCall.mock.calls[0].arguments[0].stream, true);
+    assert.equal(
+      onRunStart.mock.calls[0].arguments[0].traceId,
+      onRunEnd.mock.calls[0].arguments[0].traceId,
+    );
+  });
+
+  it('流式上报 ttftMs（首 token 延迟）', async () => {
+    const onRunEnd = mock.fn(() => undefined);
+    const runtime = createRuntime({
+      streamFn: async function* (): AsyncGenerator<StreamEvent> {
+        yield { type: 'text_delta', delta: 'hel' };
+        yield { type: 'done', message: assistant('hello') };
+      },
+      telemetry: { onRunEnd },
+    });
+
+    for await (const _chunk of runtime.stream(createRequest('hi'))) {
+      /* 排空 */
+    }
+    const info = onRunEnd.mock.calls[0].arguments[0];
+    assert.ok(typeof info.ttftMs === 'number');
+  });
+});
+
+// ─── S1: 校验失败与成本 ───────────────────────────────────────────
+
+describe('Telemetry: S1 校验失败 / 成本', () => {
+  it('空 message 触发 onRunEnd errorClass=validation', async () => {
+    const onRunEnd = mock.fn(() => undefined);
+    const runtime = createRuntime({
+      streamFn: mockStreamFn([assistant('hello')]),
+      telemetry: { onRunEnd },
+    });
+
+    await runtime.run(createRequest(''));
+    assert.equal(onRunEnd.mock.callCount(), 1);
+    const info = onRunEnd.mock.calls[0].arguments[0];
+    assert.equal(info.success, false);
+    assert.equal(info.errorClass, 'validation');
+  });
+
+  it('usage.cost.total 透传到 onModelCall.costUsd / onRunEnd.costUsd', async () => {
+    const onModelCall = mock.fn(() => undefined);
+    const onRunEnd = mock.fn(() => undefined);
+    const msg = assistant('hello');
+    msg.usage = {
+      ...msg.usage!,
+      cost: { input: 0.0001, output: 0.0002, total: 0.0003 },
+    };
+    const runtime = createRuntime({
+      streamFn: mockStreamFn([msg]),
+      telemetry: { onModelCall, onRunEnd },
+    });
+
+    await runtime.run(createRequest('hi'));
+    assert.equal(onModelCall.mock.calls[0].arguments[0].costUsd, 0.0003);
+    assert.equal(onRunEnd.mock.calls[0].arguments[0].costUsd, 0.0003);
+  });
+});
+
 // ─── 辅助 ─────────────────────────────────────────────────────────
 
 /** 第一轮返回工具调用，后续返回纯文本 */
@@ -163,5 +369,17 @@ function mockToolStreamFn(): StreamFn {
     } else {
       yield { type: 'done', message: assistant('done') };
     }
+  };
+}
+
+/** 模拟 provider 内部重试：首次调用经 onRetryAttempt 通知后退避，随即成功 */
+function retryStreamFn(): StreamFn {
+  return async function* (
+    _model,
+    _context,
+    options,
+  ): AsyncGenerator<StreamEvent> {
+    options?.onRetryAttempt?.({ attempt: 1, error: new Error('boom'), delayMs: 1 });
+    yield { type: 'done', message: assistant('recovered') };
   };
 }

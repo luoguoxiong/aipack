@@ -60,12 +60,48 @@ import type {
   StoredSession,
   SessionModel,
 } from '../core';
-import type { Telemetry } from '../telemetry';
+import type { Telemetry, ErrorClass } from '../telemetry';
 import { validateRequest, normalizeRequest } from '../request';
 import {
   messagesToResources,
   resourcesToMessages,
 } from '../context-resource';
+import { classifyError, isAgentError } from '../ai';
+import { randomUUID } from 'node:crypto';
+
+// ─── traceId / spanId 生成（零新依赖）────────────────────────────
+
+function newTraceId(): string {
+  return `${Date.now().toString(36)}-${randomUUID()}`;
+}
+
+function newSpanId(): string {
+  return randomUUID();
+}
+
+/** 从流错误消息的 "[category]" 前缀解析错误分类（formatCategoryError 产出） */
+function errorClassFromMessage(message: string): string | undefined {
+  const m = message.match(/^\[([^\]]+)\]/);
+  return m ? m[1] : undefined;
+}
+
+/** 工具结果状态分类：error(执行失败) / ok(正常)。blocked/skipped 不进入 onToolCall */
+function toolResultStatus(result: ToolResult): 'ok' | 'error' | 'blocked' | 'skipped' {
+  if (result.details && typeof result.details === 'object' && 'error' in result.details) {
+    return 'error';
+  }
+  const d = result.details as { blocked?: boolean; skipped?: boolean } | undefined;
+  if (d?.blocked) return 'blocked';
+  if (d?.skipped) return 'skipped';
+  return 'ok';
+}
+
+/** 从重试错误对象提取 HTTP 状态码（AgentError 或 fetch Response） */
+function statusOfRetryError(error: unknown): number | undefined {
+  if (isAgentError(error)) return error.status;
+  const s = (error as { status?: unknown } | null)?.status;
+  return typeof s === 'number' ? s : undefined;
+}
 
 // ─── 会话状态 ─────────────────────────────────────────────────────
 
@@ -189,6 +225,8 @@ export class AgentRuntime implements Runtime {
   private _telemetry: Telemetry | undefined;
   /** 框架级工具权限策略（未配置 → 放行，向后兼容） */
   private _permissionPolicy: PermissionPolicy | undefined;
+  /** traceId 生成器（测试可注入确定性 id） */
+  private _traceIdGenerator: (() => string) | undefined;
 
   private constructor(options: RuntimeOptions) {
     this._config = options.config ?? {};
@@ -220,6 +258,7 @@ export class AgentRuntime implements Runtime {
     this._contextBudgetRatio = options.contextBudgetRatio ?? 0.8;
     this._telemetry = options.telemetry;
     this._permissionPolicy = options.permissionPolicy;
+    this._traceIdGenerator = options.traceIdGenerator;
 
     // 注册初始工具
     if (options.tools) {
@@ -382,29 +421,47 @@ export class AgentRuntime implements Runtime {
     // 0. 校验请求
     const validation = validateRequest(request);
     if (!validation.valid) {
-      return new ResultBuilder()
+      const invalidResult = new ResultBuilder()
         .error(`请求校验失败: ${validation.errors.join('; ')}`)
         .build();
+      // 校验失败也要可观测（errorClass='validation'），不进入排队
+      await this.emitTelemetry('onRunEnd', {
+        traceId: this.newTraceId(),
+        sessionKey: this.resolveSessionKey(request),
+        request,
+        durationMs: 0,
+        activeMs: 0,
+        queuedMs: 0,
+        turnCount: 0,
+        result: invalidResult,
+        success: false,
+        errorClass: 'validation',
+        tokens: { input: 0, output: 0 },
+      });
+      return invalidResult;
     }
     const finalRequest = normalizeRequest(request);
     const sessionKey = this.resolveSessionKey(finalRequest);
-    const startedAt = Date.now();
+    const traceId = this.newTraceId();
+    const queuedAt = Date.now();
 
-    // 1. 串行化：同一会话的请求依次执行
+    // 1. 入队前：onRunStart（配合 onRunEnd 求排队时长 queuedMs）
+    await this.emitTelemetry('onRunStart', {
+      traceId,
+      sessionKey,
+      request: finalRequest,
+      queuedAt,
+    });
+
+    // 2. 串行化：同一会话的请求依次执行
     const session = this.getSession(sessionKey);
     const release = await this.acquire(session);
+    const queuedMs = Date.now() - queuedAt;
 
     try {
-      const result = await this.runWithStorageLock(finalRequest, sessionKey, () =>
-        this._run(finalRequest, sessionKey, session),
+      return await this.runWithStorageLock(finalRequest, sessionKey, () =>
+        this._run(finalRequest, sessionKey, session, traceId, queuedMs),
       );
-      await this.emitTelemetry('onRunEnd', {
-        sessionKey,
-        request: finalRequest,
-        durationMs: Date.now() - startedAt,
-        result,
-      });
-      return result;
     } finally {
       release();
     }
@@ -414,20 +471,44 @@ export class AgentRuntime implements Runtime {
     // 0. 校验请求
     const validation = validateRequest(request);
     if (!validation.valid) {
-      yield { type: 'error', content: `请求校验失败: ${validation.errors.join('; ')}` };
+      const message = `请求校验失败: ${validation.errors.join('; ')}`;
+      await this.emitTelemetry('onRunEnd', {
+        traceId: this.newTraceId(),
+        sessionKey: this.resolveSessionKey(request),
+        request,
+        durationMs: 0,
+        activeMs: 0,
+        queuedMs: 0,
+        turnCount: 0,
+        result: new ResultBuilder().error(message).build(),
+        success: false,
+        errorClass: 'validation',
+        tokens: { input: 0, output: 0 },
+      });
+      yield { type: 'error', content: message };
       yield { type: 'done' };
       return;
     }
     const finalRequest = normalizeRequest(request);
     const sessionKey = this.resolveSessionKey(finalRequest);
+    const traceId = this.newTraceId();
+    const queuedAt = Date.now();
+
+    await this.emitTelemetry('onRunStart', {
+      traceId,
+      sessionKey,
+      request: finalRequest,
+      queuedAt,
+    });
 
     // 1. 串行化
     const session = this.getSession(sessionKey);
     const release = await this.acquire(session);
+    const queuedMs = Date.now() - queuedAt;
 
     try {
       yield* this.streamWithStorageLock(finalRequest, sessionKey, () =>
-        this._stream(finalRequest, sessionKey, session),
+        this._stream(finalRequest, sessionKey, session, traceId, queuedMs),
       );
     } finally {
       release();
@@ -472,7 +553,11 @@ export class AgentRuntime implements Runtime {
     request: Request,
     sessionKey: string,
     session: SessionState,
+    traceId: string,
+    queuedMs: number,
   ): Promise<Result> {
+    const activeStartedAt = Date.now();
+
     // 1. 触发 beforeInitialize / afterInitialize
     await this._hooks.beforeInitialize.promise(request);
     await this._hooks.afterInitialize.promise(request);
@@ -486,7 +571,7 @@ export class AgentRuntime implements Runtime {
     }
 
     // 4. 创建编译上下文
-    const compilation = this.createCompilation(finalRequest, sessionKey, session);
+    const compilation = this.createCompilation(finalRequest, sessionKey, session, traceId);
 
     // 5. 添加用户消息（含媒体附件）
     compilation.messages.push(this.buildUserMessage(finalRequest));
@@ -506,6 +591,7 @@ export class AgentRuntime implements Runtime {
       await this._hooks.done.promise(result, finalRequest);
 
       compilation.completed = true;
+      await this.emitRunEnd(finalRequest, sessionKey, compilation, result, queuedMs, activeStartedAt);
       return result;
     } catch (err) {
       const error = err as Error;
@@ -515,9 +601,11 @@ export class AgentRuntime implements Runtime {
       }
       await this._hooks.failed.promise(error, finalRequest);
 
-      return new ResultBuilder()
+      const result = new ResultBuilder()
         .error(error.message)
         .build();
+      await this.emitRunEnd(finalRequest, sessionKey, compilation, result, queuedMs, activeStartedAt);
+      return result;
     } finally {
       // 10. 结束前最终保存会话（ephemeral 不持久化；失败不影响运行结果）
       await this.persistSessionSafe(finalRequest, sessionKey);
@@ -528,7 +616,11 @@ export class AgentRuntime implements Runtime {
     request: Request,
     sessionKey: string,
     session: SessionState,
+    traceId: string,
+    queuedMs: number,
   ): AsyncGenerator<ResultChunk> {
+    const activeStartedAt = Date.now();
+
     // 1. 钩子
     await this._hooks.beforeInitialize.promise(request);
     await this._hooks.afterInitialize.promise(request);
@@ -540,7 +632,7 @@ export class AgentRuntime implements Runtime {
     }
 
     // 3. 创建编译上下文
-    const compilation = this.createCompilation(finalRequest, sessionKey, session);
+    const compilation = this.createCompilation(finalRequest, sessionKey, session, traceId);
 
     // 4. 添加用户消息（含媒体附件）
     compilation.messages.push(this.buildUserMessage(finalRequest));
@@ -558,26 +650,30 @@ export class AgentRuntime implements Runtime {
       await this._hooks.done.promise(result, finalRequest);
 
       yield { type: 'done' };
+      await this.emitRunEnd(finalRequest, sessionKey, compilation, result, queuedMs, activeStartedAt);
     } catch (err) {
       const error = err as Error;
       if (error?.name !== 'AbortError') {
         console.error('[Runtime] 流式运行失败:', error?.stack ?? error);
       }
       await this._hooks.failed.promise(error, finalRequest);
+      const result = new ResultBuilder().error(error.message).build();
       yield { type: 'error', content: error.message };
       yield { type: 'done' };
+      await this.emitRunEnd(finalRequest, sessionKey, compilation, result, queuedMs, activeStartedAt);
     } finally {
       await this.persistSessionSafe(finalRequest, sessionKey);
     }
   }
 
-  createCompilation(request: Request, sessionKey?: string, session?: SessionState): Compilation {
+  createCompilation(request: Request, sessionKey?: string, session?: SessionState, traceId?: string): Compilation {
     return {
       request,
       graph: createTaskGraph(),
       resources: [],
       messages: (session ?? this.getSession(sessionKey ?? this._sessionKey)).messages,
       completed: false,
+      traceId: traceId ?? this.newTraceId(),
     };
   }
 
@@ -608,17 +704,17 @@ export class AgentRuntime implements Runtime {
 
     try {
       let maxTurns = this._maxTurns;
+      let turnCount = 0; // step 长度：实际对话轮数（与 maxTurns 上限解耦）
 
       while (maxTurns-- > 0) {
+        turnCount += 1;
+
         // 1. 链式转换上下文（原地替换，保持 session 引用）
         await this.transformMessages(compilation, sessionKey);
 
-        // 2. 构建 LLM 上下文
-        const context = this.buildContext(compilation.messages);
-
-        // 3. 调用模型
+        // 2. 调用模型（streamModel 内部走统一埋点 streamModelEvents）
         const assistantMessage = await this.streamModel(
-          context,
+          compilation,
           session.abortController!.signal,
           sessionKey,
         );
@@ -648,6 +744,8 @@ export class AgentRuntime implements Runtime {
           break;
         }
       }
+
+      compilation.turnCount = turnCount;
     } finally {
       this.markIdle(session);
     }
@@ -667,21 +765,22 @@ export class AgentRuntime implements Runtime {
 
     try {
       let maxTurns = this._maxTurns;
+      let turnCount = 0; // step 长度：实际对话轮数（与 maxTurns 上限解耦）
 
       while (maxTurns-- > 0) {
+        turnCount += 1;
+
         // 1. 链式转换上下文（原地替换，保持 session 引用）
         await this.transformMessages(compilation, sessionKey);
 
-        // 2. 构建上下文
-        const context = this.buildContext(compilation.messages);
-
-        // 3. 流式调用模型
+        // 2. 流式调用模型（streamModelEvents 统一埋 onModelCall + 重试计数）
         let assistantMessage: AssistantMessage | null = null;
 
-        for await (const event of this._streamFn(this._model, context, {
-          signal: session.abortController!.signal,
-          reasoning: this._thinkingLevel !== 'off' ? this._thinkingLevel : undefined,
-        })) {
+        for await (const event of this.streamModelEvents(
+          compilation,
+          session.abortController!.signal,
+          true, // stream 模式：同时统计首 token 延迟
+        )) {
           const chunk = this.streamEventToChunk(event);
           if (chunk) yield chunk;
 
@@ -737,6 +836,8 @@ export class AgentRuntime implements Runtime {
           break;
         }
       }
+
+      compilation.turnCount = turnCount;
     } finally {
       this.markIdle(session);
     }
@@ -750,7 +851,7 @@ export class AgentRuntime implements Runtime {
     toolCalls: ToolCallContent[],
     signal: AbortSignal,
   ): Promise<ToolExecutionOutcome> {
-    const outcome = await this.runTools(toolCalls, signal, compilation.request);
+    const outcome = await this.runTools(toolCalls, signal, compilation.request, compilation.traceId);
     for (let i = 0; i < toolCalls.length; i++) {
       compilation.messages.push(
         this.buildToolResultMessage(toolCalls[i], outcome.results[i]),
@@ -765,7 +866,7 @@ export class AgentRuntime implements Runtime {
     toolCalls: ToolCallContent[],
     signal: AbortSignal,
   ): Promise<ToolExecutionOutcome> {
-    const outcome = await this.runTools(toolCalls, signal, compilation.request);
+    const outcome = await this.runTools(toolCalls, signal, compilation.request, compilation.traceId);
     for (let i = 0; i < toolCalls.length; i++) {
       compilation.messages.push(
         this.buildToolResultMessage(toolCalls[i], outcome.results[i]),
@@ -783,8 +884,9 @@ export class AgentRuntime implements Runtime {
     toolCalls: ToolCallContent[],
     signal: AbortSignal,
     request: Request,
+    traceId: string,
   ): Promise<ToolExecutionOutcome> {
-    const execute = (tc: ToolCallContent) => this.executeTool(tc, signal, request);
+    const execute = (tc: ToolCallContent) => this.executeTool(tc, signal, request, traceId);
 
     if (this._parallelToolCalls && toolCalls.length > 1) {
       // 并行：全部执行，聚合 terminate（取第一个命中的原因）
@@ -820,6 +922,7 @@ export class AgentRuntime implements Runtime {
     toolCall: ToolCallContent,
     signal: AbortSignal | undefined,
     request: Request,
+    traceId: string,
   ): Promise<SingleToolOutcome> {
     const tool = this._globalTools.get(toolCall.name);
 
@@ -861,6 +964,7 @@ export class AgentRuntime implements Runtime {
         if (!allowed) {
           const reason = `permission denied by policy for tool "${toolCall.name}"`;
           await this.emitTelemetry('onPermissionDenied', {
+            traceId,
             sessionKey: permissionReq.sessionKey,
             toolName: toolCall.name,
             permissions: permissionReq.permissions,
@@ -912,12 +1016,21 @@ export class AgentRuntime implements Runtime {
         };
       }
 
+      const status = toolResultStatus(result);
       await this.emitTelemetry('onToolCall', {
+        traceId,
+        spanId: newSpanId(),
         sessionKey: request.sessionKey ?? this._sessionKey,
         toolName: toolCall.name,
         args,
         durationMs: Date.now() - toolStartedAt,
         result,
+        success: status === 'ok',
+        status,
+        errorClass:
+          status === 'error'
+            ? (errorClassFromMessage(String((result.details as { error?: unknown })?.error ?? '')) as ErrorClass | undefined) ?? 'tool_error'
+            : undefined,
       });
 
       // ─── afterToolCall：执行后、事件发出前（可改写 result / terminate）───
@@ -1185,11 +1298,10 @@ export class AgentRuntime implements Runtime {
   }
 
   private async streamModel(
-    context: Context,
+    compilation: Compilation,
     signal: AbortSignal,
     sessionKey: string,
   ): Promise<AssistantMessage> {
-    const modelStartedAt = Date.now();
     let assistantMessage: AssistantMessage = {
       role: 'assistant',
       content: [],
@@ -1200,12 +1312,7 @@ export class AgentRuntime implements Runtime {
       timestamp: Date.now(),
     };
 
-    const options: StreamOptions = { signal };
-    if (this._thinkingLevel !== 'off' && this._model.reasoning) {
-      options.reasoning = this._thinkingLevel;
-    }
-
-    for await (const event of this._streamFn(this._model, context, options)) {
+    for await (const event of this.streamModelEvents(compilation, signal, false)) {
       if (event.type === 'start') {
         assistantMessage.content = event.partial.content;
       } else if (event.type === 'done') {
@@ -1215,15 +1322,80 @@ export class AgentRuntime implements Runtime {
       }
     }
 
-    await this.emitTelemetry('onModelCall', {
-      sessionKey,
-      modelId: this._model.id,
-      inputTokens: assistantMessage.usage?.input ?? 0,
-      outputTokens: assistantMessage.usage?.output ?? 0,
-      durationMs: Date.now() - modelStartedAt,
-    });
-
     return assistantMessage;
+  }
+
+  /**
+   * 统一模型调用埋点生成器：run()（streamModel）与 stream()（runLoopStream）两路径共用。
+   * 职责：模型调用计时、spanId、attempts 累计、onRetry 转发、onModelCall 上报
+   * （含 tokens / cost / errorClass / ttft）。
+   */
+  private async *streamModelEvents(
+    compilation: Compilation,
+    signal: AbortSignal,
+    stream: boolean,
+  ): AsyncGenerator<StreamEvent> {
+    const sessionKey = this.resolveSessionKey(compilation.request);
+    const modelStartedAt = Date.now();
+    const spanId = newSpanId();
+    let attempts = 1; // 含首次调用
+    let ttftAt: number | undefined;
+    let lastAssistant: AssistantMessage | undefined;
+
+    const options: StreamOptions = { signal };
+    if (this._thinkingLevel !== 'off' && this._model.reasoning) {
+      options.reasoning = this._thinkingLevel;
+    }
+    // provider 内部 retry() 真正退避时回调：累计 attempts + 转发 onRetry 事件
+    options.onRetryAttempt = (info) => {
+      attempts += 1;
+      void this.emitTelemetry('onRetry', {
+        traceId: compilation.traceId,
+        provider: this._model.provider,
+        modelId: this._model.id,
+        attempt: info.attempt,
+        errorClass: classifyError(info.error),
+        status: statusOfRetryError(info.error),
+        delayMs: info.delayMs,
+        willRetry: true,
+      });
+    };
+
+    try {
+      for await (const event of this._streamFn(this._model, this.buildContext(compilation.messages), options)) {
+        if (stream && event.type === 'text_delta' && ttftAt === undefined) {
+          ttftAt = Date.now();
+        }
+        if (event.type === 'done' || event.type === 'error') {
+          lastAssistant = event.message;
+        }
+        yield event;
+      }
+    } finally {
+      const assistant = lastAssistant;
+      const errorClass = assistant?.errorMessage
+        ? (errorClassFromMessage(assistant.errorMessage) as ErrorClass | undefined) ?? 'unknown'
+        : undefined;
+      await this.emitTelemetry('onModelCall', {
+        traceId: compilation.traceId,
+        spanId,
+        sessionKey,
+        modelId: this._model.id,
+        attempts,
+        inputTokens: assistant?.usage?.input ?? 0,
+        outputTokens: assistant?.usage?.output ?? 0,
+        cacheRead: assistant?.usage?.cacheRead,
+        cacheWrite: assistant?.usage?.cacheWrite,
+        durationMs: Date.now() - modelStartedAt,
+        stream,
+        errorClass,
+        costUsd: assistant?.usage?.cost?.total,
+      });
+      // 流式：记录首个模型调用的首 token 延迟（run 级 onRunEnd 读取）
+      if (stream && ttftAt !== undefined && compilation.ttftMs === undefined) {
+        compilation.ttftMs = ttftAt - modelStartedAt;
+      }
+    }
   }
 
   /**
@@ -1241,6 +1413,69 @@ export class AgentRuntime implements Runtime {
       // 遥测失败不应影响主流程
       console.warn(`[aipack] telemetry "${String(event)}" 上报失败:`, err);
     }
+  }
+
+  /** traceId 生成：优先用注入的生成器（测试可确定性） */
+  private newTraceId(): string {
+    return this._traceIdGenerator ? this._traceIdGenerator() : newTraceId();
+  }
+
+  /** 组装并上报 run 级完成事件（_run/_stream 内部统一调用） */
+  private async emitRunEnd(
+    request: Request,
+    sessionKey: string,
+    compilation: Compilation,
+    result: Result,
+    queuedMs: number,
+    activeStartedAt: number,
+  ): Promise<void> {
+    const activeMs = Date.now() - activeStartedAt;
+    await this.emitTelemetry('onRunEnd', {
+      traceId: compilation.traceId,
+      sessionKey,
+      request,
+      durationMs: activeMs + queuedMs,
+      activeMs,
+      queuedMs,
+      turnCount: compilation.turnCount ?? 0,
+      result,
+      success: result.success,
+      errorClass: this.runErrorClass(compilation),
+      costUsd: this.lastModelCostUsd(compilation.messages),
+      tokens: {
+        input: result.usage.input ?? 0,
+        output: result.usage.output ?? 0,
+        cacheRead: result.usage.cacheRead,
+        cacheWrite: result.usage.cacheWrite,
+      },
+      ttftMs: compilation.ttftMs,
+    });
+  }
+
+  /** run 级错误分类：terminate → 'terminated'；否则取最后一个模型调用的错误分类 */
+  private runErrorClass(compilation: Compilation): ErrorClass | undefined {
+    if (compilation.terminateReason) return 'terminated';
+    const messages = compilation.messages;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === 'assistant' && (m as AssistantMessage).errorMessage) {
+        const cls = errorClassFromMessage((m as AssistantMessage).errorMessage!);
+        return (cls as ErrorClass | undefined) ?? 'unknown';
+      }
+    }
+    return undefined;
+  }
+
+  /** 最后一个 assistant 消息的模型成本（USD），无则 undefined */
+  private lastModelCostUsd(messages: Message[]): number | undefined {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === 'assistant') {
+        const total = (m as AssistantMessage).usage?.cost?.total;
+        if (typeof total === 'number') return total;
+      }
+    }
+    return undefined;
   }
 
   private buildResult(compilation: Compilation): Result {
@@ -1282,7 +1517,8 @@ export class AgentRuntime implements Runtime {
       .usage(usage)
       .stopReason(stopReason)
       .error(error)
-      .resources(resources);
+      .resources(resources)
+      .metadata('traceId', compilation.traceId);
 
     // beforeToolCall/afterToolCall 请求终止：覆盖 stopReason 并记录原因
     if (compilation.terminateReason) {

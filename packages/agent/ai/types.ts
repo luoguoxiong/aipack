@@ -236,6 +236,8 @@ export interface SimpleStreamOptions {
   timeoutMs?: number;
   onPayload?: (payload: unknown) => void;
   onResponse?: (response: unknown) => void;
+  /** 重试回调：provider 内 retry() 真正退避重试时调用（可观测/埋点用） */
+  onRetryAttempt?: (info: { attempt: number; error: unknown; delayMs: number }) => void;
 }
 
 // 提供者特定 API 的扩展选项

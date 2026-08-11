@@ -151,6 +151,8 @@ export interface StreamOptions {
   signal?: AbortSignal;
   reasoning?: string;
   sessionId?: string;
+  /** 重试回调：provider 内 retry() 真正退避重试时调用（可观测/埋点用） */
+  onRetryAttempt?: (info: { attempt: number; error: unknown; delayMs: number }) => void;
 }
 
 export type StreamEvent =
