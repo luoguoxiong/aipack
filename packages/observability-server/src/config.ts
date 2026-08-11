@@ -11,11 +11,44 @@
  *   STATIC_DIR  可选:面板静态文件目录(构建产物)。缺省自动定位到本包 dist/public
  *               (即 `pnpm --filter @aipack/observability-server build` 的产出),
  *               存在则 GET / 直接返回面板
+ *
+ * 数据保留（retention）:
+ *   RETENTION_DAYS         明细保留天数(默认 30;<=0 表示禁用清理)
+ *   PRUNE_INTERVAL_MS      清理周期 ms(默认 1h)
+ *   PRUNE_AT_STARTUP       启动时先清理一次(默认 true)
+ *   PRUNE_BACKUP           清理前 VACUUM INTO 快照到备份目录(默认 false)
+ *   PRUNE_BACKUP_DIR       备份目录(默认 <DB 所在目录>/backup)
+ *
+ * 告警（alerting）:
+ *   ALERTS_ENABLED             启用告警评估器(默认 true;false 关闭)
+ *   ALERTS_EVALUATE_INTERVAL_MS 评估周期 ms(默认 60s)
+ *   ALERTS_WEBHOOK_URL         全局默认通知 webhook(规则可覆盖;支持企业微信/Slack/飞书)
  */
 import './loadEnv.js'; // 副作用:最先加载 .env(必须在读取 process.env 之前)
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+export interface RetentionConfig {
+  /** 明细保留天数；<=0 禁用 */
+  days: number;
+  intervalMs: number;
+  atStartup: boolean;
+  backup: boolean;
+  backupDir: string;
+}
+
+export interface AlertConfig {
+  evaluateIntervalMs: number;
+  defaultWebhookUrl?: string;
+}
+
+/** TLS（启用后收集服务以 HTTPS 提供） */
+export interface TlsConfig {
+  keyPath: string;
+  certPath: string;
+}
 
 export interface CollectorConfig {
   port: number;
@@ -26,6 +59,16 @@ export interface CollectorConfig {
   admin: { username: string; password: string };
   /** 面板静态文件目录（可选） */
   staticDir?: string;
+  /** 数据保留配置（PRUNE_*） */
+  retention: RetentionConfig;
+  /** 告警配置（ALERTS_*）；undefined = 告警关闭 */
+  alerts?: AlertConfig;
+  /** TLS 配置（TLS_KEY/TLS_CERT 均配置时启用 HTTPS） */
+  tls?: TlsConfig;
+  /** ingest 限流（INGEST_RATE/INGEST_BURST；rate<=0 关闭） */
+  rateLimit?: { rate: number; burst: number };
+  /** 面板 Trace 详情"查看日志"跳转模板（LOG_STREAM_URL_TEMPLATE，%s 替换 traceId） */
+  logStreamUrlTemplate?: string;
 }
 
 export function loadConfig(): CollectorConfig {
@@ -41,7 +84,18 @@ export function loadConfig(): CollectorConfig {
         ' 访问面板。',
     );
   }
-  return { port, dbPath, seedApps, admin, staticDir };
+  return {
+    port,
+    dbPath,
+    seedApps,
+    admin,
+    staticDir,
+    retention: resolveRetention(dbPath),
+    alerts: resolveAlerts(),
+    tls: resolveTls(),
+    rateLimit: resolveRateLimit(),
+    logStreamUrlTemplate: process.env.LOG_STREAM_URL_TEMPLATE?.trim() || undefined,
+  };
 }
 
 /**
@@ -86,4 +140,45 @@ export function parseApps(raw: string): Record<string, string> {
     if (appId && secret) out[appId] = secret;
   }
   return out;
+}
+
+/** 解析数据保留配置（RETENTION_*） */
+function resolveRetention(dbPath: string): RetentionConfig {
+  const days = Number(process.env.RETENTION_DAYS);
+  return {
+    days: Number.isFinite(days) ? days : 30,
+    intervalMs: Number(process.env.PRUNE_INTERVAL_MS) || 3_600_000,
+    atStartup: (process.env.PRUNE_AT_STARTUP ?? 'true').toLowerCase() !== 'false',
+    backup: (process.env.PRUNE_BACKUP ?? 'false').toLowerCase() === 'true',
+    backupDir:
+      process.env.PRUNE_BACKUP_DIR ||
+      (dbPath === ':memory:' ? '.aipack/backup' : path.join(path.dirname(dbPath), 'backup')),
+  };
+}
+
+/** 解析告警配置（ALERTS_*）；ALERTS_ENABLED=false 时返回 undefined（关闭评估器） */
+function resolveAlerts(): AlertConfig | undefined {
+  if ((process.env.ALERTS_ENABLED ?? 'true').toLowerCase() === 'false') return undefined;
+  const evaluateIntervalMs = Number(process.env.ALERTS_EVALUATE_INTERVAL_MS);
+  const webhook = process.env.ALERTS_WEBHOOK_URL?.trim();
+  return {
+    evaluateIntervalMs: Number.isFinite(evaluateIntervalMs) && evaluateIntervalMs > 0 ? evaluateIntervalMs : 60_000,
+    defaultWebhookUrl: webhook || undefined,
+  };
+}
+
+/** 解析 TLS（TLS_KEY/TLS_CERT 两个路径都存在才启用 HTTPS） */
+function resolveTls(): TlsConfig | undefined {
+  const keyPath = process.env.TLS_KEY?.trim();
+  const certPath = process.env.TLS_CERT?.trim();
+  if (!keyPath || !certPath) return undefined;
+  return { keyPath, certPath };
+}
+
+/** 解析 ingest 限流（INGEST_RATE/INGEST_BURST；rate<=0 关闭） */
+function resolveRateLimit(): { rate: number; burst: number } | undefined {
+  const rate = Number(process.env.INGEST_RATE);
+  if (!Number.isFinite(rate) || rate <= 0) return undefined;
+  const burst = Number(process.env.INGEST_BURST);
+  return { rate, burst: Number.isFinite(burst) && burst > 0 ? burst : rate * 2 };
 }

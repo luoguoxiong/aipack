@@ -3,8 +3,11 @@
  * 401（会话过期/未登录）→ 触发全局登出回调，跳转登录页。
  */
 import type {
+  AlertEventListResponse,
+  AlertRule,
   AppInfo,
   LoginResponse,
+  Meta,
   Summary,
   TimeseriesPoint,
   ToolStat,
@@ -95,6 +98,25 @@ export const api = {
     request<TraceListResponse>(`/traces${qs(params)}`),
   traceDetail: (traceId: string) =>
     request<TraceDetail>(`/traces/${encodeURIComponent(traceId)}`),
+
+  // ── 元信息 ─────────────────────────────────────────────────────
+  meta: () => request<Meta>('/api/meta'),
+
+  // ── 告警 ──────────────────────────────────────────────────────
+  alertRules: () => request<AlertRule[]>('/api/alerts/rules'),
+  createAlertRule: (rule: Partial<AlertRule>) =>
+    request<AlertRule>('/api/alerts/rules', { method: 'POST', body: JSON.stringify(rule) }),
+  updateAlertRule: (id: string, patch: Partial<AlertRule>) =>
+    request<AlertRule>(`/api/alerts/rules/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
+  deleteAlertRule: (id: string) =>
+    request<{ ok: true }>(`/api/alerts/rules/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  testAlertRule: (id: string) =>
+    request<{ ok: true }>(`/api/alerts/rules/${encodeURIComponent(id)}/test`, { method: 'POST' }),
+  alertEvents: (params: Record<string, string | number | undefined> = {}) =>
+    request<AlertEventListResponse>(`/api/alerts/events${qs(params)}`),
 };
 
 function qs(params: Record<string, string | number | undefined>): string {

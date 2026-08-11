@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Layout, Menu, Spin, Typography } from 'antd';
 import {
+  AlertOutlined,
   AppstoreOutlined,
   DashboardOutlined,
   LogoutOutlined,
@@ -12,6 +13,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import AppsPage from './pages/AppsPage';
 import TracesPage from './pages/TracesPage';
+import AlertsPage from './pages/AlertsPage';
 
 const { Sider, Header, Content } = Layout;
 
@@ -23,6 +25,7 @@ function Shell() {
   const menuKey =
     location.pathname.startsWith('/apps') ? 'apps'
     : location.pathname.startsWith('/traces') ? 'traces'
+    : location.pathname.startsWith('/alerts') ? 'alerts'
     : 'dashboard';
 
   const onLogout = async () => {
@@ -56,6 +59,7 @@ function Shell() {
             { key: 'dashboard', icon: <DashboardOutlined />, label: '总览' },
             { key: 'apps', icon: <AppstoreOutlined />, label: '应用管理' },
             { key: 'traces', icon: <ProfileOutlined />, label: 'Trace 列表' },
+            { key: 'alerts', icon: <AlertOutlined />, label: '告警' },
           ]}
         />
       </Sider>
@@ -82,6 +86,7 @@ function Shell() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/apps" element={<AppsPage />} />
             <Route path="/traces" element={<TracesPage />} />
+            <Route path="/alerts" element={<AlertsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Content>

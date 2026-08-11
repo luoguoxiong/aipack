@@ -13,8 +13,8 @@
  * 客户端接入:
  *   const obs = createObservability({ appId: 'travel-app', appSecret: 'sk-xxx', endpoint: 'http://localhost:8787' });
  */
-import http from 'node:http';
-import { createCollector } from './collector.js';
+import { promises as fs } from 'node:fs';
+import { createCollector, createCollectorServer } from './collector.js';
 import { loadConfig } from './config.js';
 
 function pad(s: string, n: number): string {
@@ -31,17 +31,23 @@ async function main() {
     apps: config.seedApps,
     admin: config.admin,
     staticDir: config.staticDir,
+    retention: config.retention,
+    alerts: config.alerts,
+    rateLimit: config.rateLimit,
+    logStreamUrlTemplate: config.logStreamUrlTemplate,
   });
 
-  const server = http.createServer((req, res) => {
-    void collector.handler(req, res).catch((err: unknown) => {
-      console.error('[observability-server] 处理请求失败:', err);
-      if (!res.headersSent) {
-        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: (err instanceof Error ? err.message : 'Internal Server Error') }));
-      }
-    });
-  });
+  // TLS_KEY / TLS_CERT 都配置时以 HTTPS 提供服务
+  let tls;
+  if (config.tls) {
+    const [key, cert] = await Promise.all([
+      fs.readFile(config.tls.keyPath),
+      fs.readFile(config.tls.certPath),
+    ]);
+    tls = { key, cert };
+  }
+  const server = createCollectorServer(collector, tls);
+  const scheme = tls ? 'https' : 'http';
 
   server.listen(config.port, () => {
     const banner = [
@@ -49,8 +55,8 @@ async function main() {
       '╔══════════════════════════════════════════════════╗',
       '║     📊  aipack Observability Server (S2)       ║',
       '╠══════════════════════════════════════════════════╣',
-      `║  地址:     ${pad(`http://localhost:${config.port}`, 38)}║`,
-      `║  面板:     ${pad(`http://localhost:${config.port}（admin: ${config.admin.username}）`, 38)}║`,
+      `║  地址:     ${pad(`${scheme}://localhost:${config.port}`, 38)}║`,
+      `║  面板:     ${pad(`${scheme}://localhost:${config.port}（admin: ${config.admin.username}）`, 38)}║`,
       `║  SQLite:   ${pad(config.dbPath, 38)}║`,
       `║  种子应用: ${pad(config.seedApps && Object.keys(config.seedApps).length ? Object.keys(config.seedApps).join(', ') : '（无，面板创建）', 38)}║`,
       '╠══════════════════════════════════════════════════╣',
@@ -60,6 +66,7 @@ async function main() {
       `║  GET  /metrics/summary   聚合摘要(groupBy=model|tool|session)║`,
       `║  GET  /metrics/timeseries 时间序列                 ║`,
       `║  GET  /metrics/tools     工具成功率排行             ║`,
+      `║  GET  /metrics/prometheus Prometheus 抓取(无鉴权)  ║`,
       `║  GET  /traces            运行列表                   ║`,
       `║  GET  /traces/:traceId   Trace 明细                ║`,
       '╚══════════════════════════════════════════════════╝',

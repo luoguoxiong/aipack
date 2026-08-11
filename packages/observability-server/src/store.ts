@@ -11,6 +11,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import type { RunRecord, SpanRecord, ToolCallRecord, EventBatch } from '@aipack/observability';
+import type { AlertMetric, AlertOperator } from './alerts/rules';
 
 /** 面板应用（appId + appSecret，动态创建，替代静态 OBS_APPS 白名单） */
 export interface AppRecord {
@@ -56,6 +57,10 @@ export interface TraceStore {
   queryTrace(traceId: string): TraceDetail | undefined;
   /** 批量写入（事务），由收集端 ingest 调用；appId 由鉴权头推导并盖戳 */
   flush(batch: EventBatch, appId: string): void;
+  /** 删除 started_at 早于 before 的三表明细（事务），返回删除行数 */
+  prune(before: number): number;
+  /** 全库快照备份（VACUUM INTO），返回备份文件路径 */
+  backup(dir: string): string;
   close(): void;
 }
 
@@ -73,6 +78,56 @@ export interface AppStore {
   touchApp(appId: string, ts: number): void;
   /** 启动时种入静态白名单（OBS_APPS），已存在则跳过 */
   seedApps(apps: Record<string, string>): void;
+}
+
+/** 告警规则（alert_rules 表，面板 CRUD） */
+export interface AlertRuleRow {
+  id: string;
+  name: string;
+  /** 缺省 = 全局（所有应用合并） */
+  appId?: string;
+  metric: AlertMetric;
+  operator: AlertOperator; // lt | lte | gt | gte
+  threshold: number;
+  lookbackMs: number;
+  cooldownMs: number;
+  webhookUrl?: string;
+  /** metric=toolSuccessRate 时目标工具 */
+  toolName?: string;
+  /** metric=errorClassCount 时目标错误分类 */
+  errorClass?: string;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** 告警事件（alert_events 表，触发/恢复历史） */
+export interface AlertEventRow {
+  id: number;
+  ruleId: string;
+  ruleName: string;
+  appId?: string;
+  metric: string;
+  operator: string;
+  threshold: number;
+  value: number;
+  status: 'fired' | 'recovered';
+  createdAt: number;
+}
+
+/** 告警存储（alert_rules / alert_events 表） */
+export interface AlertStore {
+  listAlertRules(): AlertRuleRow[];
+  getAlertRule(id: string): AlertRuleRow | undefined;
+  createAlertRule(rule: AlertRuleRow): void;
+  updateAlertRule(id: string, patch: Partial<AlertRuleRow>): AlertRuleRow | undefined;
+  deleteAlertRule(id: string): boolean;
+  insertAlertEvent(ev: Omit<AlertEventRow, 'id'>): void;
+  listAlertEvents(opts: {
+    offset: number;
+    limit: number;
+    status?: string;
+  }): { total: number; items: AlertEventRow[] };
 }
 
 // ─── SQLite 实现 ─────────────────────────────────────────────────
@@ -131,6 +186,7 @@ CREATE TABLE IF NOT EXISTS spans (
 CREATE INDEX IF NOT EXISTS idx_spans_trace ON spans(trace_id);
 CREATE INDEX IF NOT EXISTS idx_spans_session ON spans(session_key);
 CREATE INDEX IF NOT EXISTS idx_spans_app ON spans(app_id);
+CREATE INDEX IF NOT EXISTS idx_spans_started ON spans(started_at);
 
 CREATE TABLE IF NOT EXISTS tool_calls (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,6 +200,38 @@ CREATE TABLE IF NOT EXISTS tool_calls (
 );
 CREATE INDEX IF NOT EXISTS idx_tool_calls_trace ON tool_calls(trace_id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_app ON tool_calls(app_id);
+
+CREATE TABLE IF NOT EXISTS alert_rules (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  app_id      TEXT,
+  metric      TEXT NOT NULL,
+  operator    TEXT NOT NULL,
+  threshold   REAL NOT NULL,
+  lookback_ms INTEGER NOT NULL,
+  cooldown_ms INTEGER NOT NULL,
+  webhook_url TEXT,
+  tool_name   TEXT,
+  error_class TEXT,
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS alert_events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  rule_id     TEXT NOT NULL,
+  rule_name   TEXT NOT NULL,
+  app_id      TEXT,
+  metric      TEXT NOT NULL,
+  operator    TEXT NOT NULL,
+  threshold   REAL NOT NULL,
+  value       REAL NOT NULL,
+  status      TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_alert_events_created ON alert_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_alert_events_rule ON alert_events(rule_id);
 `;
 
 /** 旧库升级：为 runs/spans/tool_calls 补充 app_id 列（历史数据为 NULL，不参与按应用过滤） */
@@ -170,7 +258,7 @@ const TOOL_COLS = 'trace_id, app_id, span_id, tool_name, status, duration_ms, er
 /** better-sqlite3 不接受 undefined 参数，统一转 null */
 const n = (v: unknown): unknown => (v === undefined ? null : v);
 
-export class SQLiteStore implements TraceStore, AppStore {
+export class SQLiteStore implements TraceStore, AppStore, AlertStore {
   private db: Database.Database;
   private insertRunStmt: Database.Statement;
   private insertSpanStmt: Database.Statement;
@@ -184,6 +272,11 @@ export class SQLiteStore implements TraceStore, AppStore {
     }
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
+    // 新库（page_count=0）才开启增量 auto_vacuum：存量库改该持久化 pragma 需 VACUUM
+    // 才生效，且会改变文件头部，故不自动改（清理后文件不收缩，文档说明手动 VACUUM）
+    if (Number(this.db.pragma('page_count', { simple: true })) === 0) {
+      this.db.pragma('auto_vacuum = INCREMENTAL');
+    }
     this.db.exec(DDL);
     ensureAppIdColumns(this.db);
 
@@ -353,6 +446,127 @@ export class SQLiteStore implements TraceStore, AppStore {
     this.insertTx(batch, appId);
   }
 
+  // ─── 数据保留（retention）─────────────────────────────────────
+
+  /** 删除 started_at 早于 before 的三表明细（事务）。按时间走 started_at 索引。
+   *  tool_calls 无时间戳字段（ToolCallRecord 未含 startedAt），随其 trace 的
+   *  runs 删除而清为孤儿（NOT EXISTS 走 runs 主键 + tool_calls trace 索引）。 */
+  prune(before: number): number {
+    if (!Number.isFinite(before)) return 0;
+    const delRuns = this.db.prepare('DELETE FROM runs WHERE started_at < ?');
+    const delSpans = this.db.prepare('DELETE FROM spans WHERE started_at < ?');
+    const delOrphanTools = this.db.prepare(
+      'DELETE FROM tool_calls WHERE NOT EXISTS (SELECT 1 FROM runs WHERE runs.trace_id = tool_calls.trace_id)',
+    );
+    const runTx = this.db.transaction(() => {
+      const runs = delRuns.run(before).changes;
+      const spans = delSpans.run(before).changes;
+      const tools = delOrphanTools.run().changes;
+      return runs + spans + tools;
+    });
+    const cleared = runTx();
+    // 增量回收空闲页（仅新库 auto_vacuum=INCREMENTAL 时生效；存量库为 no-op）
+    if (cleared > 0 && Number(this.db.pragma('auto_vacuum', { simple: true })) > 0) {
+      this.db.exec('PRAGMA incremental_vacuum(2000)');
+    }
+    return cleared;
+  }
+
+  /** 全库快照备份（VACUUM INTO 到独立文件），返回备份路径 */
+  backup(dir: string): string {
+    mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `obs-backup-${Date.now()}.db`);
+    this.db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+    return file;
+  }
+
+  // ─── 告警存储（alert_rules / alert_events）────────────────────
+
+  listAlertRules(): AlertRuleRow[] {
+    const rows = this.db
+      .prepare('SELECT * FROM alert_rules ORDER BY created_at ASC')
+      .all() as Array<Record<string, unknown>>;
+    return rows.map(rowToAlertRule);
+  }
+
+  getAlertRule(id: string): AlertRuleRow | undefined {
+    const row = this.db.prepare('SELECT * FROM alert_rules WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
+    return row ? rowToAlertRule(row) : undefined;
+  }
+
+  createAlertRule(rule: AlertRuleRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO alert_rules
+           (id, name, app_id, metric, operator, threshold, lookback_ms, cooldown_ms,
+            webhook_url, tool_name, error_class, enabled, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        rule.id, rule.name, n(rule.appId), rule.metric, rule.operator, rule.threshold,
+        rule.lookbackMs, rule.cooldownMs, n(rule.webhookUrl), n(rule.toolName),
+        n(rule.errorClass), rule.enabled ? 1 : 0, rule.createdAt, rule.updatedAt,
+      );
+  }
+
+  updateAlertRule(id: string, patch: Partial<AlertRuleRow>): AlertRuleRow | undefined {
+    const existing = this.getAlertRule(id);
+    if (!existing) return undefined;
+    const merged: AlertRuleRow = { ...existing, ...patch, id, updatedAt: Date.now() };
+    this.db
+      .prepare(
+        `UPDATE alert_rules SET
+           name = ?, app_id = ?, metric = ?, operator = ?, threshold = ?,
+           lookback_ms = ?, cooldown_ms = ?, webhook_url = ?, tool_name = ?,
+           error_class = ?, enabled = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(
+        merged.name, n(merged.appId), merged.metric, merged.operator, merged.threshold,
+        merged.lookbackMs, merged.cooldownMs, n(merged.webhookUrl), n(merged.toolName),
+        n(merged.errorClass), merged.enabled ? 1 : 0, merged.updatedAt, id,
+      );
+    return this.getAlertRule(id);
+  }
+
+  deleteAlertRule(id: string): boolean {
+    const result = this.db.prepare('DELETE FROM alert_rules WHERE id = ?').run(id);
+    return result.changes > 0;
+  }
+
+  insertAlertEvent(ev: Omit<AlertEventRow, 'id'>): void {
+    this.db
+      .prepare(
+        `INSERT INTO alert_events
+           (rule_id, rule_name, app_id, metric, operator, threshold, value, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        ev.ruleId, ev.ruleName, n(ev.appId), ev.metric, ev.operator, ev.threshold,
+        ev.value, ev.status, ev.createdAt,
+      );
+  }
+
+  listAlertEvents(opts: {
+    offset: number;
+    limit: number;
+    status?: string;
+  }): { total: number; items: AlertEventRow[] } {
+    const where = opts.status ? 'WHERE status = ?' : '';
+    const params = opts.status ? [opts.status] : [];
+    const { c } = this.db
+      .prepare(`SELECT COUNT(*) AS c FROM alert_events ${where}`)
+      .get(...params) as { c: number };
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM alert_events ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      )
+      .all(...params, opts.limit, opts.offset) as Array<Record<string, unknown>>;
+    return { total: c, items: rows.map(rowToAlertEvent) };
+  }
+
   close(): void {
     this.db.close();
   }
@@ -450,6 +664,40 @@ function rowToApp(r: Record<string, unknown>): AppRecord {
     name: String(r.name),
     createdAt: Number(r.created_at),
     lastSeenAt: optNum(r.last_seen_at),
+  };
+}
+
+function rowToAlertRule(r: Record<string, unknown>): AlertRuleRow {
+  return {
+    id: String(r.id),
+    name: String(r.name),
+    appId: optStr(r.app_id),
+    metric: r.metric as AlertMetric,
+    operator: r.operator as AlertOperator,
+    threshold: Number(r.threshold),
+    lookbackMs: Number(r.lookback_ms),
+    cooldownMs: Number(r.cooldown_ms),
+    webhookUrl: optStr(r.webhook_url),
+    toolName: optStr(r.tool_name),
+    errorClass: optStr(r.error_class),
+    enabled: Number(r.enabled) === 1,
+    createdAt: Number(r.created_at),
+    updatedAt: Number(r.updated_at),
+  };
+}
+
+function rowToAlertEvent(r: Record<string, unknown>): AlertEventRow {
+  return {
+    id: Number(r.id),
+    ruleId: String(r.rule_id),
+    ruleName: String(r.rule_name),
+    appId: optStr(r.app_id),
+    metric: String(r.metric),
+    operator: String(r.operator),
+    threshold: Number(r.threshold),
+    value: Number(r.value),
+    status: r.status as AlertEventRow['status'],
+    createdAt: Number(r.created_at),
   };
 }
 

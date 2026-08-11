@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { HttpReporter, ObservabilityTelemetry } from '../src/index';
+import { HttpReporter, ObservabilityTelemetry, createLogger, toOtlpJsonTraces, createOtlpTraceExporter } from '../src/index';
 import type { EventBatch, RunRecord } from '../src/types';
 
 const APP_ID = 'test-app';
@@ -166,5 +166,245 @@ describe('ObservabilityTelemetry', () => {
 
     assert.equal(calls[0].body.permissions.length, 1);
     assert.equal(calls[0].body.permissions[0].toolName, 'echo');
+  });
+});
+
+// ─── P1-1 结构化 logger（日志关联）─────────────────────────────────
+
+/** 收集 logger 输出行 */
+function captureLogger(opts: Parameters<typeof createLogger>[0] = {}): {
+  logger: ReturnType<typeof createLogger>;
+  lines: string[];
+} {
+  const lines: string[] = [];
+  const logger = createLogger({ ...opts, dest: (l) => lines.push(l) });
+  return { logger, lines };
+}
+
+describe('createLogger 结构化日志', () => {
+  it('logfmt：含 time/level/msg + tags；fields 覆盖同名 tags', () => {
+    const { logger, lines } = captureLogger({ tags: { app: 'demo', env: 'test' } });
+    logger.info('hello', { env: 'prod', tool: 'echo' });
+
+    assert.equal(lines.length, 1);
+    const line = lines[0];
+    assert.match(line, /^time=\S+ level=info msg=hello /);
+    assert.match(line, / app=demo /);
+    assert.match(line, / env=prod /, 'fields 应覆盖同名 tags');
+    assert.match(line, / tool=echo/);
+  });
+
+  it('json：可 JSON.parse，字段结构完整', () => {
+    const { logger, lines } = captureLogger({ format: 'json', tags: { app: 'demo' } });
+    logger.error('boom', { err: 'x' });
+
+    const obj = JSON.parse(lines[0]) as Record<string, unknown>;
+    assert.equal(obj.level, 'error');
+    assert.equal(obj.msg, 'boom');
+    assert.equal(obj.app, 'demo');
+    assert.equal(obj.err, 'x');
+  });
+
+  it('脱敏：secret/token/password/authorization 等字段值打码为 ***', () => {
+    const { logger, lines } = captureLogger({ format: 'json' });
+    logger.info('auth', { apiKey: 'sk-123', token: 't', password: 'p', safe: 'ok' });
+
+    const obj = JSON.parse(lines[0]) as Record<string, unknown>;
+    assert.equal(obj.apiKey, '***');
+    assert.equal(obj.token, '***');
+    assert.equal(obj.password, '***');
+    assert.equal(obj.safe, 'ok');
+  });
+
+  it('context 动态注入：traceId 出现在日志行（日志关联核心）', () => {
+    let traceId: string | undefined;
+    const { logger, lines } = captureLogger({
+      context: () => (traceId ? { traceId } : {}),
+    });
+    traceId = 't-abc';
+    logger.warn('rate limited', { retryInMs: 100 });
+    traceId = undefined;
+    logger.info('no trace');
+
+    assert.match(lines[0], / traceId=t-abc /, 'in-flight traceId 应注入日志行');
+    assert.ok(!lines[1].includes('traceId'), '无 in-flight run 时不应有 traceId 字段');
+  });
+
+  it('level 过滤：level=error 时 info/warn 不输出', () => {
+    const { logger, lines } = captureLogger({ level: 'error' });
+    logger.info('a');
+    logger.warn('b');
+    logger.error('c');
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], / level=error msg=c$/);
+  });
+
+  it('child 派生：合并 tags，保留父级格式', () => {
+    const { logger, lines } = captureLogger({ tags: { app: 'demo' } });
+    const child = logger.child({ tags: { env: 'prod' } });
+    child.info('hi');
+
+    assert.match(lines[0], / app=demo /);
+    assert.match(lines[0], / env=prod$/);
+  });
+});
+
+// ─── P1-2 currentContext（logger 关联的数据源）──────────────────────
+
+describe('ObservabilityTelemetry.currentContext', () => {
+  it('onRunStart 后返回该 traceId；并发取最近开始；onRunEnd 移除', async () => {
+    const reporter = { send: async () => true };
+    const telemetry = new ObservabilityTelemetry(reporter, { intervalMs: 10 ** 9 });
+
+    telemetry.onRunStart({ traceId: 't1', queuedAt: 1 } as any);
+    assert.deepEqual(telemetry.currentContext(), { traceId: 't1' });
+
+    telemetry.onRunStart({ traceId: 't2', queuedAt: 2 } as any);
+    assert.deepEqual(telemetry.currentContext(), { traceId: 't2' }, '并发时取最近开始的 run');
+
+    // onRunEnd 会构造 RunRecord（访问 request/tokens），需完整 info
+    const fullInfo = {
+      sessionKey: 's', durationMs: 10, success: true, turnCount: 1,
+      request: { channel: 'test', model: 'm1' },
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    };
+    telemetry.onRunEnd({ traceId: 't2', ...fullInfo } as any);
+    assert.deepEqual(telemetry.currentContext(), { traceId: 't1' });
+
+    telemetry.onRunEnd({ traceId: 't1', ...fullInfo } as any);
+    assert.deepEqual(telemetry.currentContext(), {}, '全部结束后返回空');
+    await telemetry.close();
+  });
+
+  it('createObservability 的 logger 与 telemetry 联动：run 内输出含 traceId', async () => {
+    const { fetch, calls } = mockFetch(200);
+    const reporter = { send: async (b: EventBatch) => fetch('http://x', { method: 'POST', headers: {}, body: JSON.stringify({ ...b }) }) as any };
+    const telemetry = new ObservabilityTelemetry(reporter, { intervalMs: 10 ** 9 });
+    const lines: string[] = [];
+    const logger = createLogger({ context: () => telemetry.currentContext(), dest: (l) => lines.push(l) });
+
+    telemetry.onRunStart({ traceId: 't-trace', queuedAt: 1000 } as any);
+    logger.info('step', { tool: 'echo' });
+    assert.match(lines[0], / traceId=t-trace /, 'run 进行中的日志应带 traceId');
+
+    telemetry.onRunEnd({ traceId: 't-trace', sessionKey: 's', durationMs: 10, success: true, turnCount: 1, request: {}, tokens: { input: 0, output: 0 } } as any);
+    logger.info('after');
+    assert.ok(!lines[1].includes('traceId'), 'run 结束后日志不应带 traceId');
+    await telemetry.close();
+  });
+});
+
+// ─── P1-2 OTLP/JSON trace exporter ─────────────────────────────────
+
+function sampleOtlpBatch(): EventBatch {
+  return {
+    runs: [
+      {
+        traceId: 't-otlp', startedAt: 1000, endedAt: 1100, sessionKey: 's', model: 'm1',
+        status: 'error', errorClass: 'timeout', turns: 2, durationMs: 100,
+        activeMs: 90, queuedMs: 10, inputTokens: 10, outputTokens: 5, costUsd: 0.001,
+      } as RunRecord,
+    ],
+    spans: [
+      {
+        traceId: 't-otlp', spanId: 'span-1', kind: 'model', name: 'model:m1',
+        startedAt: 1000, durationMs: 80, status: 'ok', attempts: 1,
+        inputTokens: 10, outputTokens: 5, costUsd: 0.001, sessionKey: 's',
+      },
+    ],
+    toolCalls: [],
+    permissions: [],
+  };
+}
+
+describe('toOtlpJsonTraces', () => {
+  it('结构：resourceSpans → scopeSpans → spans，service.name 与 app 标签正确', () => {
+    const json = toOtlpJsonTraces(sampleOtlpBatch(), 'demo-svc', 'app-x') as any;
+
+    assert.equal(json.resourceSpans.length, 1);
+    const rs = json.resourceSpans[0];
+    const resourceAttrs = Object.fromEntries(
+      rs.resource.attributes.map((a: any) => [a.key, a.value]),
+    );
+    assert.equal(resourceAttrs['service.name'].stringValue, 'demo-svc');
+    assert.equal(resourceAttrs['telemetry.sdk.name'].stringValue, 'aipack');
+
+    const spans = rs.scopeSpans[0].spans;
+    assert.equal(spans.length, 2, '1 run + 1 span → 2 个 OTLP span');
+    const run = spans[0];
+    // traceId 是 16 字节 base64
+    assert.equal(Buffer.from(run.traceId, 'base64').length, 16);
+    assert.equal(Buffer.from(run.spanId, 'base64').length, 8);
+    // 时间戳为纳秒字符串（BigInt）
+    assert.equal(run.startTimeUnixNano, (1000 * 1_000_000).toString());
+    assert.equal(run.endTimeUnixNano, (1100 * 1_000_000).toString());
+    // 失败 run → status code 2 + message
+    assert.equal(run.status.code, 2);
+    assert.equal(run.status.message, 'timeout');
+    const runAttrs = Object.fromEntries(run.attributes.map((a: any) => [a.key, a.value]));
+    assert.equal(runAttrs['aipack.app'].stringValue, 'app-x');
+    assert.equal(runAttrs['model'].stringValue, 'm1');
+    assert.equal(runAttrs['tokens.input'].intValue, '10');
+    assert.equal(runAttrs['cost.usd'].doubleValue, 0.001);
+
+    // span kind=model
+    const model = spans[1];
+    assert.equal(model.name, 'model:m1');
+    assert.equal(model.status.code, 1, '成功 span → ok');
+    assert.equal(Buffer.from(model.traceId, 'base64').length, 16);
+    assert.equal(Buffer.from(model.spanId, 'base64').length, 8);
+  });
+
+  it('确定性：同一 traceId 恒映射为同一 16 字节 base64', () => {
+    const a = toOtlpJsonTraces(sampleOtlpBatch(), 'svc') as any;
+    const b = toOtlpJsonTraces(sampleOtlpBatch(), 'svc') as any;
+    assert.equal(a.resourceSpans[0].scopeSpans[0].spans[0].traceId, b.resourceSpans[0].scopeSpans[0].spans[0].traceId);
+  });
+});
+
+describe('createOtlpTraceExporter', () => {
+  it('export：POST {endpoint}/v1/traces，content-type json，body 为 OTLP JSON', async () => {
+    const { fetch, calls } = mockFetch(200);
+    const exporter = createOtlpTraceExporter({
+      endpoint: 'http://otel:4318/',
+      serviceName: 'svc',
+      appId: 'app-x',
+      headers: { 'x-otlp-token': 'tok' },
+      fetchImpl: fetch as typeof globalThis.fetch,
+    });
+
+    const ok = await exporter.export(sampleOtlpBatch());
+    assert.equal(ok, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'http://otel:4318/v1/traces', '末尾斜杠应归一');
+    assert.equal(calls[0].headers['content-type'], 'application/json');
+    assert.equal(calls[0].headers['x-otlp-token'], 'tok');
+    assert.equal(calls[0].body.resourceSpans.length, 1);
+  });
+
+  it('export 失败/被拒：返回 false 且不抛错（旁路不影响主上报）', async () => {
+    const exporter = createOtlpTraceExporter({
+      endpoint: 'http://otel:4318',
+      fetchImpl: (async () => ({ ok: false, status: 429 }) as Response) as typeof fetch,
+    });
+    assert.equal(await exporter.export(sampleOtlpBatch()), false);
+
+    const throwing = createOtlpTraceExporter({
+      endpoint: 'http://otel:4318',
+      fetchImpl: (async () => {
+        throw new Error('ECONNREFUSED');
+      }) as typeof fetch,
+    });
+    assert.equal(await throwing.export(sampleOtlpBatch()), false, '网络异常应被内部消化');
+  });
+
+  it('export 纯 tool/permission 批次：无 trace 数据 → 不发请求直接 true', async () => {
+    const { fetch, calls } = mockFetch(200);
+    const exporter = createOtlpTraceExporter({
+      endpoint: 'http://otel:4318',
+      fetchImpl: fetch as typeof globalThis.fetch,
+    });
+    assert.equal(await exporter.export({ runs: [], spans: [], toolCalls: [{} as never], permissions: [] }), true);
+    assert.equal(calls.length, 0);
   });
 });
