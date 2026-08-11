@@ -498,6 +498,40 @@ export default function HomePage() {
                         </Button>
                       </Card>
                     </Col>
+                    <Col xs={24} md={8}>
+                      <Card
+                        title={
+                          <span>
+                            📡 observability <Tag color="cyan" style={{ marginLeft: 8 }}>观测</Tag>
+                          </span>
+                        }
+                        bordered
+                      >
+                        <p style={{ color: '#475569', lineHeight: 1.8, fontSize: 14 }}>
+                          上报 SDK：appId+appSecret 一行接入，6 类事件自动埋点上报，失败本地缓存补报。
+                        </p>
+                        <Button type="link" icon={<ArrowRightOutlined />} onClick={() => navigate('/packages#aipack-observability')}>
+                          查看
+                        </Button>
+                      </Card>
+                    </Col>
+                    <Col xs={24} md={8}>
+                      <Card
+                        title={
+                          <span>
+                            🗄️ observability-server <Tag color="cyan" style={{ marginLeft: 8 }}>观测</Tag>
+                          </span>
+                        }
+                        bordered
+                      >
+                        <p style={{ color: '#475569', lineHeight: 1.8, fontSize: 14 }}>
+                          后台收集服务：SQLite 落盘 + 内存聚合 + REST 查询，独立部署、appId+Secret 鉴权。
+                        </p>
+                        <Button type="link" icon={<ArrowRightOutlined />} onClick={() => navigate('/packages#aipack-observability-server')}>
+                          查看
+                        </Button>
+                      </Card>
+                    </Col>
                   </Row>
                 ),
               },

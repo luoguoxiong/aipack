@@ -19,6 +19,7 @@ const tagColorMap: Record<string, string> = {
   编码工具集: 'geekblue',
   持久化记忆: 'green',
   上下文压缩: 'orange',
+  可观测性: 'cyan',
   命令行工具: 'purple',
   'VSCode 扩展': 'magenta',
 };
@@ -159,12 +160,10 @@ export default function PackagesPage() {
         </div>
       </div>
 
-      <PackageCard pkg={packages[0]} /> {/* aipack */}
-      <PackageCard pkg={packages[1]} /> {/* aipack-coding */}
-      <PackageCard pkg={packages[2]} /> {/* aipack-memory */}
-      <PackageCard pkg={packages[3]} /> {/* aipack-compression */}
-      <PackageCard pkg={packages[4]} /> {/* aipack-cli */}
-      <PackageCard pkg={packages[5]} /> {/* vscode-aipack-coding */}
+      {/* 遍历渲染包列表，新增包无需改此页面 */}
+      {packages.map((pkg) => (
+        <PackageCard pkg={pkg} key={pkg.id} />
+      ))}
     </div>
   );
 }

@@ -7,12 +7,16 @@ import {
   ApiOutlined,
   ClockCircleOutlined,
   BugOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons';
 import CodeBlock from '../components/CodeBlock';
 import {
   obsTelemetryCode,
   obsTraceDesignCode,
   obsMetricsCode,
+  obsS2SetupCode,
+  obsS2CollectorCode,
+  obsS2RestApiCode,
 } from '../data/observabilityCode';
 
 export default function ObservabilityPage() {
@@ -210,13 +214,47 @@ export default function ObservabilityPage() {
         />
       </div>
 
+      {/* S2 聚合存储 */}
+      <div id="s2" style={{ scrollMarginTop: 100 }}>
+        <h2 className="subsection-title">
+          <DatabaseOutlined /> 5. 埋点上报与后台收集（双包）
+        </h2>
+        <p style={{ lineHeight: 1.8, color: '#475569' }}>
+          生产落地拆两个包：<b>@aipack/observability</b>（上报 SDK，零重依赖）+
+          <b> @aipack/observability-server</b>（收集服务，独立部署）。客户端只需{' '}
+          <code>appId + appSecret</code>，6 类 telemetry 事件自动批量 POST 到收集服务；
+          收集端统一完成 SQLite 落盘（runs / spans / tool_calls）+ 内存聚合
+          （p50/p95/p99 在线直方图），并提供 REST 查询 API。上报失败自动写本地缓存，
+          收集服务恢复后补报——事件路径零阻塞、失败不阻断 run()。
+        </p>
+        <h3 className="subsection-title" style={{ fontSize: 16, marginTop: 24 }}>
+          客户端接入（@aipack/observability）
+        </h3>
+        <CodeBlock code={obsS2SetupCode} language="typescript" />
+        <h3 className="subsection-title" style={{ fontSize: 16, marginTop: 24 }}>
+          后台收集服务（@aipack/observability-server）
+        </h3>
+        <CodeBlock code={obsS2CollectorCode} language="bash" />
+        <h3 className="subsection-title" style={{ fontSize: 16, marginTop: 24 }}>
+          查询 API
+        </h3>
+        <CodeBlock code={obsS2RestApiCode} language="bash" compact />
+        <Alert
+          type="info"
+          showIcon
+          message="鉴权与存储可替换"
+          description="上报采用 appId + appSecret 鉴权（收集端 OBS_APPS 白名单）。存储抽象为 TraceStore 接口（insert / query runs/spans/tool_calls），后续可换成 Elasticsearch 或对接 OTLP → Prometheus/Tempo，聚合器与 REST API 无需改动。指标口径与第 4 节一致，可直接对账。"
+          style={{ marginTop: 16 }}
+        />
+      </div>
+
       <Divider />
       <div style={{ padding: 24, background: '#f0fdf4', borderRadius: 12, border: '1px solid #bbf7d0' }}>
         <h3 style={{ marginTop: 0, color: '#166534' }}>💡 与 Extension 的分工</h3>
         <ul style={{ color: '#14532d', lineHeight: 2 }}>
-          <li>要"观测"（指标、Trace、成本） → <b>Telemetry</b>（本页）</li>
+          <li>要"观测"（指标、Trace、成本） → <b>Telemetry</b>（本页）+ <b>@aipack/observability</b>（第 5 节：聚合 + SQLite + REST API）</li>
           <li>要"干预"（改请求/上下文、block/terminate 工具） → <b>Extension / Tool Hooks</b></li>
-          <li>需要持久化指标与 Trace？可自行实现 Telemetry 落地（内存聚合 + SQLite + REST API）</li>
+          <li>指标口径与成本计算已内置（provider 按 model.cost 计价），无需自行实现</li>
         </ul>
       </div>
     </div>
