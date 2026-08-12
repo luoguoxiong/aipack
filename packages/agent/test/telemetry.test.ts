@@ -94,6 +94,39 @@ describe('Telemetry: onRunEnd', () => {
     const result = await runtime.run(createRequest('hi'));
     assert.equal(result.success, true, '遥测失败不应影响 run 结果');
   });
+
+  it('run 成功时 errorClass 只看最后一条 assistant（会话历史中的旧模型错误不误判成功率）', async () => {
+    const onRunEnd = mock.fn(() => undefined);
+    const authErrorMsg: AssistantMessage = {
+      role: 'assistant',
+      content: [],
+      stopReason: 'error',
+      errorMessage: '[auth] 401 认证失败',
+      timestamp: Date.now(),
+    };
+    // 队列：第一次 run 报错（auth 错误进入会话历史），第二次 run 正常回复（同会话继续）
+    const queue: AssistantMessage[][] = [[authErrorMsg], [assistant('ok')]];
+    const runtime = createRuntime({
+      streamFn: () => (async function* (): AsyncGenerator<StreamEvent> {
+        for (const m of queue.shift() ?? []) {
+          yield { type: 'done', message: m as AssistantMessage };
+        }
+      })(),
+      telemetry: { onRunEnd },
+    });
+
+    // 第一次 run：最后一条 assistant 即 auth 错误 → success=false、errorClass=auth
+    const r1 = await runtime.run(createRequest('hi'));
+    assert.equal(r1.success, false);
+    assert.equal(onRunEnd.mock.calls[0].arguments[0].errorClass, 'auth');
+
+    // 第二次 run：会话历史残留 [auth] 错误，但本次最后一条 assistant 正常
+    // → success=true 且 errorClass=undefined（修复前会误判为 'auth'，成功率恒 0）
+    const r2 = await runtime.run(createRequest('hi again'));
+    assert.equal(r2.success, true);
+    assert.equal(onRunEnd.mock.calls[1].arguments[0].success, true);
+    assert.equal(onRunEnd.mock.calls[1].arguments[0].errorClass, undefined);
+  });
 });
 
 // ─── onToolCall ───────────────────────────────────────────────────
