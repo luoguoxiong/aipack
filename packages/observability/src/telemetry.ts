@@ -27,9 +27,20 @@ export interface FlushQueueOptions {
   intervalMs?: number;
   /** 积攒条数触发（含 runs/spans/toolCalls/permissions 总数），默认 50 */
   batchSize?: number;
+  /** P2-1 明细采样率（0–1）：只作用于 model/tool spans 与 toolCalls；runs/permissions/events 全量。缺省 1（全量） */
+  sampleRate?: number;
+  /** P2-1 脱敏钩子：send 前对整批改写（防 PII 明文上报） */
+  redact?: (batch: EventBatch) => EventBatch;
 }
 
-const emptyBatch = (): EventBatch => ({ runs: [], spans: [], toolCalls: [], permissions: [] });
+const emptyBatch = (): EventBatch => ({
+  runs: [],
+  spans: [],
+  toolCalls: [],
+  permissions: [],
+  retries: [],
+  events: [],
+});
 
 export class ObservabilityTelemetry implements Telemetry {
   private queued: EventBatch = emptyBatch();
@@ -38,9 +49,13 @@ export class ObservabilityTelemetry implements Telemetry {
   /** in-flight run 顺序（最近开始的排最后），供 logger 关联当前 traceId */
   private inFlightOrder: string[] = [];
   private batchSize: number;
+  private sampleRate: number;
+  private redact?: (batch: EventBatch) => EventBatch;
 
   constructor(private reporter: { send(batch: EventBatch): Promise<boolean> }, opts: FlushQueueOptions = {}) {
     this.batchSize = opts.batchSize ?? 50;
+    this.sampleRate = opts.sampleRate ?? 1;
+    this.redact = opts.redact;
     const intervalMs = opts.intervalMs ?? 5000;
     this.timer = setInterval(() => void this.flush(), intervalMs);
     this.timer.unref?.();
@@ -63,6 +78,7 @@ export class ObservabilityTelemetry implements Telemetry {
   };
 
   onToolCall = (info: ToolTelemetryInfo): void => {
+    if (!this.sample()) return; // P2-1 明细采样
     const startedAt = Date.now() - info.durationMs;
     this.queued.spans.push({
       traceId: info.traceId,
@@ -87,6 +103,7 @@ export class ObservabilityTelemetry implements Telemetry {
   };
 
   onModelCall = (info: ModelTelemetryInfo): void => {
+    if (!this.sample()) return; // P2-1 明细采样
     this.queued.spans.push({
       traceId: info.traceId,
       spanId: info.spanId,
@@ -105,8 +122,20 @@ export class ObservabilityTelemetry implements Telemetry {
     this.maybeFlush();
   };
 
-  onRetry = (_info: RetryTelemetryInfo): void => {
-    // 重试率由 onModelCall.attempts 统计，此处不重复上报
+  onRetry = (info: RetryTelemetryInfo): void => {
+    // P2-2：per-attempt 重试明细（关联 model span），server 落 retry_attempts 表
+    this.queued.retries.push({
+      traceId: info.traceId,
+      spanId: info.spanId,
+      provider: info.provider,
+      modelId: info.modelId,
+      attempt: info.attempt,
+      errorClass: info.errorClass,
+      status: info.status,
+      delayMs: info.delayMs,
+      timestamp: Date.now(),
+    });
+    this.maybeFlush();
   };
 
   onPermissionDenied = (info: PermissionDeniedTelemetryInfo): void => {
@@ -129,12 +158,27 @@ export class ObservabilityTelemetry implements Telemetry {
     return traceId ? { traceId } : {};
   }
 
+  /**
+   * P2-1 自定义业务事件（通用埋点）。
+   * run 内调用自动注入当前 traceId；run 外可通过 opts 显式传 traceId/sessionKey。
+   */
+  emit(name: string, data?: unknown, opts: { traceId?: string; sessionKey?: string } = {}): void {
+    this.queued.events.push({
+      traceId: opts.traceId ?? this.currentContext().traceId,
+      sessionKey: opts.sessionKey,
+      name,
+      data,
+      timestamp: Date.now(),
+    });
+    this.maybeFlush();
+  }
+
   /** 立即上报队列中残留的数据（fire-and-forget，失败由 reporter 缓存补报） */
   flush(): void {
     if (this.isEmpty()) return;
     const batch = this.queued;
     this.queued = emptyBatch();
-    void this.reporter.send(batch);
+    void this.reporter.send(this.redact ? this.redact(batch) : batch);
   }
 
   /** 停止定时器并等残留上报完成（进程退出前调用） */
@@ -146,7 +190,14 @@ export class ObservabilityTelemetry implements Telemetry {
     if (this.isEmpty()) return;
     const batch = this.queued;
     this.queued = emptyBatch();
-    await this.reporter.send(batch);
+    await this.reporter.send(this.redact ? this.redact(batch) : batch);
+  }
+
+  /** P2-1 明细采样判定：rate>=1 恒过、<=0 恒弃、否则按概率 */
+  private sample(): boolean {
+    if (this.sampleRate >= 1) return true;
+    if (this.sampleRate <= 0) return false;
+    return Math.random() < this.sampleRate;
   }
 
   private runRecord(info: RunTelemetryInfo, queuedAt: number): RunRecord {
@@ -198,7 +249,9 @@ export class ObservabilityTelemetry implements Telemetry {
       !this.queued.runs.length &&
       !this.queued.spans.length &&
       !this.queued.toolCalls.length &&
-      !this.queued.permissions.length
+      !this.queued.permissions.length &&
+      !this.queued.retries.length &&
+      !this.queued.events.length
     );
   }
 
@@ -207,7 +260,9 @@ export class ObservabilityTelemetry implements Telemetry {
       this.queued.runs.length +
       this.queued.spans.length +
       this.queued.toolCalls.length +
-      this.queued.permissions.length;
+      this.queued.permissions.length +
+      this.queued.retries.length +
+      this.queued.events.length;
     if (total >= this.batchSize) this.flush();
   }
 }

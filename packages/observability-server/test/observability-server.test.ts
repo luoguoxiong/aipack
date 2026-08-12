@@ -384,7 +384,7 @@ describe('S2 收集服务端到端', () => {
       appSecret: APP_SECRET,
       cacheDir,
     });
-    const ok = await reporter2.send({ runs: [], spans: [], toolCalls: [], permissions: [] } satisfies EventBatch);
+    const ok = await reporter2.send({ runs: [], spans: [], toolCalls: [], permissions: [], retries: [], events: [] } satisfies EventBatch);
     assert.equal(ok, true, '缓存补报应成功');
     assert.ok(!fs.existsSync(cacheFile), '补报成功后缓存应删除');
 
@@ -949,3 +949,149 @@ function httpsRequestJson(
     req.end();
   });
 }
+
+// ─── P2 自定义事件 / 重试明细 / 健康检查 / 会话持久化 ───────────────
+
+describe('P2 自定义事件与重试明细', () => {
+  it('emit 事件 + onRetry：/traces/:id 返回 events 时间轴与 retries 重试链', async () => {
+    const { baseUrl, token } = await startCollector();
+    const obs = createObservability({ appId: APP_ID, appSecret: APP_SECRET, endpoint: baseUrl, cacheDir: tempDir('obs-cache') });
+    const result = await runOnce(obs.telemetry, { streamFn: retryStreamFn() });
+    // run 结束后显式 emit（显式 traceId，等价 run 内自动注入上下文）
+    obs.emit('user.input', { text: '你好，世界' }, { traceId: String(result.metadata.traceId), sessionKey: 'sess-1' });
+    await obs.close();
+
+    const detail = await getJson(baseUrl, `/traces/${result.metadata.traceId}`, token);
+    assert.equal(detail.status, 200);
+    assert.equal(detail.body.events.length, 1);
+    assert.equal(detail.body.events[0].name, 'user.input');
+    assert.deepEqual(detail.body.events[0].data, { text: '你好，世界' });
+    assert.equal(detail.body.events[0].sessionKey, 'sess-1');
+    assert.equal(typeof detail.body.events[0].timestamp, 'number');
+
+    assert.equal(detail.body.retries.length, 1, 'retryStreamFn 触发 1 次 onRetryAttempt');
+    const r = detail.body.retries[0];
+    assert.equal(r.attempt, 1);
+    assert.equal(r.delayMs, 1);
+    assert.ok(r.modelId, '重试记录应带 modelId');
+    assert.equal(typeof r.timestamp, 'number');
+  });
+
+  it('Prometheus 输出 P2-2 重试指标：aipack_retries_total{status=} 与 aipack_retry_backoff_p50_ms', async () => {
+    const { baseUrl } = await startCollector();
+    const obs = createObservability({ appId: APP_ID, appSecret: APP_SECRET, endpoint: baseUrl, cacheDir: tempDir('obs-cache') });
+    await runOnce(obs.telemetry, { streamFn: retryStreamFn() });
+    await obs.close();
+
+    const res = await fetch(`${baseUrl}/metrics/prometheus`);
+    assert.equal(res.status, 200);
+    const text = await res.text();
+    assert.match(text, /^# HELP aipack_retries_total .*$/m);
+    assert.match(text, /^# TYPE aipack_retries_total counter$/m);
+    assert.match(text, /^# TYPE aipack_retry_backoff_p50_ms gauge$/m);
+    // mock Error 无 HTTP status 属性 → 归入 'unknown'
+    assert.match(text, /^aipack_retries_total\{status="unknown"\} 1$/m);
+    assert.match(text, /^aipack_retry_backoff_p50_ms \d+(\.\d+)?$/m);
+  });
+
+  it('/healthz：无鉴权 200 {ok:true}', async () => {
+    const { baseUrl } = await startCollector();
+    const res = await fetch(`${baseUrl}/healthz`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true });
+  });
+});
+
+describe('P2-3 会话持久化（SESSION_SECRET 无状态签名 token）', () => {
+  /** 以同一 dbPath 启动 collector，返回 baseUrl + 关闭函数（模拟服务重启） */
+  async function startWith(dbPath: string, opts: { sessionSecret?: string }) {
+    const collector = createCollector({ dbPath, apps: { [APP_ID]: APP_SECRET }, admin: ADMIN, ...opts });
+    const server = http.createServer((req, res) => void collector.handler(req, res));
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as AddressInfo).port;
+    const close = async () => {
+      await new Promise<void>((r) => server.close(() => r()));
+      await collector.close();
+    };
+    return { baseUrl: `http://127.0.0.1:${port}`, close };
+  }
+
+  it('配置 sessionSecret：重启后旧 token 仍有效（无需重新登录），篡改 token 被拒', async () => {
+    const dbPath = tempDb();
+    const secret = 'test-session-secret-0123456789abcdef';
+    const a = await startWith(dbPath, { sessionSecret: secret });
+    const loginRes = await fetch(`${a.baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ADMIN),
+    });
+    assert.equal(loginRes.status, 200);
+    const token = ((await loginRes.json()) as { token: string }).token;
+    assert.equal((await getJson(a.baseUrl, '/api/auth/me', token)).status, 200, '签名 token 登录后应可用');
+    await a.close();
+
+    // 重启（同一 dbPath + 同一 secret）
+    const b = await startWith(dbPath, { sessionSecret: secret });
+    cleanup.push(() => b.close());
+    const me = await getJson(b.baseUrl, '/api/auth/me', token);
+    assert.equal(me.status, 200, '无状态签名 token 重启后应仍有效');
+    assert.equal(me.body.username, ADMIN.username);
+
+    // 篡改签名 → 验签失败
+    const forged = await getJson(b.baseUrl, '/api/auth/me', `${token.slice(0, -2)}xx`);
+    assert.equal(forged.status, 401, '篡改 token 应被拒');
+  });
+
+  it('未配置 sessionSecret：内存会话，重启后 token 失效（P1 行为回归）', async () => {
+    const dbPath = tempDb();
+    const a = await startWith(dbPath, {});
+    const loginRes = await fetch(`${a.baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ADMIN),
+    });
+    const token = ((await loginRes.json()) as { token: string }).token;
+    await a.close();
+
+    const b = await startWith(dbPath, {});
+    cleanup.push(() => b.close());
+    assert.equal((await getJson(b.baseUrl, '/api/auth/me', token)).status, 401, '内存会话重启后应失效');
+  });
+});
+
+describe('P2 retention 覆盖新表（events/retry_attempts）', () => {
+  it('prune 删除过期 events/retries，保留新明细', () => {
+    const dbPath = tempDb();
+    const store = new SQLiteStore(dbPath);
+    const now = Date.now();
+    store.flush(
+      {
+        runs: [makeRun('old', now - 40 * 86400_000), makeRun('new', now)],
+        spans: [],
+        toolCalls: [],
+        permissions: [],
+        events: [
+          { traceId: 'old', name: 'evt-old', data: 'v', timestamp: now - 40 * 86400_000 },
+          { traceId: 'new', name: 'evt-new', data: 'v', timestamp: now },
+        ],
+        retries: [
+          { traceId: 'old', spanId: 'span-old', provider: 'deepseek', modelId: 'm', attempt: 1, status: 429, delayMs: 100, timestamp: now - 40 * 86400_000 },
+          { traceId: 'new', spanId: 'span-new', provider: 'deepseek', modelId: 'm', attempt: 1, status: 429, delayMs: 100, timestamp: now },
+        ],
+      },
+      APP_ID,
+    );
+
+    const cleared = store.prune(now - 10 * 86400_000); // 保留 10 天
+    assert.equal(cleared, 3, '应删除 1 run + 1 event + 1 retry');
+    assert.equal(store.queryTrace('old'), undefined, '过期 trace 应整体删除');
+
+    const kept = store.queryTrace('new');
+    assert.ok(kept, '新 trace 应保留');
+    assert.equal(kept.events.length, 1, '新 trace 的 events 应保留');
+    assert.equal(kept.events[0].name, 'evt-new');
+    assert.equal(kept.retries.length, 1, '新 trace 的 retries 应保留');
+    assert.equal(kept.retries[0].status, 429);
+    store.close();
+  });
+});

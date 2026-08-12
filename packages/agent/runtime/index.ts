@@ -1351,6 +1351,7 @@ export class AgentRuntime implements Runtime {
       attempts += 1;
       void this.emitTelemetry('onRetry', {
         traceId: compilation.traceId,
+        spanId, // P2：重试明细关联到本模型调用 span
         provider: this._model.provider,
         modelId: this._model.id,
         attempt: info.attempt,

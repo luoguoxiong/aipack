@@ -28,6 +28,11 @@ export interface AggregatedMetrics {
   avgTurns: number;
   /** 重试率 = Σ(attempts-1) / 模型调用数 */
   retryRate: number;
+  /** P2-2 per-attempt 重试分布：HTTP 状态码（如 '429'/'502'，无状态码记 'unknown'）-> 次数 */
+  retryByStatus: Record<string, number>;
+  /** P2-2 重试退避时长分位（ms，0 表示无重试数据） */
+  retryBackoffP50Ms: number;
+  retryBackoffP95Ms: number;
   /** 权限拦截次数 */
   permissionDenied: number;
   /** 错误分类计数（errorClass -> 次数），供面板错误分析 */

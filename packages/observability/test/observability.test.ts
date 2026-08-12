@@ -35,7 +35,14 @@ function mockFetch(status: number): { fetch: typeof fetch; calls: Array<{ url: s
   return { fetch: fetchImpl, calls };
 }
 
-const emptyBatch = (): EventBatch => ({ runs: [], spans: [], toolCalls: [], permissions: [] });
+const emptyBatch = (): EventBatch => ({
+  runs: [],
+  spans: [],
+  toolCalls: [],
+  permissions: [],
+  retries: [],
+  events: [],
+});
 
 function sampleBatch(): EventBatch {
   return {
@@ -46,7 +53,7 @@ function sampleBatch(): EventBatch {
         inputTokens: 1, outputTokens: 1,
       } as RunRecord,
     ],
-    spans: [], toolCalls: [], permissions: [],
+    spans: [], toolCalls: [], permissions: [], retries: [], events: [],
   };
 }
 
@@ -126,6 +133,25 @@ describe('HttpReporter', () => {
     assert.equal(raw.runs.length, 5, '缓存应裁剪到 maxCacheSize');
     assert.equal(raw.runs[0].traceId, 't5', '丢弃最旧 5 条，保留最新');
   });
+
+  it('P2 合并批次保留 retries/events：pending 队列多批合并不丢新字段', async () => {
+    const { fetch, calls } = mockFetch(200);
+    const reporter = new HttpReporter({
+      endpoint: 'http://collector.local', appId: APP_ID, appSecret: APP_SECRET,
+      cacheDir: tempDir('obs-cache'), fetchImpl: fetch,
+    });
+    const batch: EventBatch = {
+      ...emptyBatch(),
+      retries: [{ traceId: 't1', provider: 'p', modelId: 'm', attempt: 1, delayMs: 10, timestamp: 1 }],
+      events: [{ traceId: 't1', name: 'evt', data: { a: 1 }, timestamp: 1 }],
+    };
+    // 并发两次 send：第二次被串行锁吸收（返回 false 但数据合入第一轮 drain）
+    const [ok1] = await Promise.all([reporter.send(batch), reporter.send(emptyBatch())]);
+    assert.equal(ok1, true);
+    assert.equal(calls.length, 1, '两批应合并为一次上报');
+    assert.equal(calls[0].body.retries.length, 1, '合并批次应保留 retries');
+    assert.equal(calls[0].body.events.length, 1, '合并批次应保留 events');
+  });
 });
 
 describe('ObservabilityTelemetry', () => {
@@ -166,6 +192,90 @@ describe('ObservabilityTelemetry', () => {
 
     assert.equal(calls[0].body.permissions.length, 1);
     assert.equal(calls[0].body.permissions[0].toolName, 'echo');
+  });
+
+  // ─── P2-1 自定义事件 / 明细采样 / 脱敏 ───────────────────────────
+
+  it('P2-1 emit：run 内自动注入 traceId，事件随批次上报', async () => {
+    const { fetch, calls } = mockFetch(200);
+    const reporter = { send: async (b: EventBatch) => fetch('http://x', { method: 'POST', headers: {}, body: JSON.stringify({ ...b }) }) as any };
+    const telemetry = new ObservabilityTelemetry(reporter as any, { intervalMs: 10 ** 9 });
+
+    telemetry.onRunStart({ traceId: 't1', queuedAt: 1000 } as any);
+    telemetry.emit('agent.start', { step: 1 });
+    telemetry.emit('tool.selected', { tool: 'echo' });
+    await telemetry.close();
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].body.events.length, 2);
+    assert.equal(calls[0].body.events[0].name, 'agent.start');
+    assert.equal(calls[0].body.events[0].traceId, 't1', 'run 内 emit 应自动注入 traceId');
+    assert.deepEqual(calls[0].body.events[0].data, { step: 1 });
+    assert.equal(calls[0].body.events[1].name, 'tool.selected');
+  });
+
+  it('P2-1 明细采样：sampleRate=0 时 model/tool spans 与 toolCalls 丢弃，run 全量保留', async () => {
+    const { fetch, calls } = mockFetch(200);
+    const reporter = { send: async (b: EventBatch) => fetch('http://x', { method: 'POST', headers: {}, body: JSON.stringify({ ...b }) }) as any };
+    const telemetry = new ObservabilityTelemetry(reporter as any, { intervalMs: 10 ** 9, sampleRate: 0 });
+
+    telemetry.onRunEnd({
+      traceId: 't1', sessionKey: 's', durationMs: 20, success: true,
+      turnCount: 2, request: { channel: 'test', model: 'm1' },
+      tokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 },
+    } as any);
+    telemetry.onModelCall({ traceId: 't1', spanId: 'm1', modelId: 'm1', durationMs: 5, status: 'ok', attempts: 1, inputTokens: 1, outputTokens: 1 } as any);
+    telemetry.onToolCall({ traceId: 't1', spanId: 'c1', toolName: 'echo', status: 'ok', durationMs: 3 } as any);
+    await telemetry.close();
+
+    assert.equal(calls[0].body.runs.length, 1, 'run 不受采样影响');
+    assert.equal(calls[0].body.spans.length, 1, '仅 run span，model/tool span 被采样丢弃');
+    assert.equal(calls[0].body.spans[0].kind, 'run');
+    assert.equal(calls[0].body.toolCalls.length, 0, 'toolCalls 被采样丢弃');
+  });
+
+  it('P2-1 脱敏钩子：redact 在 send 前改写批次（PII 防护）', async () => {
+    const { fetch, calls } = mockFetch(200);
+    const reporter = { send: async (b: EventBatch) => fetch('http://x', { method: 'POST', headers: {}, body: JSON.stringify({ ...b }) }) as any };
+    const telemetry = new ObservabilityTelemetry(reporter as any, {
+      intervalMs: 10 ** 9,
+      redact: (batch) => ({
+        ...batch,
+        events: batch.events.map((e) =>
+          e.name === 'user.input' ? { ...e, data: { text: '***' } } : e,
+        ),
+      }),
+    });
+
+    telemetry.onRunStart({ traceId: 't1', queuedAt: 1000 } as any);
+    telemetry.emit('user.input', { text: '我的银行卡号是 6222...' });
+    await telemetry.close();
+
+    assert.equal(calls[0].body.events[0].data.text, '***', '敏感事件数据应被脱敏钩子改写');
+  });
+
+  // ─── P2-2 per-attempt 重试明细 ───────────────────────────────────
+
+  it('P2-2 onRetry：RetryRecord 入队并随批次上报（含 spanId/status/delayMs）', async () => {
+    const { fetch, calls } = mockFetch(200);
+    const reporter = { send: async (b: EventBatch) => fetch('http://x', { method: 'POST', headers: {}, body: JSON.stringify({ ...b }) }) as any };
+    const telemetry = new ObservabilityTelemetry(reporter as any, { intervalMs: 10 ** 9 });
+
+    telemetry.onRetry({
+      traceId: 't1', spanId: 'm1', provider: 'deepseek', modelId: 'deepseek-chat',
+      attempt: 2, errorClass: 'rate-limit', status: 429, delayMs: 1500,
+    } as any);
+    await telemetry.close();
+
+    assert.equal(calls[0].body.retries.length, 1);
+    const r = calls[0].body.retries[0];
+    assert.equal(r.traceId, 't1');
+    assert.equal(r.spanId, 'm1');
+    assert.equal(r.modelId, 'deepseek-chat');
+    assert.equal(r.attempt, 2);
+    assert.equal(r.status, 429);
+    assert.equal(r.delayMs, 1500);
+    assert.equal(typeof r.timestamp, 'number');
   });
 });
 
@@ -314,6 +424,8 @@ function sampleOtlpBatch(): EventBatch {
     ],
     toolCalls: [],
     permissions: [],
+    retries: [],
+    events: [],
   };
 }
 
@@ -404,7 +516,7 @@ describe('createOtlpTraceExporter', () => {
       endpoint: 'http://otel:4318',
       fetchImpl: fetch as typeof globalThis.fetch,
     });
-    assert.equal(await exporter.export({ runs: [], spans: [], toolCalls: [{} as never], permissions: [] }), true);
+    assert.equal(await exporter.export({ runs: [], spans: [], toolCalls: [{} as never], permissions: [], retries: [], events: [] }), true);
     assert.equal(calls.length, 0);
   });
 });

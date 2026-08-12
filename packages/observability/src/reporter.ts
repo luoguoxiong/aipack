@@ -28,7 +28,14 @@ export interface ReporterOptions {
   fetchImpl?: typeof fetch;
 }
 
-const EMPTY_BATCH = (): EventBatch => ({ runs: [], spans: [], toolCalls: [], permissions: [] });
+const EMPTY_BATCH = (): EventBatch => ({
+  runs: [],
+  spans: [],
+  toolCalls: [],
+  permissions: [],
+  retries: [],
+  events: [],
+});
 
 export class HttpReporter {
   private endpoint: string;
@@ -136,6 +143,8 @@ export class HttpReporter {
         spans: Array.isArray(parsed.spans) ? parsed.spans : [],
         toolCalls: Array.isArray(parsed.toolCalls) ? parsed.toolCalls : [],
         permissions: Array.isArray(parsed.permissions) ? parsed.permissions : [],
+        retries: Array.isArray(parsed.retries) ? parsed.retries : [],
+        events: Array.isArray(parsed.events) ? parsed.events : [],
       };
     } catch {
       return EMPTY_BATCH();
@@ -163,11 +172,25 @@ export class HttpReporter {
 // ─── 工具 ─────────────────────────────────────────────────────────
 
 function isEmpty(batch: EventBatch): boolean {
-  return !batch.runs.length && !batch.spans.length && !batch.toolCalls.length && !batch.permissions.length;
+  return (
+    !batch.runs.length &&
+    !batch.spans.length &&
+    !batch.toolCalls.length &&
+    !batch.permissions.length &&
+    !batch.retries.length &&
+    !batch.events.length
+  );
 }
 
 function count(batch: EventBatch): number {
-  return batch.runs.length + batch.spans.length + batch.toolCalls.length + batch.permissions.length;
+  return (
+    batch.runs.length +
+    batch.spans.length +
+    batch.toolCalls.length +
+    batch.permissions.length +
+    batch.retries.length +
+    batch.events.length
+  );
 }
 
 function mergeBatches(...batches: EventBatch[]): EventBatch {
@@ -177,17 +200,27 @@ function mergeBatches(...batches: EventBatch[]): EventBatch {
     out.spans.push(...b.spans);
     out.toolCalls.push(...b.toolCalls);
     out.permissions.push(...b.permissions);
+    out.retries.push(...b.retries);
+    out.events.push(...b.events);
   }
   return out;
 }
 
-/** 超过上限时按 runs → spans → toolCalls → permissions 顺序从头部裁剪（保留最新） */
+/** 超过上限时按 runs → spans → toolCalls → permissions → retries → events 顺序从头部裁剪（保留最新） */
 function trimBatch(batch: EventBatch, max: number): EventBatch {
   const total = count(batch);
   if (total <= max) return batch;
   let excess = total - max;
-  const out = { ...batch, runs: [...batch.runs], spans: [...batch.spans], toolCalls: [...batch.toolCalls], permissions: [...batch.permissions] };
-  for (const key of ['runs', 'spans', 'toolCalls', 'permissions'] as const) {
+  const out: EventBatch = {
+    ...batch,
+    runs: [...batch.runs],
+    spans: [...batch.spans],
+    toolCalls: [...batch.toolCalls],
+    permissions: [...batch.permissions],
+    retries: [...batch.retries],
+    events: [...batch.events],
+  };
+  for (const key of ['runs', 'spans', 'toolCalls', 'permissions', 'retries', 'events'] as const) {
     if (excess <= 0) break;
     const removed = Math.min(out[key].length, excess);
     out[key].splice(0, removed);

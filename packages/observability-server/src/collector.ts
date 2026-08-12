@@ -53,6 +53,8 @@ export interface CollectorOptions {
   apps?: Record<string, string>;
   /** 面板登录凭证（observability-web 用）；缺省时不开启登录端点 */
   admin?: { username: string; password: string };
+  /** 面板会话签名 secret（P2-3）：配置后签发无状态 HMAC token，重启不失效；缺省用内存会话 */
+  sessionSecret?: string;
   /** 可选：托管面板静态文件目录（构建产物），配置后 GET / 直接返回面板 */
   staticDir?: string;
   /** 聚合滑动窗口（ms），默认 60min */
@@ -117,7 +119,10 @@ export function createCollector(opts: CollectorOptions): Collector {
   };
 
   const sessions = opts.admin
-    ? new SessionManager({ username: opts.admin.username, password: opts.admin.password })
+    ? new SessionManager(
+        { username: opts.admin.username, password: opts.admin.password },
+        { secret: opts.sessionSecret },
+      )
     : undefined;
 
   // 已知应用 id（种子白名单 + 面板动态创建），供 Prometheus 按应用拆分导出
@@ -206,6 +211,16 @@ export function createCollector(opts: CollectorOptions): Collector {
         return Promise.resolve();
       }
 
+      // 就绪探针（P2-3）：无鉴权，DB/存储可达则 200，供容器与负载均衡探测
+      if (req.method === 'GET' && pathname === '/healthz') {
+        try {
+          store.listApps();
+          return json(res, 200, { ok: true });
+        } catch (err) {
+          return json(res, 503, { ok: false, error: err instanceof Error ? err.message : 'unavailable' });
+        }
+      }
+
       // 查询端点：需要面板会话
       if (req.method === 'GET' && (pathname.startsWith('/metrics/') || pathname.startsWith('/traces'))) {
         if (!sessions || !authenticated(req, sessions)) {
@@ -279,6 +294,8 @@ async function handleIngest(
     spans: Array.isArray(payload.spans) ? payload.spans : [],
     toolCalls: Array.isArray(payload.toolCalls) ? payload.toolCalls : [],
     permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
+    retries: Array.isArray(payload.retries) ? payload.retries : [],
+    events: Array.isArray(payload.events) ? payload.events : [],
   };
 
   // 落盘（app_id 盖戳）+ 喂聚合器（全局 + 该应用），与查询互不影响
@@ -301,6 +318,10 @@ async function handleIngest(
   for (const p of batch.permissions) {
     global.ingestPermission(p);
     appAgg.ingestPermission(p);
+  }
+  for (const rt of batch.retries) {
+    global.ingestRetry(rt);
+    appAgg.ingestRetry(rt);
   }
 
   return json(res, 200, { ok: true });

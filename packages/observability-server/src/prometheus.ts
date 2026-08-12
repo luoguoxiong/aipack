@@ -62,6 +62,8 @@ export function renderPrometheusMetrics(deps: PrometheusDeps): string {
   const errors: string[] = [];
   const toolCalls: string[] = [];
   const toolSuccessRatio: string[] = [];
+  const retriesByStatus: string[] = [];
+  const retryBackoff: string[] = [];
 
   // 全局（空 app_id）+ 各应用
   const appIds = ['', ...deps.appIds()];
@@ -89,6 +91,14 @@ export function renderPrometheusMetrics(deps: PrometheusDeps): string {
       toolCalls.push(`aipack_tool_calls_total${toolLbl} ${t.calls}`);
       toolSuccessRatio.push(`aipack_tool_success_ratio${toolLbl} ${fmt(t.successRate)}`);
     }
+    // P2-2：per-attempt 重试分布（按 HTTP 状态码）+ 退避分位
+    for (const [status, count] of Object.entries(s.retryByStatus)) {
+      const statusLbl = appId
+        ? `{app_id="${appId}",status="${escapeLabel(status)}"}`
+        : `{status="${escapeLabel(status)}"}`;
+      retriesByStatus.push(`aipack_retries_total${statusLbl} ${count}`);
+    }
+    retryBackoff.push(`aipack_retry_backoff_p50_ms${lbl} ${fmt(s.retryBackoffP50Ms)}`);
   }
 
   metric('累计请求数（当前聚合窗口）', 'counter', requests, out);
@@ -103,6 +113,8 @@ export function renderPrometheusMetrics(deps: PrometheusDeps): string {
   metric('错误计数（窗口，按 errorClass）', 'counter', errors, out);
   metric('工具调用计数（窗口）', 'counter', toolCalls, out);
   metric('工具成功率（窗口均值）', 'gauge', toolSuccessRatio, out);
+  metric('重试次数（窗口，按 HTTP 状态码，per-attempt）', 'counter', retriesByStatus, out);
+  metric('重试退避时长 P50 ms（窗口在线分位数）', 'gauge', retryBackoff, out);
 
   return out.join('\n') + '\n';
 }
