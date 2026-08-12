@@ -117,6 +117,8 @@ export interface RunStartTelemetryInfo {
 /** 单次重试事件载荷（provider 内部 retry() 真正退避重试时上报） */
 export interface RetryTelemetryInfo {
   traceId: string;
+  /** 关联的模型调用 span（P2：重试明细落到具体 model span） */
+  spanId?: string;
   provider: string;
   modelId: string;
   /** 第几次重试（从 1 开始） */

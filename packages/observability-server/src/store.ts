@@ -10,7 +10,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import type { RunRecord, SpanRecord, ToolCallRecord, EventBatch } from '@aipack/observability';
+import type { RunRecord, SpanRecord, ToolCallRecord, EventRecord, RetryRecord, EventBatch } from '@aipack/observability';
 import type { AlertMetric, AlertOperator } from './alerts/rules';
 
 /** 面板应用（appId + appSecret，动态创建，替代静态 OBS_APPS 白名单） */
@@ -47,6 +47,10 @@ export interface TraceDetail {
   run: RunRecord;
   spans: SpanRecord[];
   tools: ToolCallRecord[];
+  /** P2-1 自定义事件（按时间正序，与 span 时间轴混排） */
+  events: EventRecord[];
+  /** P2-2 per-attempt 重试明细（按时间正序） */
+  retries: RetryRecord[];
 }
 
 export interface TraceStore {
@@ -232,6 +236,36 @@ CREATE TABLE IF NOT EXISTS alert_events (
 );
 CREATE INDEX IF NOT EXISTS idx_alert_events_created ON alert_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_alert_events_rule ON alert_events(rule_id);
+
+CREATE TABLE IF NOT EXISTS events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  trace_id    TEXT,
+  app_id      TEXT,
+  session_key TEXT,
+  name        TEXT NOT NULL,
+  data        TEXT,
+  ts          INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_events_trace ON events(trace_id);
+CREATE INDEX IF NOT EXISTS idx_events_app ON events(app_id);
+CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+
+CREATE TABLE IF NOT EXISTS retry_attempts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  trace_id    TEXT NOT NULL,
+  app_id      TEXT,
+  span_id     TEXT,
+  provider    TEXT,
+  model_id    TEXT,
+  attempt     INTEGER,
+  error_class TEXT,
+  status      INTEGER,
+  delay_ms    INTEGER,
+  ts          INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_retry_trace ON retry_attempts(trace_id);
+CREATE INDEX IF NOT EXISTS idx_retry_app ON retry_attempts(app_id);
+CREATE INDEX IF NOT EXISTS idx_retry_ts ON retry_attempts(ts);
 `;
 
 /** 旧库升级：为 runs/spans/tool_calls 补充 app_id 列（历史数据为 NULL，不参与按应用过滤） */
@@ -263,6 +297,8 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
   private insertRunStmt: Database.Statement;
   private insertSpanStmt: Database.Statement;
   private insertToolStmt: Database.Statement;
+  private insertEventStmt: Database.Statement;
+  private insertRetryStmt: Database.Statement;
   private insertTx: (batch: EventBatch, appId: string) => void;
 
   constructor(dbPath: string) {
@@ -289,10 +325,19 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
     this.insertToolStmt = this.db.prepare(
       `INSERT INTO tool_calls (${TOOL_COLS}) VALUES (${TOOL_COLS.split(',').map(() => '?').join(',')})`,
     );
+    this.insertEventStmt = this.db.prepare(
+      `INSERT INTO events (trace_id, app_id, session_key, name, data, ts) VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    this.insertRetryStmt = this.db.prepare(
+      `INSERT INTO retry_attempts (trace_id, app_id, span_id, provider, model_id, attempt, error_class, status, delay_ms, ts)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
     this.insertTx = this.db.transaction((batch: EventBatch, appId: string) => {
       for (const r of batch.runs) this.insertRunStmt.run(runArgs(r, appId));
       for (const s of batch.spans) this.insertSpanStmt.run(spanArgs(s, appId));
       for (const t of batch.toolCalls) this.insertToolStmt.run(toolArgs(t, appId));
+      for (const e of batch.events) this.insertEventStmt.run(eventArgs(e, appId));
+      for (const rt of batch.retries) this.insertRetryStmt.run(retryArgs(rt, appId));
     });
   }
 
@@ -434,15 +479,31 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
     const tools = this.db
       .prepare('SELECT * FROM tool_calls WHERE trace_id = ?')
       .all(traceId) as Array<Record<string, unknown>>;
+    const events = this.db
+      .prepare('SELECT * FROM events WHERE trace_id = ? ORDER BY ts ASC')
+      .all(traceId) as Array<Record<string, unknown>>;
+    const retries = this.db
+      .prepare('SELECT * FROM retry_attempts WHERE trace_id = ? ORDER BY ts ASC')
+      .all(traceId) as Array<Record<string, unknown>>;
     return {
       run: rowToRun(run as Record<string, unknown> & { retries: number }),
       spans: spans.map(rowToSpan),
       tools: tools.map(rowToTool),
+      events: events.map(rowToEvent),
+      retries: retries.map(rowToRetry),
     };
   }
 
   flush(batch: EventBatch, appId: string): void {
-    if (!batch.runs.length && !batch.spans.length && !batch.toolCalls.length) return;
+    if (
+      !batch.runs.length &&
+      !batch.spans.length &&
+      !batch.toolCalls.length &&
+      !batch.events.length &&
+      !batch.retries.length
+    ) {
+      return;
+    }
     this.insertTx(batch, appId);
   }
 
@@ -458,11 +519,15 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
     const delOrphanTools = this.db.prepare(
       'DELETE FROM tool_calls WHERE NOT EXISTS (SELECT 1 FROM runs WHERE runs.trace_id = tool_calls.trace_id)',
     );
+    const delEvents = this.db.prepare('DELETE FROM events WHERE ts < ?');
+    const delRetries = this.db.prepare('DELETE FROM retry_attempts WHERE ts < ?');
     const runTx = this.db.transaction(() => {
       const runs = delRuns.run(before).changes;
       const spans = delSpans.run(before).changes;
       const tools = delOrphanTools.run().changes;
-      return runs + spans + tools;
+      const events = delEvents.run(before).changes;
+      const retries = delRetries.run(before).changes;
+      return runs + spans + tools + events + retries;
     });
     const cleared = runTx();
     // 增量回收空闲页（仅新库 auto_vacuum=INCREMENTAL 时生效；存量库为 no-op）
@@ -655,6 +720,52 @@ function spanArgs(s: SpanRecord, appId: string | undefined): unknown[] {
 
 function toolArgs(t: ToolCallRecord, appId: string | undefined): unknown[] {
   return [t.traceId, n(appId), t.spanId, t.toolName, t.status, t.durationMs, n(t.errorClass)];
+}
+
+function rowToEvent(r: Record<string, unknown>): EventRecord {
+  return {
+    traceId: optStr(r.trace_id),
+    sessionKey: optStr(r.session_key),
+    name: String(r.name),
+    data: r.data === null || r.data === undefined ? undefined : safeParseJson(String(r.data)),
+    timestamp: Number(r.ts),
+  };
+}
+
+function eventArgs(e: EventRecord, appId: string | undefined): unknown[] {
+  return [
+    n(e.traceId), n(appId), n(e.sessionKey), e.name,
+    e.data === undefined ? null : JSON.stringify(e.data), e.timestamp,
+  ];
+}
+
+function rowToRetry(r: Record<string, unknown>): RetryRecord {
+  return {
+    traceId: String(r.trace_id),
+    spanId: optStr(r.span_id),
+    provider: optStr(r.provider) ?? '',
+    modelId: optStr(r.model_id) ?? '',
+    attempt: Number(r.attempt),
+    errorClass: optStr(r.error_class),
+    status: optNum(r.status),
+    delayMs: Number(r.delay_ms),
+    timestamp: Number(r.ts),
+  };
+}
+
+function retryArgs(rt: RetryRecord, appId: string | undefined): unknown[] {
+  return [
+    rt.traceId, n(appId), n(rt.spanId), n(rt.provider), n(rt.modelId), rt.attempt,
+    n(rt.errorClass), n(rt.status), rt.delayMs, rt.timestamp,
+  ];
+}
+
+function safeParseJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
 }
 
 function rowToApp(r: Record<string, unknown>): AppRecord {

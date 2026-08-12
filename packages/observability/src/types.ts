@@ -61,10 +61,43 @@ export interface PermissionRecord {
   timestamp: number;
 }
 
+/** 自定义业务事件（P2-1：obs.emit 通用埋点，入 Trace 时间轴） */
+export interface EventRecord {
+  /** run 内 emit 自动注入；run 外缺省 */
+  traceId?: string;
+  sessionKey?: string;
+  /** 事件名（如 'tool_picked' / 'cancelled'），面板按此分组 */
+  name: string;
+  /** 任意 JSON 可序列化数据 */
+  data?: unknown;
+  /** 事件发生时刻（epoch ms） */
+  timestamp: number;
+}
+
+/** 单次 provider 内部重试（P2-2：per-attempt 维度，关联 model span） */
+export interface RetryRecord {
+  traceId: string;
+  /** 关联的模型调用 span */
+  spanId?: string;
+  provider: string;
+  modelId: string;
+  /** 第几次重试（从 1 开始） */
+  attempt: number;
+  errorClass?: string;
+  /** HTTP 状态码（如有，如 429/502） */
+  status?: number;
+  /** 本次退避延迟（ms） */
+  delayMs: number;
+  /** 重试发生时刻（epoch ms） */
+  timestamp: number;
+}
+
 /** 客户端一次上报的批量事件（POST /api/v1/ingest body，appId 附加） */
 export interface EventBatch {
   runs: RunRecord[];
   spans: SpanRecord[];
   toolCalls: ToolCallRecord[];
   permissions: PermissionRecord[];
+  retries: RetryRecord[];
+  events: EventRecord[];
 }

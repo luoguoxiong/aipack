@@ -10,6 +10,11 @@ export interface Summary {
   p99Ms: number;
   avgTurns: number;
   retryRate: number;
+  /** P2-2 per-attempt 重试分布：HTTP 状态码（'429'/'502'，无状态码记 'unknown'）-> 次数 */
+  retryByStatus: Record<string, number>;
+  /** P2-2 重试退避时长分位（ms，0 表示无重试数据） */
+  retryBackoffP50Ms: number;
+  retryBackoffP95Ms: number;
   permissionDenied: number;
   errorClasses: Record<string, number>;
 }
@@ -60,9 +65,30 @@ export interface Span {
   costUsd?: number;
 }
 
+/** P2-1 自定义事件（emit 埋点，归属 run 或指定 session） */
+export interface TraceEvent {
+  name: string;
+  data?: unknown;
+  timestamp: number;
+  sessionKey?: string;
+}
+
+/** P2-2 per-attempt 重试明细（关联 model span） */
+export interface RetryAttempt {
+  provider: string;
+  modelId: string;
+  attempt: number;
+  errorClass?: string;
+  status?: number;
+  delayMs?: number;
+  timestamp: number;
+}
+
 export interface TraceDetail {
   traceId: string;
   spans: Span[];
+  events: TraceEvent[];
+  retries: RetryAttempt[];
 }
 
 export interface AppInfo {

@@ -153,6 +153,23 @@ async function traceDetail(
       tokens: { input: s.inputTokens ?? 0, output: s.outputTokens ?? 0 },
       costUsd: s.costUsd,
     })),
+    // P2-1 自定义事件（时间轴）
+    events: detail.events.map((e) => ({
+      name: e.name,
+      data: e.data,
+      timestamp: e.timestamp,
+      sessionKey: e.sessionKey,
+    })),
+    // P2-2 per-attempt 重试链
+    retries: detail.retries.map((r) => ({
+      provider: r.provider,
+      modelId: r.modelId,
+      attempt: r.attempt,
+      errorClass: r.errorClass,
+      status: r.status,
+      delayMs: r.delayMs,
+      timestamp: r.timestamp,
+    })),
   });
 }
 

@@ -8,6 +8,10 @@
  *               (已存在则跳过;后续应用改由面板动态创建)
  *   ADMIN_USER  面板登录用户名(默认 admin)
  *   ADMIN_PASS  面板登录密码(缺省自动生成并打印,首次启动注意保存)
+ *   SESSION_SECRET  面板会话签名 secret(P2-3)。配置后登录 token 改为无状态
+ *               HMAC 签名(含过期时间),重启不失效、零文件状态;缺省时若
+ *               ADMIN_PASS 为显式配置,则以之派生;两者都缺省(密码自动生成)
+ *               时回退内存会话(行为同 P1)
  *   STATIC_DIR  可选:面板静态文件目录(构建产物)。缺省自动定位到本包 dist/public
  *               (即 `pnpm --filter @aipack/observability-server build` 的产出),
  *               存在则 GET / 直接返回面板
@@ -25,7 +29,7 @@
  *   ALERTS_WEBHOOK_URL         全局默认通知 webhook(规则可覆盖;支持企业微信/Slack/飞书)
  */
 import './loadEnv.js'; // 副作用:最先加载 .env(必须在读取 process.env 之前)
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -57,6 +61,8 @@ export interface CollectorConfig {
   seedApps: Record<string, string>;
   /** 面板登录凭证（面板开启条件） */
   admin: { username: string; password: string };
+  /** 面板会话签名 secret（可选）：配置后签发无状态 HMAC token，重启不失效 */
+  sessionSecret?: string;
   /** 面板静态文件目录（可选） */
   staticDir?: string;
   /** 数据保留配置（PRUNE_*） */
@@ -89,6 +95,7 @@ export function loadConfig(): CollectorConfig {
     dbPath,
     seedApps,
     admin,
+    sessionSecret: resolveSessionSecret(),
     staticDir,
     retention: resolveRetention(dbPath),
     alerts: resolveAlerts(),
@@ -127,6 +134,21 @@ function resolveAdmin(): { username: string; password: string } {
     );
   }
   return { username, password };
+}
+
+/**
+ * 面板会话签名 secret（P2-3）：显式 SESSION_SECRET 优先；缺省时若 ADMIN_PASS
+ * 为显式配置则以其派生（重启后 token 仍有效）；两者都缺省（密码为自动生成）时
+ * 返回 undefined → 保留内存会话模式（行为同 P1）。
+ */
+function resolveSessionSecret(): string | undefined {
+  const explicit = process.env.SESSION_SECRET?.trim();
+  if (explicit) return explicit;
+  const explicitPass = process.env.ADMIN_PASS?.trim();
+  if (explicitPass) {
+    return createHash('sha256').update(`aipack-session:${explicitPass}`).digest('hex');
+  }
+  return undefined;
 }
 
 /** 解析 "app1:secret1,app2:secret2" → { app1: 'secret1', app2: 'secret2' } */

@@ -186,14 +186,82 @@
 - `curl /metrics/prometheus` 无鉴权返回 `text/plain; version=0.0.4` 且含 `aipack_requests_total{app_id="..."}`；
 - `TLS_KEY/TLS_CERT` 配置后服务变 `https://`，HTTPS ingest 正常；`INGEST_RATE=1` 时同一 app 连续第二次上报返回 429 + `Retry-After`。
 
-## P2 · 采集覆盖 + 重试细节 + 部署运维
+## P2 · 采集覆盖 + 重试细节 + 部署运维（已实现）
 
-4. **采集覆盖**（SDK [@aipack/observability](../../packages/observability/)）：
-   - 自定义事件 API（`obs.emit('event', data)` 通用业务埋点）；
-   - 采样率 `sampleRate`（高 QPS 全量明细成本高）；
-   - 脱敏钩子 `redact`（回调作用于 sessionKey/toolName 等，防 PII 明文上报）。
-5. **重试细节**：SDK 启用 `onRetry` → per-attempt 维度（429/5xx 分类、退避时长分布）独立成维度/表，补上 [telemetry.ts](../../packages/observability/src/telemetry.ts) 中目前被丢弃的重试信息。
-6. **部署运维**：Dockerfile（server 单镜像）+ `/healthz` 就绪探针 + 面板会话持久化（token 落盘，重启可恢复）+ 备份脚本说明。
+> 状态：**已实现**（2026-08）。范围：P2 全量（采集覆盖 + 重试细节 + 部署运维）；
+> 采样语义 = **明细采样**（spans/toolCalls 采样、runs 全量保聚合）；自定义事件在
+> 面板 **Trace 详情时间轴**展示；会话持久化 = **SESSION_SECRET 无状态签名 token**
+> （重启不失效、零文件状态；未配置时保留内存会话）。
+>
+> 落地要点：
+> - 链路全通：agent `spanId` → SDK `onRetry`/`emit` → server `retry_attempts`/`events`
+>   表 + `aggregator.ingestRetry` → Prometheus `aipack_retries_total{status=}` /
+>   `aipack_retry_backoff_p50_ms` → 面板重试链 + 事件时间轴 + 聚合页重试分布；
+> - 修复：`HttpReporter.mergeBatches`/`isEmpty`/`count`/`trimBatch` 补齐 retries/events
+>   （此前 pending 队列合并会静默丢弃新字段）；
+> - 验证：SDK 24 用例 + Server 33 用例全绿，agent/observability/observability-server
+>   typecheck 通过，server build（tsup + vite 面板）通过。
+>
+> 设计细节与验收标准见下表。
+
+### P2-1 采集覆盖（SDK @aipack/observability）
+
+| 项 | 设计 |
+| --- | --- |
+| 自定义事件 `obs.emit('event', { name, data? })` | 新 `EventRecord { traceId?, sessionKey?, name, data?, timestamp }`；run 内调用自动注入 `currentContext().traceId`，run 外仅记 sessionKey（如提供）；入 `EventBatch.events`。server 新表 `events(trace_id, session_key, name, data_json, ts)`，ingest 解析 + 落盘，面板 Trace 详情按 ts 与 span 时间轴混排显示事件徽标 |
+| 采样率 `sampleRate` | `createObservability({ sampleRate: 0.1 })`（0–1，缺省 1）。**明细采样**：只对 `kind=model/tool` 的 spans 与 toolCalls 随机丢弃（命中采样）；runs / permissions / events 全量，保证聚合、告警、成本统计不失真 |
+| 脱敏钩子 `redact` | `createObservability({ redact? })`：`(batch: EventBatch) => EventBatch`，send 前作用；示例改写 sessionKey/toolName/model 防 PII 明文上报；文档给出常用脱敏写法（复用 logger 的 REDACTED_KEYS 思路） |
+
+### P2-2 重试细节（性能监控核心）
+
+全链路打通 per-attempt 重试维度（当前仅 `retryRate` 一个聚合数）：
+
+1. **agent**：[RetryTelemetryInfo](../../packages/agent/telemetry/index.ts#L118) 加可选 `spanId`，runtime 转发时带出 `streamModelEvents` 的局部 spanId；
+2. **SDK**：`onRetry` 实现 → `RetryRecord { traceId, spanId, provider, modelId, attempt, errorClass, status?, delayMs, timestamp }`，入 `EventBatch.retries`；
+3. **server**：
+   - 新表 `retry_attempts(id, trace_id, span_id, provider, model_id, attempt, error_class, status, delay_ms, ts)`；
+   - aggregator 新增 `ingestRetry(rec)`：状态分布（按 status / errorClass 分类计数）+ delayMs 分位（P50/P95）；
+   - Prometheus 扩展：`aipack_retries_total{status=}`、`aipack_retry_backoff_p50_ms`；
+   - 查询：traceDetail 返回该 trace 的重试链（哪次 attempt、退避多久、最终成败）；summary 加重试分布；
+4. **面板**：Trace 详情显示重试链；聚合页「重试分布」卡片；
+5. **retention**：`prune()` 同步清理 events / retry_attempts（按 started 过期 + 孤儿）。
+
+### P2-3 部署运维
+
+| 项 | 设计 |
+| --- | --- |
+| Dockerfile | observability-server 单镜像：`pnpm build`（tsup + vite）→ `dist/` + `web/dist` 静态面板，`node dist/cli.js` 启动，EXPOSE 8787 |
+| `/healthz` 就绪探针 | GET（无鉴权）：store 可达 → 200 `{ ok: true }`；DB 打开失败 → 503 |
+| 面板会话持久化 | SessionManager 增加**无状态签名 token**模式：显式 `SESSION_SECRET`（缺省由 ADMIN_PASS 派生）时 token 改为 HMAC 签名（含过期时间），重启不失效、零文件状态；未配置时保留现有内存 Map（行为不变） |
+| 备份 | docs 补充运维说明：`PRUNE_BACKUP`（VACUUM INTO）+ cron/手动备份示例 |
+
+### 改动文件
+
+| 包 | 文件 | 改动 |
+| --- | --- | --- |
+| agent | `telemetry/index.ts`、`runtime/index.ts` | RetryTelemetryInfo 加 spanId + 转发带出 |
+| SDK | `types.ts` | EventRecord / RetryRecord + EventBatch 扩展 |
+| SDK | `telemetry.ts` | onRetry 实现、emit()、采样、redact 挂载 |
+| SDK | `index.ts` | createObservability 暴露 emit/采样/redact 接线 |
+| SDK | `reporter.ts` | 合并/判空/计数/裁剪补齐 retries/events（修复静默丢弃） |
+| SDK | `test/` | emit/采样/redact/onRetry、合并批次保留新字段用例 |
+| Server | `store.ts` | events / retry_attempts 表 + flush + prune + 查询 |
+| Server | `aggregator.ts` | ingestRetry + 重试分布聚合 |
+| Server | `collector.ts` | ingest 解析新字段、/healthz 路由 |
+| Server | `prometheus.ts` | retries/backoff 指标 |
+| Server | `server.ts` / `auth.ts` | traceDetail 重试链、summary 分布、签名 token |
+| Server | `web/` 面板 | Trace 详情事件时间轴 + 重试链、聚合页重试分布 |
+| Server | `Dockerfile`（新） + `docs` | 容器化 / 备份运维说明 |
+| Server | `test/` | events/retries、healthz、签名 token、retention 新表 |
+
+### 验收
+
+- 应用内 `obs.emit('event', {...})` → Trace 详情时间轴出现事件徽标（带 data 展示）；
+- `sampleRate: 0.5` 时模型/tool span 与 toolCalls 上报量约为原来一半，run/成本聚合不变；
+- `redact` 回调把 sessionKey 改写后，ingest 落库值为改写值；
+- provider 重试一次 → Trace 详情出现「第 1 次重试（429，退避 500ms）」链，`/metrics/prometheus` 出现 `aipack_retries_total{status="429"} 1`；
+- `RETENTION_DAYS` 清理后 events/retry_attempts 同步清空；
+- `curl /healthz` 无鉴权 200；配 `SESSION_SECRET` 后重启进程 token 仍有效；`docker build` 可出镜像并启动。
 
 ## P3 · 高可用 / 生态对接（可选）
 

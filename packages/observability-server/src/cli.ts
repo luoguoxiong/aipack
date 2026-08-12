@@ -30,6 +30,7 @@ async function main() {
     dbPath: config.dbPath,
     apps: config.seedApps,
     admin: config.admin,
+    sessionSecret: config.sessionSecret,
     staticDir: config.staticDir,
     retention: config.retention,
     alerts: config.alerts,

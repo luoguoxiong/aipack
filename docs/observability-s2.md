@@ -502,6 +502,47 @@ pnpm --filter @aipack/observability-server dev
 # 或构建后全局安装：pnpm --filter @aipack/observability-server build && pnpm --global add .
 ```
 
+### 8.3 备份与恢复、容器部署（P2-3）
+
+**保留周期自动备份**（`PRUNE_BACKUP=true`）：每次 retention 清理前先执行
+`VACUUM INTO <PRUNE_BACKUP_DIR>/obs-<时间戳>.db` 快照，再删过期明细。
+只做新增、失败不影响主库清理；配合 `RETENTION_DAYS` 实现"细粒度保留 + 粗粒度归档"。
+
+```bash
+# .env
+RETENTION_DAYS=30          # 明细保留 30 天
+PRUNE_INTERVAL_MS=3600000  # 每小时清一次
+PRUNE_BACKUP=true          # 清理前先快照
+PRUNE_BACKUP_DIR=.aipack/backup
+```
+
+**手动备份（cron 示例）**：SQLite 热备份用 `VACUUM INTO`（不锁写），无需停服。
+
+```bash
+# 每天 03:30 全量快照，保留最近 7 份
+30 3 * * *  cd /srv/obs && /usr/bin/sqlite3 .aipack/collector.db \
+  "VACUUM INTO '.aipack/backup/obs-$(date +\%F).db'" && \
+  ls -t .aipack/backup/obs-*.db | tail -n +8 | xargs -r rm --
+```
+
+**容器部署**（`packages/observability-server/Dockerfile`，上下文为仓库根）：
+
+```bash
+docker build -f packages/observability-server/Dockerfile -t aipack/observability-server .
+docker run -d --name obs --restart unless-stopped \
+  -p 8787:8787 -v obs-data:/data \
+  -e ADMIN_PASS=change-me \
+  -e SESSION_SECRET=$(openssl rand -hex 32) \
+  aipack/observability-server
+```
+
+- 数据卷 `/data` 落 DB 与备份目录；镜像含 `/healthz` 健康检查（HEALTHCHECK 自动探测）。
+- `SESSION_SECRET` 显式配置（推荐 `openssl rand -hex 32`）后，面板登录 token 改为
+  无状态 HMAC 签名（含过期时间），重启不失效、零文件状态、不占内存；
+  缺省时若 `ADMIN_PASS` 为显式配置则以之派生；两者都缺省（密码自动生成）回退内存会话。
+
+**恢复**：停服 → 把快照 db 复制回 `DB_PATH` → 启动即可（快照含全部表与索引，路径无关）。
+
 ---
 
 ## 9. 测试与验收（对齐 §8 S2 验收）

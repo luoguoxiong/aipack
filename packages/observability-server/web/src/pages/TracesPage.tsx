@@ -11,11 +11,12 @@ import {
   Space,
   Table,
   Tag,
+  Timeline,
   Typography,
 } from 'antd';
 import { LinkOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api';
-import type { AppInfo, Span, TraceDetail, TraceItem } from '../types';
+import type { AppInfo, RetryAttempt, Span, TraceDetail, TraceEvent, TraceItem } from '../types';
 
 type StatusKey = '' | 'success' | 'error' | 'validation';
 
@@ -216,7 +217,7 @@ export default function TracesPage() {
       {/* Trace 详情抽屉 */}
       <Drawer
         title={detail ? `Trace: ${detail.traceId}` : 'Trace 详情'}
-        width={560}
+        width={620}
         open={!!detail}
         onClose={() => setDetail(null)}
         loading={detailLoading}
@@ -272,6 +273,86 @@ export default function TracesPage() {
               <Empty description="无 span" />
             )}
 
+            {/* P2-2 重试链（per-attempt）：每次重试的 provider/状态码/退避时长 */}
+            {detail.retries?.length ? (
+              <Card size="small" title={`重试明细（${detail.retries.length} 次 attempt）`}>
+                <Table
+                  size="small"
+                  rowKey={(r: RetryAttempt) => `${r.timestamp}-${r.attempt}`}
+                  dataSource={detail.retries}
+                  pagination={false}
+                  columns={[
+                    { title: '模型', dataIndex: 'modelId', render: (v: string) => <span className="mono">{v}</span> },
+                    {
+                      title: '状态码',
+                      dataIndex: 'status',
+                      width: 80,
+                      render: (v?: number) =>
+                        v ? <Tag color={v >= 500 ? 'error' : v >= 400 ? 'warning' : 'default'}>{v}</Tag> : <Tag>unknown</Tag>,
+                    },
+                    { title: '错误', dataIndex: 'errorClass', width: 120, render: (v?: string) => v ?? '—' },
+                    {
+                      title: '退避',
+                      dataIndex: 'delayMs',
+                      width: 80,
+                      render: (v?: number) => (v === undefined ? '—' : `${v}ms`),
+                    },
+                    {
+                      title: '时间',
+                      dataIndex: 'timestamp',
+                      width: 130,
+                      render: (v: number) => new Date(v).toLocaleTimeString('zh-CN'),
+                    },
+                  ]}
+                />
+              </Card>
+            ) : null}
+
+            {/* P2-1 自定义事件时间轴（emit 埋点，按时间升序） */}
+            {detail.events?.length ? (
+              <Card size="small" title={`事件时间轴（${detail.events.length} 条）`}>
+                <Timeline
+                  items={[...detail.events]
+                    .sort((a, b) => a.timestamp - b.timestamp)
+                    .map((e) => ({
+                      color: 'blue',
+                      children: (
+                        <div>
+                          <div style={{ fontWeight: 600 }} className="mono">
+                            {e.name}
+                            {e.sessionKey ? (
+                              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                {' '}
+                                · {e.sessionKey}
+                              </Typography.Text>
+                            ) : null}
+                          </div>
+                          <div style={{ color: '#6b7280', fontSize: 12 }}>
+                            {new Date(e.timestamp).toLocaleString('zh-CN')}
+                          </div>
+                          {e.data !== undefined ? (
+                            <pre
+                              className="mono"
+                              style={{
+                                margin: '4px 0 0',
+                                fontSize: 12,
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-all',
+                                background: '#f5f5f5',
+                                padding: 6,
+                                borderRadius: 6,
+                              }}
+                            >
+                              {formatEventData(e.data)}
+                            </pre>
+                          ) : null}
+                        </div>
+                      ),
+                    }))}
+                />
+              </Card>
+            ) : null}
+
             <Card size="small" title="说明">
               <Typography.Text type="secondary">
                 Trace 即一次 run/stream：model span 含 tokens/成本/重试，tool span 含工具状态；
@@ -287,4 +368,15 @@ export default function TracesPage() {
 
 function KIND_COLOR(kind: Span['kind']): string {
   return kind === 'model' ? '#3b82f6' : kind === 'tool' ? '#22c55e' : '#9ca3af';
+}
+
+/** 事件 data 渲染：对象 JSON 化并截断超长内容（避免撑爆抽屉） */
+function formatEventData(data: unknown): string {
+  if (typeof data === 'string') return data.length > 500 ? `${data.slice(0, 500)}…` : data;
+  try {
+    const s = JSON.stringify(data);
+    return s && s.length > 500 ? `${s.slice(0, 500)}…` : s ?? 'null';
+  } catch {
+    return String(data);
+  }
 }

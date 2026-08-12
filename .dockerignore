@@ -1,0 +1,11 @@
+# Docker 构建上下文忽略（上下文 = 仓库根，供 packages/observability-server/Dockerfile 使用）
+# 注意：不能忽略 workspace 包目录（pnpm --frozen-lockfile 需与 lockfile 一致）
+node_modules
+**/node_modules
+**/dist
+**/.turbo
+.git
+.github
+*.log
+web-docs
+.codeagent

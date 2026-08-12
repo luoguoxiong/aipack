@@ -8,7 +8,7 @@
  */
 
 import { Histogram } from './histogram';
-import type { RunRecord, SpanRecord, ToolCallRecord, PermissionRecord } from '@aipack/observability';
+import type { RunRecord, SpanRecord, ToolCallRecord, PermissionRecord, RetryRecord } from '@aipack/observability';
 import type {
   AggregatedMetrics,
   GroupBy,
@@ -38,6 +38,10 @@ interface DimensionStats {
   permissionDenied: number;
   tools: Map<string, ToolAgg>;
   errorClass: Map<string, number>;
+  /** P2-2 重试分布：status（'429'/'502'/'unknown'）-> 次数 */
+  retriesByStatus: Map<string, number>;
+  /** P2-2 重试退避时长直方图（ms） */
+  retryBackoff: Histogram;
 }
 
 function newStats(): DimensionStats {
@@ -54,6 +58,8 @@ function newStats(): DimensionStats {
     permissionDenied: 0,
     tools: new Map(),
     errorClass: new Map(),
+    retriesByStatus: new Map(),
+    retryBackoff: new Histogram(),
   };
 }
 
@@ -151,6 +157,21 @@ export class Aggregator {
     const st = getOrCreate(this.global, this.nowBucket());
     st.permissionDenied += 1;
     // 仅计入全局计数；工具统计不把被拒调用计入分母（§3 关键坑）
+  }
+
+  ingestRetry(r: RetryRecord): void {
+    this.sweep();
+    const idx = this.nowBucket();
+    const status = r.status !== undefined ? String(r.status) : 'unknown';
+    const modelId = r.modelId || 'unknown';
+    // 重试次数已由 onModelCall.attempts 聚合（retryRate），此处只补分布/退避维度
+    for (const st of [
+      getOrCreate(this.global, idx),
+      this.dimBucket('model', modelId, idx),
+    ]) {
+      bump(st.retriesByStatus, status);
+      st.retryBackoff.insert(r.delayMs);
+    }
   }
 
   // ─── 查询入口 ──────────────────────────────────────────────────
@@ -294,9 +315,12 @@ function mergeStats(target: DimensionStats, src: DimensionStats): void {
     target.tools.set(name, t);
   }
   for (const [cls, c] of src.errorClass) bump(target.errorClass, cls, c);
+  for (const [status, c] of src.retriesByStatus) bump(target.retriesByStatus, status, c);
+  target.retryBackoff.merge(src.retryBackoff);
 }
 
 function toMetrics(st: DimensionStats): AggregatedMetrics {
+  const backoffP50 = st.retryBackoff.quantile(0.5);
   return {
     requests: st.requests,
     successRate: st.requests > 0 ? st.success / st.requests : 0,
@@ -307,6 +331,9 @@ function toMetrics(st: DimensionStats): AggregatedMetrics {
     p99Ms: st.duration.quantile(0.99),
     avgTurns: st.turnsCount > 0 ? st.turnsSum / st.turnsCount : 0,
     retryRate: st.modelCalls > 0 ? st.retries / st.modelCalls : 0,
+    retryByStatus: Object.fromEntries(st.retriesByStatus),
+    retryBackoffP50Ms: backoffP50,
+    retryBackoffP95Ms: st.retryBackoff.quantile(0.95),
     permissionDenied: st.permissionDenied,
     errorClasses: Object.fromEntries(st.errorClass),
   };

@@ -36,6 +36,10 @@ export interface CreateObservabilityOptions {
     serviceName?: string;
     headers?: Record<string, string>;
   };
+  /** P2-1 明细采样率（0–1）：只对 model/tool spans 与 toolCalls 采样，runs/permissions/events 全量。缺省 1 */
+  sampleRate?: number;
+  /** P2-1 脱敏钩子：send 前对整批改写（防 PII 明文上报），示例见 docs/observability-roadmap.md §P2-1 */
+  redact?: (batch: import('./types').EventBatch) => import('./types').EventBatch;
 }
 
 export interface Observability {
@@ -43,6 +47,8 @@ export interface Observability {
   telemetry: ObservabilityTelemetry;
   /** 结构化 logger：自动注入当前 run 的 traceId（P1-1 日志关联） */
   logger: Logger;
+  /** P2-1 自定义业务事件：run 内自动带 traceId，入 Trace 时间轴 */
+  emit(name: string, data?: unknown, opts?: { traceId?: string; sessionKey?: string }): void;
   /** 立即上报队列中的残留数据 */
   flush(): void;
   /** 停止定时器并等残留上报完成（进程退出前调用） */
@@ -77,6 +83,8 @@ export function createObservability(opts: CreateObservabilityOptions): Observabi
   const telemetry = new ObservabilityTelemetry(sink, {
     intervalMs: opts.flushIntervalMs,
     batchSize: opts.flushBatchSize,
+    sampleRate: opts.sampleRate,
+    redact: opts.redact,
   });
   const logger = createLogger({
     tags: { app: opts.appId },
@@ -86,6 +94,7 @@ export function createObservability(opts: CreateObservabilityOptions): Observabi
   return {
     telemetry,
     logger,
+    emit: (name, data, emitOpts) => telemetry.emit(name, data, emitOpts),
     flush: () => telemetry.flush(),
     close: async () => {
       await telemetry.close();
@@ -108,5 +117,7 @@ export type {
   SpanRecord,
   ToolCallRecord,
   PermissionRecord,
+  EventRecord,
+  RetryRecord,
   EventBatch,
 } from './types';

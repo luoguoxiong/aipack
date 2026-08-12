@@ -185,6 +185,30 @@ export default function DashboardPage() {
     };
   }, [summary]);
 
+  // 重试分布（P2-2）：per-attempt 按 HTTP 状态码分类
+  const retryEntries = useMemo(
+    () => Object.entries(summary?.retryByStatus ?? {}).sort((a, b) => b[1] - a[1]),
+    [summary],
+  );
+
+  const retryOption: EChartsOption = useMemo(
+    () => ({
+      tooltip: { trigger: 'axis' },
+      grid: { left: 50, right: 24, top: 24, bottom: 40 },
+      xAxis: { type: 'category', data: retryEntries.map(([status]) => status) },
+      yAxis: { type: 'value', minInterval: 1 },
+      series: [
+        {
+          type: 'bar',
+          data: retryEntries.map(([, count]) => count),
+          itemStyle: { color: '#6d28d9' },
+          label: { show: true, position: 'top' },
+        },
+      ],
+    }),
+    [retryEntries],
+  );
+
   const toolColumns = [
     {
       title: '工具',
@@ -350,6 +374,43 @@ export default function DashboardPage() {
           权限拦截 {summary.permissionDenied} 次（未计入工具成功率分母）
         </Typography.Text>
       ) : null}
+
+      {/* 重试分析（P2-2）：per-attempt 状态码分布 + 退避分位 */}
+      <Row gutter={[12, 12]}>
+        <Col span={14}>
+          <Card size="small" title="重试分布（按 HTTP 状态码，per-attempt）">
+            {retryEntries.length ? <EChart option={retryOption} height={260} /> : <Empty description="无重试记录" />}
+          </Card>
+        </Col>
+        <Col span={10}>
+          <Card size="small" title="重试退避时长">
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <Row gutter={[12, 12]}>
+                <Col span={12}>
+                  <KpiCard
+                    title="退避 P50"
+                    value={summary && summary.retryBackoffP50Ms > 0 ? Math.round(summary.retryBackoffP50Ms) : '—'}
+                    suffix="ms"
+                    color="#6d28d9"
+                  />
+                </Col>
+                <Col span={12}>
+                  <KpiCard
+                    title="退避 P95"
+                    value={summary && summary.retryBackoffP95Ms > 0 ? Math.round(summary.retryBackoffP95Ms) : '—'}
+                    suffix="ms"
+                    color="#7c3aed"
+                  />
+                </Col>
+              </Row>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                每次重试之间的退避等待时长分位数。无重试数据时显示 0；告警可用 retryRate /
+                retryByStatus 观察限流（429）与上游故障（5xx）趋势。
+              </Typography.Text>
+            </Space>
+          </Card>
+        </Col>
+      </Row>
     </Space>
   );
 }
