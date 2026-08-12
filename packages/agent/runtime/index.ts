@@ -1434,7 +1434,8 @@ export class AgentRuntime implements Runtime {
     await this.emitTelemetry('onRunEnd', {
       traceId: compilation.traceId,
       sessionKey,
-      request,
+      // 请求未显式指定 model 时补实际模型（模型排行按 run 级 requests 统计，缺省会落入 'unknown'）
+      request: request.model ? request : { ...request, model: this._model.id },
       durationMs: activeMs + queuedMs,
       activeMs,
       queuedMs,
