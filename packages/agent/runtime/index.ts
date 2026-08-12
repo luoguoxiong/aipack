@@ -1453,13 +1453,15 @@ export class AgentRuntime implements Runtime {
     });
   }
 
-  /** run 级错误分类：terminate → 'terminated'；否则取最后一个模型调用的错误分类 */
+  /** run 级错误分类：terminate → 'terminated'；否则只看最后一条 assistant 消息（与 buildResult 的 result.success 同口径） */
   private runErrorClass(compilation: Compilation): ErrorClass | undefined {
     if (compilation.terminateReason) return 'terminated';
     const messages = compilation.messages;
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
-      if (m.role === 'assistant' && (m as AssistantMessage).errorMessage) {
+      if (m.role === 'assistant') {
+        // 最后一条 assistant 无 errorMessage → run 成功（早期轮次失败已被后续轮次恢复，不判错误）
+        if (!(m as AssistantMessage).errorMessage) return undefined;
         const cls = errorClassFromMessage((m as AssistantMessage).errorMessage!);
         return (cls as ErrorClass | undefined) ?? 'unknown';
       }
