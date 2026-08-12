@@ -127,6 +127,29 @@ describe('Telemetry: onRunEnd', () => {
     assert.equal(onRunEnd.mock.calls[1].arguments[0].success, true);
     assert.equal(onRunEnd.mock.calls[1].arguments[0].errorClass, undefined);
   });
+  it('run 未显式指定 model 时补实际模型（模型排行不落入 unknown）', async () => {
+    const onRunEnd = mock.fn(() => undefined);
+    const runtime = createRuntime({
+      model: {
+        id: 'deepseek-test',
+        name: 'test',
+        provider: 'test',
+        contextWindow: 8192,
+        maxTokens: 2048,
+        reasoning: false,
+      },
+      streamFn: mockStreamFn([assistant('hello')]),
+      telemetry: { onRunEnd },
+    });
+
+    // 未指定 model → 补 runtime 实际模型
+    await runtime.run(createRequest('hi'));
+    assert.equal(onRunEnd.mock.calls[0].arguments[0].request.model, 'deepseek-test');
+
+    // 显式指定 model → 优先保留请求指定值
+    await runtime.run(createRequest('hi', { model: 'custom-model' }));
+    assert.equal(onRunEnd.mock.calls[1].arguments[0].request.model, 'custom-model');
+  });
 });
 
 // ─── onToolCall ───────────────────────────────────────────────────
