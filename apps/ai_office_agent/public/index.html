@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Office Agent · aipack</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__inner">
+      <h1>📊 AI Office Agent</h1>
+      <p class="hero__sub">基于 aipack 的 Office 文档智能体 · Excel / Word / PPT 增删改查 · 文件工作区 + 回收站</p>
+      <div id="status" class="status">读取服务状态…</div>
+      <div class="hero-controls">
+        <label class="field">
+          <span>LLM 模型</span>
+          <select id="model"></select>
+        </label>
+        <label class="field">
+          <span>LLM API Key <span id="apiKeyHint" class="hint"></span></span>
+          <div class="input-with-toggle">
+            <input id="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" spellcheck="false" />
+            <button id="apiKeyToggle" type="button" class="btn btn--ghost btn--sm" aria-label="显示/隐藏">👁</button>
+          </div>
+        </label>
+      </div>
+      <div class="workspace-row">
+        <label class="field">
+          <span>📁 工作区间(目录) <span id="workspaceState" class="hint"></span></span>
+          <div class="input-with-toggle">
+            <input id="workspaceInput" type="text" placeholder="/path/to/workspace" spellcheck="false" />
+            <button id="workspaceApply" type="button" class="btn btn--ghost">切换</button>
+            <button id="workspaceDefault" type="button" class="btn btn--ghost" title="回到默认工作区">默认</button>
+          </div>
+        </label>
+      </div>
+      <div class="examples">
+        <span class="examples__label">试试:</span>
+        <button class="chip" data-prompt="新建一个 Excel 文件 output/销售报表.xlsx,包含两个 sheet:3 月销售与 4 月销售,每张表有产品、销量、销售额列,各填 5 行数据">📈 新建 Excel 报表</button>
+        <button class="chip" data-prompt="读取 销售报表.xlsx,总结每月总销售额并对比">📖 读取并分析 Excel</button>
+        <button class="chip" data-prompt="生成一份 Word 周报 output/周报.docx,包含标题、本周工作总结(4 条要点)和下周计划(表格)">📄 生成 Word 周报</button>
+        <button class="chip" data-prompt="生成一个 5 页的产品发布会 PPT output/发布会.pptx,主题为「AI 办公助手发布」">🎞️ 生成 PPT</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="card chat-card">
+      <div id="messages" class="messages">
+        <div class="msg msg--assistant">
+          <div class="msg__bubble">你好!我是 Office 文档助手,可以帮你<span class="hl">创建 / 读取 / 修改 / 删除</span>Excel、Word、PPT 文件。生成的文件会出现在右侧「工作区文件」面板,可直接下载。</div>
+        </div>
+      </div>
+      <div class="composer">
+        <div id="selectedFileBar" class="selected-bar hidden"></div>
+        <div class="composer-row">
+          <textarea id="input" rows="2" placeholder="例如:把 销售报表.xlsx 中 B3 单元格改成 999,并在末尾追加一行数据…(Enter 发送, Shift+Enter 换行)"></textarea>
+          <button id="sendBtn" class="btn btn--primary">发送</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="card files-card">
+      <div class="files-head">
+        <h2>📁 工作区文件</h2>
+        <button id="refreshFiles" class="btn btn--ghost btn--sm">刷新</button>
+      </div>
+      <ul id="fileList" class="file-list">
+        <li class="file-list__empty">暂无文件</li>
+      </ul>
+      <p class="files-hint">生成的文件都保存在 <code>office-workspace/</code> 目录,删除操作会移入 <code>.trash/</code> 回收站。</p>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <span>Powered by <a href="https://github.com/luoguoxiong/aipack" target="_blank" rel="noopener">aipack</a></span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
