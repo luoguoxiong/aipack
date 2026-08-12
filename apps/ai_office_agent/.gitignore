@@ -1,0 +1,10 @@
+# 运行产物
+dist/
+node_modules/
+.env
+
+# Office 文件工作区(生成的 xlsx/docx/pptx 都在这里)
+office-workspace/
+
+# aipack 会话数据
+.aipack/

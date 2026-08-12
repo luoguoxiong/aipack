@@ -1,0 +1,34 @@
+{
+  "name": "ai-office-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "基于 aipack 的 Office 智能体 Web 应用(Excel/Word/PPT 增删改查 + 文件工作区 + 回收站,全部操作经 OfficeCLI)",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "build": "tsc",
+    "serve": "node dist/server.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ai",
+    "office",
+    "excel",
+    "docx",
+    "pptx",
+    "aipack"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@aipack/agent": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}
