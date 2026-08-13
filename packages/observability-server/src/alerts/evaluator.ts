@@ -11,7 +11,7 @@ import type { Aggregator } from '../aggregator';
 import type { AggregatedMetrics } from '../types';
 import type { SQLiteStore, AlertRuleRow } from '../store';
 import type { Notifier } from './notify';
-import { compare, requiresNoDataGuard } from './rules';
+import { compare, requiresNoDataGuard, isVersionRegressionMetric, MIN_VERSION_REQUESTS } from './rules';
 
 export interface EvaluatorDeps {
   /** 按应用解析聚合器（与查询 API 同一实例） */
@@ -80,8 +80,8 @@ export function createAlertEvaluator(deps: EvaluatorDeps): AlertEvaluator {
         return summary.retryRate;
       case 'permissionDenied':
         return summary.permissionDenied;
-      case 'costUsd':
-        return summary.costUsd;
+      case 'tokensTotal':
+        return summary.totalTokens;
       case 'requests':
         return summary.requests;
       default:
@@ -89,7 +89,46 @@ export function createAlertEvaluator(deps: EvaluatorDeps): AlertEvaluator {
     }
   }
 
-  async function transition(rule: AlertRuleRow, value: number, status: 'fired' | 'recovered', st: RuleState): Promise<void> {
+  /**
+   * 版本回归评估：DB 直查取最近两个有数据的版本（lastSeenAt 倒序）做差。
+   *
+   * - vA = 最新版本，vB = 上一版本；value = 新 - 旧（成功率负 = 退化，P95 正 = 退化）；
+   * - 冷启动防护（对齐 requiresNoDataGuard）：不足两个版本 / 任一侧请求量 < MIN_VERSION_REQUESTS
+   *   / unknown 不参与对比 → 返回 undefined 跳过评估；
+   * - 阈值语义：versionSuccessRate 单位=百分点（0.1 = 10%），versionP95Ms 单位=ms。
+   */
+  function computeVersionRegression(
+    rule: AlertRuleRow,
+  ): { value: number; violated: boolean; vA: string; vB: string } | undefined {
+    const until = Date.now();
+    const since = until - rule.lookbackMs;
+    const versions = deps.store
+      .queryVersionMetrics({ since, until, appId: rule.appId || undefined })
+      .filter((v) => v.version !== 'unknown'); // 旧 SDK/未配置版本不参与发布回归对比
+    if (versions.length < 2) return undefined; // 冷启动：窗口内不足两个版本
+    const a = versions[0]; // 最新
+    const b = versions[1]; // 上一版本
+    if (a.requests < MIN_VERSION_REQUESTS || b.requests < MIN_VERSION_REQUESTS) {
+      return undefined; // 冷启动：任一侧请求量不足，指标不可靠
+    }
+    if (rule.metric === 'versionSuccessRate') {
+      const value = a.successRate - b.successRate;
+      return { value, violated: -value > rule.threshold, vA: a.version, vB: b.version };
+    }
+    if (rule.metric === 'versionP95Ms') {
+      const value = a.p95Ms - b.p95Ms;
+      return { value, violated: value > rule.threshold, vA: a.version, vB: b.version };
+    }
+    return undefined;
+  }
+
+  async function transition(
+    rule: AlertRuleRow,
+    value: number,
+    status: 'fired' | 'recovered',
+    st: RuleState,
+    ctx?: { vA?: string; vB?: string },
+  ): Promise<void> {
     const now = Date.now();
     deps.store.insertAlertEvent({
       ruleId: rule.id,
@@ -105,7 +144,7 @@ export function createAlertEvaluator(deps: EvaluatorDeps): AlertEvaluator {
     // 冷却：距上次通知不足 cooldownMs 则只记事件不通知
     if (st.lastNotifiedAt !== undefined && now - st.lastNotifiedAt < rule.cooldownMs) return;
     st.lastNotifiedAt = now;
-    await deps.notifier.send({ status, rule, value, at: now });
+    await deps.notifier.send({ status, rule, value, at: now, vA: ctx?.vA, vB: ctx?.vB });
   }
 
   async function evaluateOnce(): Promise<number> {
@@ -113,19 +152,31 @@ export function createAlertEvaluator(deps: EvaluatorDeps): AlertEvaluator {
     let transitions = 0;
     for (const rule of rules) {
       if (!rule.enabled) continue;
-      const value = computeValue(rule);
-      if (value === undefined) continue;
-      const violated = compare(value, rule.operator, rule.threshold);
+      let value: number;
+      let violated: boolean;
+      let ctx: { vA?: string; vB?: string } | undefined;
+      if (isVersionRegressionMetric(rule.metric)) {
+        const reg = computeVersionRegression(rule);
+        if (!reg) continue; // 冷启动/数据不足 → 跳过（状态保持不变）
+        value = reg.value;
+        violated = reg.violated;
+        ctx = { vA: reg.vA, vB: reg.vB };
+      } else {
+        const v = computeValue(rule);
+        if (v === undefined) continue;
+        value = v;
+        violated = compare(v, rule.operator, rule.threshold);
+      }
       const st = stateOf(rule.id);
       if (violated && !st.firing) {
         st.firing = true;
         st.lastFiredAt = Date.now();
         transitions += 1;
-        await transition(rule, value, 'fired', st);
+        await transition(rule, value, 'fired', st, ctx);
       } else if (!violated && st.firing) {
         st.firing = false;
         transitions += 1;
-        await transition(rule, value, 'recovered', st);
+        await transition(rule, value, 'recovered', st, ctx);
       }
     }
     return transitions;

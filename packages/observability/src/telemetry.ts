@@ -31,6 +31,8 @@ export interface FlushQueueOptions {
   sampleRate?: number;
   /** P2-1 脱敏钩子：send 前对整批改写（防 PII 明文上报） */
   redact?: (batch: EventBatch) => EventBatch;
+  /** 发布版本：注入每条 run 记录（RunRecord.appVersion），供收集端按版本聚合。缺省不携带 */
+  appVersion?: string;
 }
 
 const emptyBatch = (): EventBatch => ({
@@ -51,11 +53,13 @@ export class ObservabilityTelemetry implements Telemetry {
   private batchSize: number;
   private sampleRate: number;
   private redact?: (batch: EventBatch) => EventBatch;
+  private appVersion?: string;
 
   constructor(private reporter: { send(batch: EventBatch): Promise<boolean> }, opts: FlushQueueOptions = {}) {
     this.batchSize = opts.batchSize ?? 50;
     this.sampleRate = opts.sampleRate ?? 1;
     this.redact = opts.redact;
+    this.appVersion = opts.appVersion;
     const intervalMs = opts.intervalMs ?? 5000;
     this.timer = setInterval(() => void this.flush(), intervalMs);
     this.timer.unref?.();
@@ -116,7 +120,8 @@ export class ObservabilityTelemetry implements Telemetry {
       attempts: info.attempts,
       inputTokens: info.inputTokens,
       outputTokens: info.outputTokens,
-      costUsd: info.costUsd,
+      cacheRead: info.cacheRead,
+      cacheWrite: info.cacheWrite,
       sessionKey: info.sessionKey,
     });
     this.maybeFlush();
@@ -223,7 +228,7 @@ export class ObservabilityTelemetry implements Telemetry {
       outputTokens: info.tokens.output,
       cacheRead: info.tokens.cacheRead,
       cacheWrite: info.tokens.cacheWrite,
-      costUsd: info.costUsd,
+      ...(this.appVersion !== undefined ? { appVersion: this.appVersion } : {}),
     };
   }
 
@@ -239,7 +244,6 @@ export class ObservabilityTelemetry implements Telemetry {
       errorClass: info.errorClass,
       inputTokens: info.tokens.input,
       outputTokens: info.tokens.output,
-      costUsd: info.costUsd,
       sessionKey: info.sessionKey,
     };
   }

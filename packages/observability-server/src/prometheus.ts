@@ -57,7 +57,7 @@ export function renderPrometheusMetrics(deps: PrometheusDeps): string {
   const p50: string[] = [];
   const p95: string[] = [];
   const p99: string[] = [];
-  const cost: string[] = [];
+  const tokensTotal: string[] = [];
   const permissionDenied: string[] = [];
   const errors: string[] = [];
   const toolCalls: string[] = [];
@@ -79,7 +79,7 @@ export function renderPrometheusMetrics(deps: PrometheusDeps): string {
     p50.push(`aipack_p50_ms${lbl} ${fmt(s.p50Ms)}`);
     p95.push(`aipack_p95_ms${lbl} ${fmt(s.p95Ms)}`);
     p99.push(`aipack_p99_ms${lbl} ${fmt(s.p99Ms)}`);
-    cost.push(`aipack_cost_usd_total${lbl} ${fmt(s.costUsd)}`);
+    tokensTotal.push(`aipack_tokens_total${lbl} ${fmt(s.totalTokens)}`);
     permissionDenied.push(`aipack_permission_denied_total${lbl} ${fmt(s.permissionDenied)}`);
     for (const [cls, count] of Object.entries(s.errorClasses)) {
       errors.push(
@@ -108,7 +108,7 @@ export function renderPrometheusMetrics(deps: PrometheusDeps): string {
   metric('P50 耗时 ms（窗口在线分位数）', 'gauge', p50, out);
   metric('P95 耗时 ms（窗口在线分位数）', 'gauge', p95, out);
   metric('P99 耗时 ms（窗口在线分位数）', 'gauge', p99, out);
-  metric('累计成本 USD（窗口）', 'gauge', cost, out);
+  metric('累计 token 消耗量（窗口）', 'gauge', tokensTotal, out);
   metric('权限拦截计数（窗口）', 'counter', permissionDenied, out);
   metric('错误计数（窗口，按 errorClass）', 'counter', errors, out);
   metric('工具调用计数（窗口）', 'counter', toolCalls, out);

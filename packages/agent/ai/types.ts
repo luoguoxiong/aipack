@@ -50,13 +50,6 @@ export interface Usage {
   cacheWrite?: number;
   /** 推理 token 数（completion_tokens 的子集） */
   reasoning?: number;
-  cost: {
-    input: number;
-    output: number;
-    total: number;
-    cacheRead?: number;
-    cacheWrite?: number;
-  };
 }
 
 // ─── 消息 ─────────────────────────────────────────────────────
@@ -105,13 +98,6 @@ export interface Context {
 
 // ─── 模型 ────────────────────────────────────────────────────────
 
-export interface ModelCost {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-}
-
 export interface Model<TApi extends Api = Api> {
   id: string;
   name: string;
@@ -121,7 +107,6 @@ export interface Model<TApi extends Api = Api> {
   reasoning: boolean;
   input: string[]; // ['text'] | ['text', 'image']
   output?: string[];
-  cost: ModelCost;
   contextWindow: number;
   maxTokens: number;
   headers?: Record<string, string>;
@@ -353,7 +338,6 @@ export function createEmptyUsage(): Usage {
     input: 0,
     output: 0,
     total: 0,
-    cost: { input: 0, output: 0, total: 0 },
   };
 }
 

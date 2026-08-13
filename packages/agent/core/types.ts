@@ -76,7 +76,7 @@ export type Message = UserMessage | AssistantMessage | ToolResultMessage | Syste
 
 /**
  * 用量与费用。与 aipack/ai 的 Usage 结构对齐：
- * cacheRead/cacheWrite/reasoning/cost 为可选字段，旧消费者无需感知。
+ * cacheRead/cacheWrite/reasoning 为可选字段，旧消费者无需感知。
  */
 export interface Usage {
   input: number;
@@ -90,14 +90,6 @@ export interface Usage {
   reasoning?: number;
   /** 还原后的原始 token 总数（input + output + cacheRead + cacheWrite） */
   totalTokens?: number;
-  /** 费用明细（美元） */
-  cost?: {
-    input: number;
-    output: number;
-    total: number;
-    cacheRead?: number;
-    cacheWrite?: number;
-  };
 }
 
 // ─── 模型定义 ─────────────────────────────────────────────────────

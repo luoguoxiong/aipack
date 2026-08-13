@@ -33,10 +33,12 @@ const METRIC_OPTIONS: { value: AlertMetric; label: string }[] = [
   { value: 'avgTurns', label: '平均步数' },
   { value: 'retryRate', label: '重试率' },
   { value: 'permissionDenied', label: '权限拦截数' },
-  { value: 'costUsd', label: '成本(USD)' },
+  { value: 'tokensTotal', label: 'Token 消耗量' },
   { value: 'requests', label: '请求量' },
   { value: 'toolSuccessRate', label: '工具成功率' },
   { value: 'errorClassCount', label: '错误分类计数' },
+  { value: 'versionSuccessRate', label: '版本成功率回归' },
+  { value: 'versionP95Ms', label: '版本 P95 耗时回归' },
 ];
 
 const OPERATOR_OPTIONS: { value: AlertOperator; label: string }[] = [
@@ -44,6 +46,7 @@ const OPERATOR_OPTIONS: { value: AlertOperator; label: string }[] = [
   { value: 'lte', label: '≤ 小于等于' },
   { value: 'gt', label: '> 大于' },
   { value: 'gte', label: '≥ 大于等于' },
+  { value: 'regress_by', label: '退化幅度' },
 ];
 
 const WINDOW_OPTIONS = [
@@ -69,10 +72,12 @@ const METRIC_TAGS: Record<string, string> = {
   avgTurns: 'avgTurns',
   retryRate: 'retryRate',
   permissionDenied: 'permissionDenied',
-  costUsd: 'costUsd',
+  tokensTotal: 'tokensTotal',
   requests: 'requests',
   toolSuccessRate: 'toolSuccessRate',
   errorClassCount: 'errorClassCount',
+  versionSuccessRate: 'versionSuccessRate',
+  versionP95Ms: 'versionP95Ms',
 };
 
 function fmtMs(ms: number): string {
@@ -97,6 +102,12 @@ export default function AlertsPage() {
 
   const [form] = Form.useForm();
   const metric = Form.useWatch('metric', form);
+  const isVersionRegression = metric === 'versionSuccessRate' || metric === 'versionP95Ms';
+
+  // 版本回归指标固定使用 regress_by 算子，自动锁定
+  useEffect(() => {
+    if (isVersionRegression) form.setFieldValue('operator', 'regress_by');
+  }, [isVersionRegression, form]);
 
   const loadRules = useCallback(async () => {
     setLoading(true);
@@ -225,10 +236,11 @@ export default function AlertsPage() {
       width: 160,
       render: (_: unknown, r: AlertRule) => (
         <span className="mono">
+          {r.operator === 'regress_by' && <>退化幅度 {'>'} {r.threshold}</>}
           {r.operator === 'lt' && '<'}
           {r.operator === 'lte' && '≤'}
           {r.operator === 'gt' && '>'}
-          {r.operator === 'gte' && '≥'} {r.threshold}
+          {r.operator === 'gte' && '≥'} {r.operator !== 'regress_by' && r.threshold}
         </span>
       ),
     },
@@ -403,17 +415,34 @@ export default function AlertsPage() {
             <Form.Item name="metric" label="指标" style={{ width: 200 }} rules={[{ required: true }]}>
               <Select options={METRIC_OPTIONS} />
             </Form.Item>
-            <Form.Item name="operator" label="条件" style={{ width: 130 }} rules={[{ required: true }]}>
-              <Select options={OPERATOR_OPTIONS} />
+            <Form.Item name="operator" label="条件" style={{ width: 150 }} rules={[{ required: true }]}>
+              <Select
+                options={OPERATOR_OPTIONS.map((o) => ({
+                  ...o,
+                  disabled: o.value === 'regress_by' && !isVersionRegression,
+                }))}
+                disabled={isVersionRegression}
+              />
             </Form.Item>
             <Form.Item
               name="threshold"
-              label="阈值"
+              label={isVersionRegression ? '退化幅度阈值' : '阈值'}
+              tooltip={
+                isVersionRegression
+                  ? '新版本相对旧版本的退化幅度：成功率单位=百分点（0.1=10%），P95 耗时单位=ms'
+                  : undefined
+              }
               rules={[{ required: true, message: '请输入阈值' }]}
             >
-              <InputNumber style={{ width: 140 }} step={0.01} />
+              <InputNumber style={{ width: 140 }} step={0.01} min={0} />
             </Form.Item>
           </Space>
+          {isVersionRegression && (
+            <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+              对比回看窗口内最近两个有数据的版本（排除 unknown），新版本相对旧版本退化超过阈值时触发；
+              不足两个版本或任一侧请求量 &lt; 10 时不评估（冷启动防护）。
+            </Typography.Text>
+          )}
           {metric === 'toolSuccessRate' && (
             <Form.Item
               name="toolName"

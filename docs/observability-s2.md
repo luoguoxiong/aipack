@@ -108,7 +108,7 @@ export class Histogram {
 - **时间桶**：`bucketMs`（默认 1min）粒度切片，窗口 `windowMs`（默认 60min），
   事件到达时惰性清理过期桶（`now - windowMs` 之前的桶整体丢弃）；
 - **维度统计**：`model` / `tool` / `session` 三个维度表，每个维度维护请求量、
-  成功数、错误分类计数、成本、耗时直方图、turnCount 分布、重试次数；
+  成功数、错误分类计数、token 消耗量、耗时直方图、turnCount 分布、重试次数；
 - **工具统计**：`tools` 表按工具名维护 calls / ok / error / avgMs；
   成功率分母 = ok + error，**blocked/skipped 不计入**（§3 关键坑）。
 
@@ -121,8 +121,8 @@ export interface SummaryFilter {
 export interface AggregatedMetrics {
   requests: number;
   successRate: number; // status='success' 且无 errorClass 占比
-  costUsd: number;
-  costUnknown: number; // 未配费率调用数
+  /** token 总消耗量（模型 span 累计，input+output+cacheRead+cacheWrite） */
+  totalTokens: number;
   p50Ms: number;
   p95Ms: number;
   p99Ms: number;
@@ -153,7 +153,7 @@ export class Aggregator {
   timeseries(
     filter: SummaryFilter,
     stepMs: number,
-    metric: 'requests' | 'successRate' | 'costUsd',
+    metric: 'requests' | 'successRate' | 'tokensTotal',
   ): Array<{ t: number; v: number }>;
   tools(filter: SummaryFilter): ToolStat[]; // 按成功率升序
 }
@@ -182,7 +182,6 @@ export interface RunRecord {
   outputTokens: number;
   cacheRead?: number;
   cacheWrite?: number;
-  costUsd?: number;
 }
 export interface SpanRecord {
   traceId: string;
@@ -196,8 +195,9 @@ export interface SpanRecord {
   attempts?: number;
   inputTokens?: number;
   outputTokens?: number;
-  costUsd?: number;
-  sessionKey?: string; // 支撑 session 维度成本统计（新增）
+  cacheRead?: number;
+  cacheWrite?: number;
+  sessionKey?: string; // 支撑 session 维度 token 统计（新增）
 }
 export interface ToolCallRecord {
   traceId: string;
@@ -367,7 +367,7 @@ export function createCollector(opts: CollectorOptions): Collector; // 收集端
 | 工具成功率 | `status='ok' / (ok + error)`，**blocked/skipped 不计入分母**                                                                                                                                                                          |
 | 响应耗时   | `durationMs`（端到端）、`queuedMs`（排队）单独统计，排队不计入模型耗时                                                                                                                                                                |
 | 重试率     | `onModelCall.attempts - 1` 求和 / 模型调用数                                                                                                                                                                                          |
-| 成本       | 直接读 `usage.cost.total`（S1 已透传 `costUsd`），未配费率返回 0 时标记 `costUnknown`                                                                                                                                                 |
+| token 消耗量 | `Σ (input + output + cacheRead + cacheWrite)`（模型 span 累计，provider 已还原四类 token，无"未配费率"概念） |
 | step 长度  | `turnCount` 分布，>10 步视为"循环风险"（仅统计口径，不告警）                                                                                                                                                                          |
 
 ---
@@ -392,8 +392,7 @@ CREATE TABLE runs (
   input_tokens INTEGER,
   output_tokens INTEGER,
   cache_read   INTEGER,
-  cache_write  INTEGER,
-  cost_usd     REAL
+  cache_write  INTEGER
 );
 CREATE INDEX idx_runs_started ON runs(started_at);
 CREATE INDEX idx_runs_session ON runs(session_key);
@@ -411,8 +410,9 @@ CREATE TABLE spans (
   attempts     INTEGER,
   input_tokens INTEGER,
   output_tokens INTEGER,
-  cost_usd     REAL,
-  session_key  TEXT               -- 新增：session 维度成本统计
+  cache_read   INTEGER,
+  cache_write  INTEGER,
+  session_key  TEXT               -- 新增：session 维度 token 统计
 );
 CREATE INDEX idx_spans_trace ON spans(trace_id);
 CREATE INDEX idx_spans_session ON spans(session_key);
@@ -430,7 +430,7 @@ CREATE INDEX idx_tool_calls_trace ON tool_calls(trace_id);
 ```
 
 > 与附录 A 的差异：增加 `idx_runs_session`（`/traces?sessionKey=` 筛选用）、
-> `spans.session_key`（session 维度成本统计）与 `spans.name` 语义说明，其余原样。
+> `spans.session_key`（session 维度 token 统计）与 `spans.name` 语义说明，其余原样。
 
 ---
 
@@ -443,10 +443,10 @@ POST /api/v1/ingest
   → 200 { ok: true } | 401 { error } | 400 { error }
 
 GET /metrics/summary?since=&until=&groupBy=model|tool|session
-  → 无 groupBy: { requests, successRate, costUsd, p50Ms, p95Ms, p99Ms, avgTurns, retryRate, permissionDenied }
+  → 无 groupBy: { requests, successRate, totalTokens, p50Ms, p95Ms, p99Ms, avgTurns, retryRate, permissionDenied }
   → 有 groupBy: { [key]: { ...同上 } }
 
-GET /metrics/timeseries?since=&until=&step=5m&metric=requests|successRate|costUsd
+GET /metrics/timeseries?since=&until=&step=5m&metric=requests|successRate|tokensTotal
   → [{ t: 1690000000000, v: 12 }, ...]           // step 最小 1m
 
 GET /metrics/tools?since=&until=
@@ -455,12 +455,12 @@ GET /metrics/tools?since=&until=
 GET /traces?since=&until=&status=&model=&tool=&sessionKey=&page=1&pageSize=20
   → { page, pageSize, total,
       items: [{ traceId, startedAt, durationMs, status, turns,
-                tokens: { input, output }, costUsd, retries, sessionKey }] }
+                tokens: { input, output, cacheRead, cacheWrite }, retries, sessionKey }] }
 
 GET /traces/:traceId
   → { traceId,
       spans: [{ kind, name, startedAt, durationMs, status, errorClass,
-                attempts, tokens: { input, output }, costUsd }] }
+                attempts, tokens: { input, output, cacheRead, cacheWrite } }] }
 ```
 
 - 时间参数为 epoch ms；缺省 `since=now-windowMs`、`until=now`；
@@ -561,7 +561,7 @@ docker run -d --name obs --restart unless-stopped \
 | 模型重试      | mock streamFn 首次抛可重试错误 → span.attempts=2、`retryRate=1`                                                  |
 | 流式请求      | run 落库可查询（durationMs）                                                                                     |
 | 校验失败请求  | `/traces?status=validation` 命中；`successRate=0`                                                                |
-| cost 透传     | usage.cost.total 出现在 summary.costUsd 与 span.costUsd                                                          |
+| token 透传     | usage.input/output/cacheRead/cacheWrite 汇总进 summary.totalTokens 与 span.tokens                                             |
 | 鉴权失败      | 错误 secret → 401，数据不入库，客户端丢弃且**不缓存**（重试无意义）                                              |
 | 缓存补报      | 断网（死端口）落缓存 → 收集服务恢复后补报成功、缓存删除、数据可查                                                |
 | 缓存裁剪      | 超过 maxCacheSize 丢弃最旧记录（保留最新）                                                                       |

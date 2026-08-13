@@ -16,7 +16,9 @@ import { createRuntime, createRequest } from '@aipack/agent';
 import type { StreamFn, StreamEvent, Message, AssistantMessage, Tool } from '@aipack/agent';
 import { createObservability, HttpReporter, ObservabilityTelemetry } from '@aipack/observability';
 import type { EventBatch } from '@aipack/observability';
+import Database from 'better-sqlite3';
 import { createCollector, createCollectorServer, SQLiteStore } from '../src/index';
+import { Aggregator } from '../src/aggregator';
 import type { CollectorOptions } from '../src/index';
 import type { RunRecord, SpanRecord, ToolCallRecord } from '@aipack/observability';
 
@@ -32,7 +34,7 @@ function mockStreamFn(messages: Message[]): StreamFn {
 
 function assistant(
   text: string,
-  usage?: { input?: number; output?: number; cost?: { input: number; output: number; total: number } },
+  usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number },
 ): AssistantMessage {
   return {
     role: 'assistant',
@@ -42,7 +44,8 @@ function assistant(
       input: usage?.input ?? 10,
       output: usage?.output ?? 5,
       total: (usage?.input ?? 10) + (usage?.output ?? 5),
-      ...(usage?.cost ? { cost: usage.cost } : {}),
+      ...(usage?.cacheRead !== undefined ? { cacheRead: usage.cacheRead } : {}),
+      ...(usage?.cacheWrite !== undefined ? { cacheWrite: usage.cacheWrite } : {}),
     },
     timestamp: Date.now(),
   };
@@ -166,11 +169,12 @@ async function postIngest(
   baseUrl: string,
   appId: string,
   appSecret: string,
+  runs: RunRecord[] = [],
 ): Promise<number> {
   const res = await fetch(`${baseUrl}/api/v1/ingest`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-app-id': appId, 'x-app-secret': appSecret },
-    body: JSON.stringify({ appId, runs: [], spans: [], toolCalls: [], permissions: [] }),
+    body: JSON.stringify({ appId, runs, spans: [], toolCalls: [], permissions: [] }),
   });
   return res.status;
 }
@@ -326,19 +330,19 @@ describe('S2 收集服务端到端', () => {
     assert.equal(summary.body.successRate, 0);
   });
 
-  it('cost 透传：usage.cost.total 出现在 summary.costUsd 与 span.costUsd', async () => {
+  it('token 透传：input/output/cache 汇总进 summary.totalTokens 与 span tokens', async () => {
     const { baseUrl, token } = await startCollector();
     const obs = createObservability({ appId: APP_ID, appSecret: APP_SECRET, endpoint: baseUrl, cacheDir: tempDir('obs-cache') });
     const result = await runOnce(obs.telemetry, {
-      streamFn: mockStreamFn([assistant('hello', { cost: { input: 0.0001, output: 0.0002, total: 0.0003 } })]),
+      streamFn: mockStreamFn([assistant('hello', { input: 100, output: 200, cacheRead: 10, cacheWrite: 5 })]),
     });
     await obs.close();
 
     const summary = await getJson(baseUrl, '/metrics/summary', token);
-    assert.equal(summary.body.costUsd, 0.0003);
+    assert.equal(summary.body.totalTokens, 315, 'totalTokens = input+output+cacheRead+cacheWrite');
     const detail = await getJson(baseUrl, `/traces/${result.metadata.traceId}`, token);
     const modelSpan = detail.body.spans.find((s: any) => s.kind === 'model');
-    assert.equal(modelSpan.costUsd, 0.0003);
+    assert.deepEqual(modelSpan.tokens, { input: 100, output: 200, cacheRead: 10, cacheWrite: 5 });
   });
 
   it('鉴权失败：错误 secret 被拒(401)，客户端丢弃且不缓存', async () => {
@@ -565,6 +569,180 @@ function startWebhookServer(): Promise<{
   });
 }
 
+// ─── 版本维度聚合（/metrics/versions）─────────────────────────────
+
+describe('版本维度聚合 /metrics/versions', () => {
+  it('两版本上报 → 按版本聚合（请求量/成功率/工具），缺版本归 unknown，appId 隔离', async () => {
+    const { baseUrl, token } = await startCollector();
+
+    // 1.2.0：工具循环 2 轮（avgTurns=2，1 次 echo 调用）
+    const obs12 = createObservability({ appId: APP_ID, appSecret: APP_SECRET, endpoint: baseUrl, cacheDir: tempDir('obs-cache'), version: '1.2.0' });
+    await runOnce(obs12.telemetry, { streamFn: mockToolStreamFn(), tools: [echoTool] });
+    await obs12.close();
+
+    // 1.3.0：单轮成功（无工具）
+    const obs13 = createObservability({ appId: APP_ID, appSecret: APP_SECRET, endpoint: baseUrl, cacheDir: tempDir('obs-cache'), version: '1.3.0' });
+    await runOnce(obs13.telemetry);
+    await obs13.close();
+
+    // 缺版本（旧 SDK / 未配置）→ unknown
+    const obsNone = createObservability({ appId: APP_ID, appSecret: APP_SECRET, endpoint: baseUrl, cacheDir: tempDir('obs-cache') });
+    await runOnce(obsNone.telemetry);
+    await obsNone.close();
+
+    const versions = await getJson(baseUrl, '/metrics/versions', token);
+    assert.equal(versions.status, 200);
+    assert.equal(versions.body.items.length, 3);
+    const v12 = versions.body.items.find((v: any) => v.version === '1.2.0');
+    const v13 = versions.body.items.find((v: any) => v.version === '1.3.0');
+    const unk = versions.body.items.find((v: any) => v.version === 'unknown');
+    assert.ok(v12 && v13 && unk, '应返回 1.2.0 / 1.3.0 / unknown 三行');
+
+    assert.equal(v12.requests, 1);
+    assert.equal(v12.successRate, 1);
+    assert.equal(v12.avgTurns, 2, '工具循环 2 轮');
+    assert.equal(v12.tools.echo.calls, 1);
+    assert.equal(v12.tools.echo.successRate, 1);
+    assert.equal(v12.tools.echo.errors, 0);
+
+    assert.equal(v13.requests, 1);
+    assert.equal(v13.successRate, 1);
+    assert.equal(v13.avgTurns, 1);
+    assert.deepEqual(v13.tools, {}, '无工具调用的版本 tools 为空');
+
+    assert.equal(unk.requests, 1);
+    assert.equal(unk.version, 'unknown');
+
+    // appId 隔离：新应用只上报 1 条 → 过滤后仅 1 版本；种子应用仍为 3 版本
+    const created = await requestJson(baseUrl, '/api/apps', { method: 'POST', token, body: { name: '版本应用' } });
+    const obsNew = createObservability({ appId: created.body.appId, appSecret: created.body.appSecret, endpoint: baseUrl, cacheDir: tempDir('obs-cache'), version: '2.0.0' });
+    await runOnce(obsNew.telemetry);
+    await obsNew.close();
+
+    const byNew = await getJson(baseUrl, `/metrics/versions?appId=${created.body.appId}`, token);
+    assert.equal(byNew.body.items.length, 1);
+    assert.equal(byNew.body.items[0].version, '2.0.0');
+    const bySeed = await getJson(baseUrl, `/metrics/versions?appId=${APP_ID}`, token);
+    assert.equal(bySeed.body.items.length, 3, '种子应用只见自己的 3 个版本');
+  });
+
+  it('queryVersionMetrics 精确聚合：tokens/分位/错误分类/工具成功率/重试率，version NULL 归 unknown', () => {
+    const dbPath = tempDb();
+    const store = new SQLiteStore(dbPath);
+    const now = Date.now();
+    store.insertRun({ ...makeRun('r1', now), appVersion: '1.0.0', durationMs: 100, inputTokens: 10, outputTokens: 5, status: 'success' });
+    store.insertRun({ ...makeRun('r2', now + 1), appVersion: '1.0.0', durationMs: 300, inputTokens: 100, outputTokens: 50, status: 'error', errorClass: 'rate_limit' });
+    store.insertSpan({ ...makeSpan('r2', now + 1), attempts: 3 }); // 2 次重试
+    store.insertToolCall({ traceId: 'r1', spanId: 's1', toolName: 'echo', status: 'ok', durationMs: 100 });
+    store.insertToolCall({ traceId: 'r2', spanId: 's2', toolName: 'scrape', status: 'error', durationMs: 50, errorClass: 'network' });
+    store.insertRun({ ...makeRun('r3', now + 2), durationMs: 200, status: 'success' }); // 无版本 → unknown
+
+    const items = store.queryVersionMetrics({});
+    assert.equal(items.length, 2, '1.0.0 + unknown');
+    const v1 = items.find((v) => v.version === '1.0.0')!;
+    const unk = items.find((v) => v.version === 'unknown')!;
+
+    assert.equal(v1.requests, 2);
+    assert.equal(v1.successRate, 0.5);
+    assert.equal(v1.p50Ms, 200, '[100,300] p50 线性插值');
+    assert.equal(v1.p95Ms, 290);
+    assert.equal(v1.p99Ms, 298);
+    assert.equal(v1.totalTokens, 165, '15 + 150');
+    assert.equal(v1.avgTurns, 1);
+    assert.equal(v1.retryRate, 2, '2 次重试 / 1 次模型调用');
+    assert.deepEqual(v1.errorClasses, { rate_limit: 1 });
+    assert.equal(v1.tools.echo.calls, 1);
+    assert.equal(v1.tools.echo.successRate, 1);
+    assert.equal(v1.tools.echo.errors, 0);
+    assert.equal(v1.tools.scrape.calls, 1);
+    assert.equal(v1.tools.scrape.successRate, 0);
+    assert.equal(v1.tools.scrape.errors, 1);
+
+    assert.equal(unk.requests, 1);
+    assert.equal(unk.successRate, 1);
+    assert.equal(unk.totalTokens, 15);
+    store.close();
+  });
+
+  it('存量库迁移：旧 runs 表无 version 列 → 打开后自动 ALTER 补齐并可聚合', () => {
+    const dbPath = tempDb();
+    const raw = new Database(dbPath);
+    raw.exec(`CREATE TABLE runs (
+      trace_id TEXT PRIMARY KEY, app_id TEXT, started_at INTEGER, ended_at INTEGER,
+      session_key TEXT, channel TEXT, model TEXT, status TEXT, error_class TEXT,
+      turns INTEGER, duration_ms INTEGER, active_ms INTEGER, queued_ms INTEGER,
+      ttft_ms INTEGER, input_tokens INTEGER, output_tokens INTEGER,
+      cache_read INTEGER, cache_write INTEGER
+    )`);
+    raw.close();
+
+    const store = new SQLiteStore(dbPath);
+    store.insertRun({ ...makeRun('mig', Date.now()), appVersion: '0.9.0' });
+    const items = store.queryVersionMetrics({});
+    assert.equal(items.length, 1);
+    assert.equal(items[0].version, '0.9.0', 'ALTER 补齐后版本列可用');
+    store.close();
+  });
+
+  it('聚合器 version 维度：run/model span/tool call 按 traceId 归入版本；缺版本归 unknown；不污染全局', () => {
+    const agg = new Aggregator({ windowMs: 10 * 60_000, bucketMs: 60_000 });
+    const now = Date.now();
+    // v1：1 run + 1 model span（attempts=2 → 1 次重试）+ 1 次工具调用
+    agg.ingestRun({ ...makeRun('t1', now), appVersion: '1.0.0', durationMs: 100, inputTokens: 10, outputTokens: 5 });
+    agg.ingestModelCall({ ...makeSpan('t1', now), attempts: 2 });
+    agg.ingestToolCall(makeTool('t1'));
+    // v2：1 run（无 span/tool）
+    agg.ingestRun({ ...makeRun('t2', now + 1), appVersion: '2.0.0', durationMs: 200, inputTokens: 20, outputTokens: 10 });
+    // 无版本 run → unknown
+    agg.ingestRun({ ...makeRun('t3', now + 2), durationMs: 300 });
+
+    const filter = { since: now, until: now + 60_000 };
+    const all = agg.summary(filter) as any;
+    assert.equal(all.requests, 4, '全局 = 3 run + 1 tool');
+
+    const v1 = agg.summary({ ...filter, version: '1.0.0' }) as any;
+    assert.equal(v1.requests, 2, 'v1 = 1 run + 1 tool（版本口径与全局一致，工具调用计入 requests）');
+    assert.equal(v1.successRate, 0.5, 'success=1 / requests=2');
+    assert.equal(v1.retryRate, 1, '1 次重试 / 1 次模型调用');
+    assert.equal(v1.totalTokens, 15, 'model span tokens 10+5');
+
+    const v2 = agg.summary({ ...filter, version: '2.0.0' }) as any;
+    assert.equal(v2.requests, 1);
+    assert.equal(v2.totalTokens, 0, 'v2 无 model span → tokens 0');
+
+    const unk = agg.summary({ ...filter, version: 'unknown' }) as any;
+    assert.equal(unk.requests, 1, '缺版本归 unknown');
+
+    // timeseries / tools 同样支持版本过滤
+    const ts = agg.timeseries({ ...filter, version: '1.0.0' }, 60_000, 'requests');
+    assert.equal(ts[0].v, 2);
+    const tools = agg.tools({ ...filter, version: '1.0.0' });
+    assert.equal(tools.length, 1);
+    assert.equal(tools[0].tool, 'echo');
+
+    // 不指定版本 = 全局，不因 version 维度受影响
+    assert.equal((agg.summary(filter) as any).requests, all.requests);
+  });
+
+  it('版本筛选 E2E：/metrics/summary?version= 与 /traces?version= 过滤，traces 带 appVersion', async () => {
+    const { baseUrl, token } = await startCollector();
+    const obs = createObservability({ appId: APP_ID, appSecret: APP_SECRET, endpoint: baseUrl, cacheDir: tempDir('obs-cache'), version: '1.2.0' });
+    await runOnce(obs.telemetry);
+    await obs.close();
+
+    const sum = await getJson(baseUrl, '/metrics/summary?version=1.2.0', token);
+    assert.equal(sum.body.requests, 1, '版本筛选命中上报的 run');
+    const sumOther = await getJson(baseUrl, '/metrics/summary?version=2.0.0', token);
+    assert.equal(sumOther.body.requests, 0, '不存在的版本返回空聚合');
+
+    const traces = await getJson(baseUrl, '/traces?version=1.2.0', token);
+    assert.equal(traces.body.items.length, 1);
+    assert.equal(traces.body.items[0].appVersion, '1.2.0');
+    const tracesOther = await getJson(baseUrl, '/traces?version=2.0.0', token);
+    assert.equal(tracesOther.body.items.length, 0);
+  });
+});
+
 // ─── P0-1 retention ───────────────────────────────────────────────
 
 describe('P0 retention 数据保留', () => {
@@ -753,6 +931,156 @@ describe('P0 alerting 评估器（firing / recovered / 冷却 / webhook）', () 
     const events = await getJson(baseUrl, '/api/alerts/events', token);
     assert.equal(events.body.total, 3);
     assert.equal(webhook.posts.length, 1, '冷却期内不应重复通知');
+  });
+});
+
+// ─── P0-3 告警版本回归检测（阶段 3）──────────────────────────────
+
+describe('P0-3 alerting 版本回归检测', () => {
+  it('规则校验：regress_by 只能配版本回归指标；threshold 必须为正', async () => {
+    const { baseUrl, token } = await startCollector();
+
+    // 合法：versionSuccessRate + regress_by
+    const ok = await requestJson(baseUrl, '/api/alerts/rules', {
+      method: 'POST',
+      token,
+      body: { name: '版本成功率回归', metric: 'versionSuccessRate', operator: 'regress_by', threshold: 0.1, lookbackMs: 3600_000, cooldownMs: 0 },
+    });
+    assert.equal(ok.status, 201);
+
+    // regress_by 配普通指标 → 400
+    const bad1 = await requestJson(baseUrl, '/api/alerts/rules', {
+      method: 'POST', token,
+      body: { name: 'x', metric: 'successRate', operator: 'regress_by', threshold: 0.1 },
+    });
+    assert.equal(bad1.status, 400, 'regress_by 配普通指标应拒绝');
+
+    // 版本回归指标配普通算子 → 400
+    const bad2 = await requestJson(baseUrl, '/api/alerts/rules', {
+      method: 'POST', token,
+      body: { name: 'x', metric: 'versionSuccessRate', operator: 'gt', threshold: 0.1 },
+    });
+    assert.equal(bad2.status, 400, '版本回归指标必须配 regress_by');
+
+    // threshold ≤ 0 → 400
+    const bad3 = await requestJson(baseUrl, '/api/alerts/rules', {
+      method: 'POST', token,
+      body: { name: 'x', metric: 'versionP95Ms', operator: 'regress_by', threshold: 0 },
+    });
+    assert.equal(bad3.status, 400, '退化幅度阈值必须为正');
+  });
+
+  it('评估：新版本成功率相对旧版本退化超阈值 → firing，webhook 载荷携带 vA/vB/delta', async () => {
+    const webhook = await startWebhookServer();
+    const { baseUrl, token, collector } = await startCollector(
+      { [APP_ID]: APP_SECRET },
+      { alerts: { evaluateIntervalMs: 3600_000, defaultWebhookUrl: webhook.url } },
+    );
+    await requestJson(baseUrl, '/api/alerts/rules', {
+      method: 'POST', token,
+      body: { name: '版本成功率回归', metric: 'versionSuccessRate', operator: 'regress_by', threshold: 0.2, lookbackMs: 3600_000, cooldownMs: 0 },
+    });
+
+    const now = Date.now();
+    // 旧版本 2.0.0：20 条成功（successRate=1）
+    // 新版本 2.1.0：15 成功 + 5 失败（successRate=0.75 → 退化 0.25 > 0.2）
+    const oldRuns = Array.from({ length: 20 }, (_, i) => ({
+      ...makeRun(`old-${i}`, now - 60_000), appVersion: '2.0.0', status: 'success' as const,
+    }));
+    const newOk = Array.from({ length: 15 }, (_, i) => ({
+      ...makeRun(`new-ok-${i}`, now - 59_000), appVersion: '2.1.0', status: 'success' as const,
+    }));
+    const newFail = Array.from({ length: 5 }, (_, i) => ({
+      ...makeRun(`new-fail-${i}`, now - 58_999), appVersion: '2.1.0', status: 'error' as const, errorClass: 'validation',
+    }));
+    const ingest = await postIngest(baseUrl, APP_ID, APP_SECRET, [...oldRuns, ...newOk, ...newFail]);
+    assert.equal(ingest, 200, '版本数据上报应成功');
+
+    const transitions = await collector.alerts!.evaluateOnce();
+    assert.equal(transitions, 1, '版本退化超阈值应触发 1 条规则');
+
+    const events = await getJson(baseUrl, '/api/alerts/events', token);
+    assert.equal(events.body.total, 1);
+    assert.equal(events.body.items[0].status, 'fired');
+    assert.ok(events.body.items[0].value < -0.2, '事件 value = delta（新-旧）≈ -0.25');
+
+    assert.equal(webhook.posts.length, 1);
+    assert.equal(webhook.posts[0].status, 'fired');
+    assert.equal(webhook.posts[0].regression.vA, '2.1.0');
+    assert.equal(webhook.posts[0].regression.vB, '2.0.0');
+    assert.ok(webhook.posts[0].regression.delta < -0.2, 'webhook delta 与事件 value 一致');
+  });
+
+  it('冷启动防护：仅一个版本 / 任一侧请求量不足 → 不评估', async () => {
+    const webhook = await startWebhookServer();
+    const { baseUrl, token, collector } = await startCollector(
+      { [APP_ID]: APP_SECRET },
+      { alerts: { evaluateIntervalMs: 3600_000, defaultWebhookUrl: webhook.url } },
+    );
+    await requestJson(baseUrl, '/api/alerts/rules', {
+      method: 'POST', token,
+      body: { name: '版本成功率回归', metric: 'versionSuccessRate', operator: 'regress_by', threshold: 0.1, lookbackMs: 3600_000, cooldownMs: 0 },
+    });
+
+    const now = Date.now();
+    // 仅一个版本（即使全失败）
+    const only = await postIngest(
+      baseUrl,
+      APP_ID,
+      APP_SECRET,
+      Array.from({ length: 12 }, (_, i) => ({ ...makeRun(`only-${i}`, now - 60_000), appVersion: '3.0.0' })),
+    );
+    assert.equal(only, 200);
+    assert.equal(await collector.alerts!.evaluateOnce(), 0, '窗口内不足两个版本不评估');
+
+    // 第二个版本请求量不足（5 < MIN_VERSION_REQUESTS=10）
+    const low = await postIngest(
+      baseUrl,
+      APP_ID,
+      APP_SECRET,
+      Array.from({ length: 5 }, (_, i) => ({ ...makeRun(`low-${i}`, now - 59_000), appVersion: '3.1.0', status: 'error' as const, errorClass: 'validation' })),
+    );
+    assert.equal(low, 200);
+    assert.equal(await collector.alerts!.evaluateOnce(), 0, '任一侧请求量不足不评估');
+
+    const events = await getJson(baseUrl, '/api/alerts/events', token);
+    assert.equal(events.body.total, 0, '冷启动不产生事件');
+    assert.equal(webhook.posts.length, 0, '冷启动不通知');
+  });
+
+  it('版本回归恢复：hotfix 发布后新版本指标回升 → recovered', async () => {
+    const webhook = await startWebhookServer();
+    const { baseUrl, token, collector } = await startCollector(
+      { [APP_ID]: APP_SECRET },
+      { alerts: { evaluateIntervalMs: 3600_000, defaultWebhookUrl: webhook.url } },
+    );
+    await requestJson(baseUrl, '/api/alerts/rules', {
+      method: 'POST', token,
+      body: { name: '版本成功率回归', metric: 'versionSuccessRate', operator: 'regress_by', threshold: 0.2, lookbackMs: 3600_000, cooldownMs: 0 },
+    });
+
+    const now = Date.now();
+    // 阶段一：2.1.0 相对 2.0.0 退化（0.5 vs 1）→ 触发
+    await postIngest(baseUrl, APP_ID, APP_SECRET, [
+      ...Array.from({ length: 20 }, (_, i) => ({ ...makeRun(`old-${i}`, now - 60_000), appVersion: '2.0.0' })),
+      ...Array.from({ length: 10 }, (_, i) => ({ ...makeRun(`f-ok-${i}`, now - 59_000), appVersion: '2.1.0' })),
+      ...Array.from({ length: 10 }, (_, i) => ({ ...makeRun(`f-fail-${i}`, now - 58_999), appVersion: '2.1.0', status: 'error' as const, errorClass: 'validation' })),
+    ]);
+    assert.equal(await collector.alerts!.evaluateOnce(), 1, '退化应触发');
+
+    // 阶段二：hotfix 2.1.1（20 成功 2 失败 ≈ 0.909）成为最新 → 相对 2.1.0 不退化 → 恢复
+    await postIngest(baseUrl, APP_ID, APP_SECRET, [
+      ...Array.from({ length: 20 }, (_, i) => ({ ...makeRun(`fix-ok-${i}`, now - 30_000), appVersion: '2.1.1' })),
+      ...Array.from({ length: 2 }, (_, i) => ({ ...makeRun(`fix-fail-${i}`, now - 29_999), appVersion: '2.1.1', status: 'error' as const, errorClass: 'validation' })),
+    ]);
+    await collector.alerts!.evaluateOnce();
+
+    const events = await getJson(baseUrl, '/api/alerts/events', token);
+    assert.equal(events.body.total, 2);
+    assert.equal(events.body.items[0].status, 'recovered', '最新事件应为 recovered');
+    assert.equal(webhook.posts.length, 2);
+    assert.equal(webhook.posts[1].status, 'recovered');
+    assert.equal(webhook.posts[1].regression.vA, '2.1.1', '恢复通知应携带修复后的版本对');
   });
 });
 

@@ -13,6 +13,7 @@ import type {
   ToolStat,
   TraceDetail,
   TraceListResponse,
+  VersionListResponse,
 } from './types';
 
 const TOKEN_KEY = 'obs_token';
@@ -92,6 +93,9 @@ export const api = {
     request<TimeseriesPoint[]>(`/metrics/timeseries${qs(params)}`),
   tools: (params: Record<string, string | number | undefined> = {}) =>
     request<ToolStat[]>(`/metrics/tools${qs(params)}`),
+  /** 版本聚合（DB 直查）：items 按 lastSeenAt 倒序（最近版本在前） */
+  versions: (params: Record<string, string | number | undefined> = {}) =>
+    request<VersionListResponse>(`/metrics/versions${qs(params)}`),
 
   // ── Trace ─────────────────────────────────────────────────────
   traces: (params: Record<string, string | number | undefined> = {}) =>

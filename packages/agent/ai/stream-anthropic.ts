@@ -100,13 +100,6 @@ function buildUsage(inputTokens: number, outputTokens: number, model: Model, cac
   usage.output = outputTokens;
   usage.total = inputTokens + outputTokens;
   if (cacheReadTokens) usage.cacheRead = cacheReadTokens;
-  const perMillion = (n: number) => n / 1_000_000;
-  usage.cost.input = perMillion(inputTokens) * (model.cost?.input ?? 0);
-  usage.cost.output = perMillion(outputTokens) * (model.cost?.output ?? 0);
-  usage.cost.total = usage.cost.input + usage.cost.output;
-  if (cacheReadTokens) {
-    usage.cost.cacheRead = perMillion(cacheReadTokens) * (model.cost?.cacheRead ?? 0);
-  }
   return usage;
 }
 

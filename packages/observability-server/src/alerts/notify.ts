@@ -12,8 +12,11 @@ import type { AlertRuleRow } from '../store';
 export interface AlertNotification {
   status: 'fired' | 'recovered';
   rule: AlertRuleRow;
-  /** 触发/恢复时的指标值 */
+  /** 触发/恢复时的指标值（版本回归规则 = delta，新版本值 - 旧版本值） */
   value: number;
+  /** 版本回归规则：对比的旧版本（vB）与新版本（vA） */
+  vA?: string;
+  vB?: string;
   /** 事件时间（epoch ms） */
   at: number;
 }
@@ -42,6 +45,7 @@ export function createNotifier(opts: NotifierOptions = {}): Notifier {
         console.log(
           `[observability-server] 告警[${n.status}] 规则=${n.rule.name}` +
             ` (${n.rule.metric} ${n.rule.operator} ${n.rule.threshold}) value=${n.value}` +
+            (n.vA !== undefined && n.vB !== undefined ? ` 版本 ${n.vB} → ${n.vA}` : '') +
             ` appId=${n.rule.appId ?? '全局'}\n` +
             `  → 未配置 webhook，仅记录本地日志（设置 ALERTS_WEBHOOK_URL 或规则 webhookUrl 可推送）`,
         );
@@ -60,6 +64,10 @@ export function createNotifier(opts: NotifierOptions = {}): Notifier {
         },
         value: n.value,
         appId: n.rule.appId ?? null,
+        regression:
+          n.vA !== undefined && n.vB !== undefined
+            ? { vA: n.vA, vB: n.vB, delta: n.value }
+            : null,
         at: n.at,
       };
 

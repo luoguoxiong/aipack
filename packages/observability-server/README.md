@@ -30,7 +30,7 @@ createRuntime({ ..., telemetry: obs.telemetry });
 
 | 端点 | 说明 |
 |---|---|
-| `GET /metrics/summary?since&until&groupBy=model\|tool\|session` | 聚合摘要（requests/successRate/costUsd/p50/p95/p99/retryRate） |
+| `GET /metrics/summary?since&until&groupBy=model\|tool\|session` | 聚合摘要（requests/successRate/totalTokens/p50/p95/p99/retryRate） |
 | `GET /metrics/timeseries?since&until&step&metric` | 时间序列 |
 | `GET /metrics/tools?since&until` | 工具成功率排行（升序） |
 | `GET /traces?since&until&status&model&tool&page` | 运行列表 |
@@ -47,6 +47,6 @@ createRuntime({ ..., telemetry: obs.telemetry });
 ## 数据模型
 
 - `runs`：一次 run/stream（trace 根）
-- `spans`：run / model / tool 时间线（model span 含 attempts/cost/session_key）
+- `spans`：run / model / tool 时间线（model span 含 attempts/tokens/session_key）
 - `tool_calls`：工具调用明细
 - 权限拦截仅计入聚合计数（`summary.permissionDenied`），不落库

@@ -61,4 +61,6 @@ export type {
   TimeseriesMetric,
   TimeseriesPoint,
   ToolStat,
+  VersionMetrics,
+  VersionToolStat,
 } from './types';
