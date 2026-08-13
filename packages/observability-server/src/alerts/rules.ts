@@ -2,7 +2,7 @@
  * 告警规则模型与校验（P0-2）。
  *
  * 规则基于内存聚合器指标（aggregator.summary / tools），支持：
- *   successRate / p95Ms / avgTurns / retryRate / permissionDenied / costUsd /
+ *   successRate / p95Ms / avgTurns / retryRate / permissionDenied / tokensTotal /
  *   requests / toolSuccessRate（按工具名）/ errorClassCount（按错误分类）。
  *
  * 空数据防护：成功率/平均步数/重试率/工具成功率在窗口内无数据时跳过评估，
@@ -15,15 +15,27 @@ export const ALERT_METRICS = [
   'avgTurns',
   'retryRate',
   'permissionDenied',
-  'costUsd',
+  'tokensTotal',
   'requests',
   'toolSuccessRate',
   'errorClassCount',
+  'versionSuccessRate',
+  'versionP95Ms',
 ] as const;
 export type AlertMetric = (typeof ALERT_METRICS)[number];
 
-export const ALERT_OPERATORS = ['lt', 'lte', 'gt', 'gte'] as const;
+export const ALERT_OPERATORS = ['lt', 'lte', 'gt', 'gte', 'regress_by'] as const;
 export type AlertOperator = (typeof ALERT_OPERATORS)[number];
+
+/** 版本回归类指标：评估器走 queryVersionMetrics 对比最近两个版本，不走聚合器 */
+export const VERSION_REGRESSION_METRICS = ['versionSuccessRate', 'versionP95Ms'] as const;
+
+export function isVersionRegressionMetric(metric: AlertMetric): boolean {
+  return (VERSION_REGRESSION_METRICS as readonly string[]).includes(metric);
+}
+
+/** 版本回归冷启动防护：对比任一侧版本请求量低于该值时不评估（指标不可靠） */
+export const MIN_VERSION_REQUESTS = 10;
 
 export interface AlertRule {
   id: string;
@@ -93,6 +105,17 @@ export function validateRule(input: Partial<NewAlertRule> | null | undefined): V
   const threshold = Number(input.threshold);
   if (!Number.isFinite(threshold)) return { ok: false, error: 'threshold 必须为数字' };
 
+  const regressionMetric = isVersionRegressionMetric(metric as AlertMetric);
+  if (regressionMetric && operator !== 'regress_by') {
+    return { ok: false, error: '版本回归指标（versionSuccessRate/versionP95Ms）必须使用 operator=regress_by' };
+  }
+  if (!regressionMetric && operator === 'regress_by') {
+    return { ok: false, error: 'operator=regress_by 仅支持版本回归指标（versionSuccessRate/versionP95Ms）' };
+  }
+  if (operator === 'regress_by' && threshold <= 0) {
+    return { ok: false, error: 'regress_by 的 threshold（退化幅度）必须为正数' };
+  }
+
   const lookbackMs =
     input.lookbackMs === undefined || input.lookbackMs === null
       ? DEFAULT_LOOKBACK_MS
@@ -152,6 +175,9 @@ export function compare(value: number, op: AlertOperator, threshold: number): bo
       return value > threshold;
     case 'gte':
       return value >= threshold;
+    case 'regress_by':
+      // 回归违规由评估器按指标方向（成功率下降/P95 上升）判定，不走通用比较
+      return false;
   }
 }
 
@@ -161,10 +187,12 @@ export const ALERT_METRIC_LABELS: Record<AlertMetric, string> = {
   avgTurns: '平均步数',
   retryRate: '重试率',
   permissionDenied: '权限拦截数',
-  costUsd: '成本(USD)',
+  tokensTotal: 'Token 消耗量',
   requests: '请求量',
   toolSuccessRate: '工具成功率',
   errorClassCount: '错误分类计数',
+  versionSuccessRate: '版本成功率回归',
+  versionP95Ms: '版本 P95 耗时回归',
 };
 
 export const ALERT_OPERATOR_LABELS: Record<AlertOperator, string> = {
@@ -172,4 +200,5 @@ export const ALERT_OPERATOR_LABELS: Record<AlertOperator, string> = {
   lte: '≤',
   gt: '>',
   gte: '≥',
+  regress_by: '退化幅度',
 };

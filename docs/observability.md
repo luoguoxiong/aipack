@@ -32,7 +32,7 @@
 | 无 runId/traceId              | 只有 `sessionKey` 关联                                                                                     | 无法串联一次 run 内的模型/工具调用，无法做 Trace 时间线 |
 | step 长度不可见               | `runLoop` 的 `maxTurns` 循环计数未上报                                                                     | 无法评估 agent 循环收敛性、防失控                       |
 | 重试次数不可见                | 重试在 provider 内部 `ai/stream-openai.ts` / `ai/stream-anthropic.ts` 的 `retry()`，telemetry 只拿最终结果 | 429/5xx 重试率、退避行为无法统计                        |
-| 成本未上报                    | 成本已内建（`model.cost` + `usage.cost`，见 §2.5），telemetry 载荷未携带                                   | 指标与财务对不上                                        |
+| token 消耗量未上报            | provider 已还原 `usage`（input/output/cacheRead/cacheWrite，见 §2.5），telemetry 载荷未携带                | 指标与用量对不上                                        |
 | `onToolCall` 无成功标志       | 只给 `ToolResult`，需接收方自行 `isErrorResult`；blocked/skipped 混入                                      | 工具成功率口径不清晰                                    |
 | `stream()` 路径无 run 级事件  | 仅 `run()` 触发                                                                                            | 流式请求端到端指标缺失                                  |
 | `stream()` 路径无模型调用事件 | `runLoopStream` 直接调 `_streamFn`（`runtime/index.ts` L681），不走 `streamModel()`                        | 流式请求的 token/耗时/重试全部缺失                      |
@@ -90,8 +90,7 @@ export interface RunTelemetryInfo {
   /** 直接布尔，避免接收方解析 Result */
   success: boolean;
   errorClass?: ErrorClass;
-  /** 直接取最后一个模型调用的 usage.cost.total，无需自行算价 */
-  costUsd?: number;
+  /** 汇总后的 token 用量（input/output/cacheRead/cacheWrite） */
   tokens: {
     input: number;
     output: number;
@@ -132,7 +131,6 @@ export interface ModelTelemetryInfo {
   durationMs: number;
   stream: boolean;
   errorClass?: ErrorClass;
-  costUsd?: number;
 }
 
 /** run() 开始事件（配合 onRunEnd 求排队时长） */
@@ -192,19 +190,19 @@ export interface Telemetry {
 | 7   | `ai/types.ts` `SimpleStreamOptions`              | 新增 `onRetryAttempt?`，供 runtime 注入                                                              |
 | 8   | `ai/stream-openai.ts` / `ai/stream-anthropic.ts` | 把 `options.onRetryAttempt` 透传给 `retry()`                                                         |
 | 9   | `telemetry/index.ts`                             | 事件类型扩展（§2.2 接口）+ 导出 `ErrorClass`                                                         |
-| 10  | `test/telemetry.test.ts`                         | 增补 traceId/turnCount/attempts/status/cost 透传用例（§9.7）                                         |
+| 10  | `test/telemetry.test.ts`                         | 增补 traceId/turnCount/attempts/status/token 透传用例（§9.7）                                        |
 
-> 变更后 `telemetry/pricing.ts` **无需新建**——成本已内建，见 §2.5。
+> 变更后 `telemetry/pricing.ts` **无需新建**——token 口径由 provider 层还原，见 §2.5。
 
-### 2.5 成本：已内建，S1 只做透传
+### 2.5 token 消耗量：已内建，S1 只做透传
 
-成本计算**已经存在于 provider 层，S1 不需要新建 pricing 模块**：
+token 消耗量**已经存在于 provider 层，S1 不需要新建 pricing 模块**：
 
-- `Model.cost`：每百万 token 费率（含 cacheRead/cacheWrite，支持分档 tiers），定义于 [ai/types.ts](../../packages/agent/ai/types.ts) L124，价格表见 [ai/catalog.ts](../../packages/agent/ai/catalog.ts)；
-- `calculateCost()`：[ai/stream-openai.ts](../../packages/agent/ai/stream-openai.ts) L244 计算单次调用费用，`Usage.cost` 携带结果（[ai/types.ts](../../packages/agent/ai/types.ts) L53）；
-- `runtime.sumUsage()`（[runtime/index.ts](../../packages/agent/runtime/index.ts) L1115）已把 cost 汇总到会话 usage。
+- `Usage` 携带 `input / output / cacheRead / cacheWrite` 四类 token（[ai/types.ts](../../packages/agent/ai/types.ts)），OpenAI/Anthropic 的流式响应由 provider 还原（`prompt_tokens_details.cached_tokens` / `cache_read_input_tokens` 等）；
+- `runtime.sumUsage()`（[runtime/index.ts](../../packages/agent/runtime/index.ts)）把各轮 token 汇总到会话 usage；
+- 全链路成本口径统一为 **token 消耗量**：`totalTokens = input + output + cacheRead + cacheWrite`（在模型 span 累计，避免重复计数），不再按美元计价。
 
-**S1 的工作**：`onModelCall` / `onRunEnd` 直接读取 `assistantMessage.usage.cost.total` 填 `costUsd` 字段即可。若某自定义模型未配置 `cost`，`calculateCost` 返回 0，指标侧标记 `costUnknown`，避免把"没配费率"误报为"零成本"。
+**S1 的工作**：`onModelCall` / `onRunEnd` 直接读取 `assistantMessage.usage` 填 `tokens` 字段即可；聚合端按上述公式累加。
 
 ---
 
@@ -212,17 +210,17 @@ export interface Telemetry {
 
 > 口径必须固定，否则 Dashboard 数字与财务对不上。
 
-| 指标       | 定义                                                                                 | 聚合维度                            | 告警建议            |
-| ---------- | ------------------------------------------------------------------------------------ | ----------------------------------- | ------------------- |
-| 请求量     | `onRunEnd` 计数（含 stream）                                                         | 时间 / model / channel / sessionKey | —                   |
-| 成功率     | `success=true` 且 `stopReason='completed'` 占比                                      | 同上                                | < 95%               |
-| 稳定性     | 错误率按 errorClass 拆分（429 / 超时 / 上下文溢出 / 工具失败 / 未知）                | 时间序列                            | errorClass=429 突增 |
-| 响应耗时   | `durationMs`（端到端）、`activeMs`（执行）、`queuedMs`（排队）、`ttftMs`（首 token） | p50 / p95 / p99 + 直方图            | P95 > 30s           |
-| step 长度  | `turnCount` 分布；>10 步视为"循环风险"                                               | 均值 + P95 + 直方图                 | 均值 > 8            |
-| token 成本 | `Σ usage.cost.total`（provider 已按 `model.cost` 计算）；另存原始 token 分布         | 按模型 / 天                         | 日成本超预算        |
-| 重试次数   | `onModelCall.attempts-1` 分布；重试率 = 有重试调用 / 总调用                          | 按 provider / 错误类型              | 重试率 > 20%        |
-| 工具成功率 | `status='ok' / (ok + error)`，**blocked/skipped 不计入分母**                         | 按工具名                            | 某工具成功率 < 80%  |
-| 权限拦截   | `onPermissionDenied` 计数                                                            | 按工具 / reason                     | 拦截激增            |
+| 指标         | 定义                                                                                       | 聚合维度                            | 告警建议            |
+| ------------ | ------------------------------------------------------------------------------------------ | ----------------------------------- | ------------------- |
+| 请求量       | `onRunEnd` 计数（含 stream）                                                               | 时间 / model / channel / sessionKey | —                   |
+| 成功率       | `success=true` 且 `stopReason='completed'` 占比                                            | 同上                                | < 95%               |
+| 稳定性       | 错误率按 errorClass 拆分（429 / 超时 / 上下文溢出 / 工具失败 / 未知）                      | 时间序列                            | errorClass=429 突增 |
+| 响应耗时     | `durationMs`（端到端）、`activeMs`（执行）、`queuedMs`（排队）、`ttftMs`（首 token）       | p50 / p95 / p99 + 直方图            | P95 > 30s           |
+| step 长度    | `turnCount` 分布；>10 步视为"循环风险"                                                     | 均值 + P95 + 直方图                 | 均值 > 8            |
+| token 消耗量 | `Σ (input + output + cacheRead + cacheWrite)`（模型 span 累计，provider 已还原四类 token） | 按模型 / 天                         | 日消耗超预算        |
+| 重试次数     | `onModelCall.attempts-1` 分布；重试率 = 有重试调用 / 总调用                                | 按 provider / 错误类型              | 重试率 > 20%        |
+| 工具成功率   | `status='ok' / (ok + error)`，**blocked/skipped 不计入分母**                               | 按工具名                            | 某工具成功率 < 80%  |
+| 权限拦截     | `onPermissionDenied` 计数                                                                  | 按工具 / reason                     | 拦截激增            |
 
 **关键坑**：
 
@@ -281,17 +279,17 @@ Telemetry 实现 → 内存聚合器（滑动窗口 + 直方图） → 定时批
 
 ```
 GET /metrics/summary?since=&until=&groupBy=model|tool|session
-  → { requests, successRate, costUsd, p50Ms, p95Ms, p99Ms, avgTurns, retryRate }
+  → { requests, successRate, totalTokens, p50Ms, p95Ms, p99Ms, avgTurns, retryRate }
 
-GET /metrics/timeseries?since=&until=&step=5m&metric=successRate|costUsd|requests
+GET /metrics/timeseries?since=&until=&step=5m&metric=successRate|tokensTotal|requests
 GET /metrics/tools?since=&until=
   → [{ tool, calls, successRate, avgMs, errors }]        // 按成功率升序
 
 GET /traces?since=&until=&status=&model=&tool=&page=
-  → [{ traceId, startedAt, durationMs, status, turns, tokens, costUsd, retries, sessionKey }]
+  → [{ traceId, startedAt, durationMs, status, turns, tokens, retries, sessionKey }]
 
 GET /traces/:traceId
-  → { traceId, spans: [{ kind, name, startedAt, durationMs, status, errorClass, attempts, tokens, costUsd }] }
+  → { traceId, spans: [{ kind, name, startedAt, durationMs, status, errorClass, attempts, tokens }] }
 ```
 
 ---
@@ -302,9 +300,9 @@ GET /traces/:traceId
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ KPI 卡片行：请求量 │ 成功率 │ 今日成本 │ P95 耗时 │ 平均步数 │ 重试率 │
+│ KPI 卡片行：请求量 │ 成功率 │ Token 消耗量 │ P95 耗时 │ 平均步数 │ 重试率 │
 ├──────────────────────────────┬─────────────────────────────┤
-│ 时间序列：请求量/成功率/成本  │ 模型排行：调用量/成本/延迟/  │
+│ 时间序列：请求量/成功率/Token │ 模型排行：调用量/Token/延迟 │
 │ （可切 5m/1h/1d 粒度）       │ 错误率（bar）               │
 ├──────────────────────────────┼─────────────────────────────┤
 │ 延迟分布：p50/p95/p99 分模型  │ 工具分析：次数/成功率/耗时   │
@@ -336,11 +334,11 @@ GET /traces/:traceId
 
 ## 8. 落地路径（三步，各自可独立验收）
 
-| 步骤             | 内容                                                                           | 验收                                                                  |
-| ---------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| **S1 采集层**    | Telemetry 扩展 + traceId + turnCount + retry 回调 + cost 透传（详细设计见 §9） | `pnpm --filter @aipack/agent test` 全绿；`telemetry.test.ts` 增补用例 |
-| **S2 聚合存储**  | Telemetry 实现（内存聚合 + SQLite 落盘 + REST API）                            | 跑一次 run 后 `/metrics/summary`、`/traces/:id` 返回正确数据          |
-| **S3 Dashboard** | 单页面板 + Trace 详情页，接聚合 API                                            | 端到端：run → 面板图表 → trace 下钻                                   |
+| 步骤             | 内容                                                                            | 验收                                                                  |
+| ---------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **S1 采集层**    | Telemetry 扩展 + traceId + turnCount + retry 回调 + token 透传（详细设计见 §9） | `pnpm --filter @aipack/agent test` 全绿；`telemetry.test.ts` 增补用例 |
+| **S2 聚合存储**  | Telemetry 实现（内存聚合 + SQLite 落盘 + REST API）                             | 跑一次 run 后 `/metrics/summary`、`/traces/:id` 返回正确数据          |
+| **S3 Dashboard** | 单页面板 + Trace 详情页，接聚合 API                                             | 端到端：run → 面板图表 → trace 下钻                                   |
 
 ---
 
@@ -353,7 +351,7 @@ GET /traces/:traceId
 > workspace 10 包 typecheck 通过。实现与设计的两处偏差：
 >
 > 1. `onRunEnd` 在 `_run`/`_stream` 内部上报（而非 §9.2 草图的 run()/stream()），
->    因为需要访问 `compilation.turnCount` / `costUsd`；
+>    因为需要访问 `compilation.turnCount` / `tokens`；
 > 2. blocked/skipped 结果**不触发** `onToolCall`（权限拒绝走 `onPermissionDenied`、
 >    beforeToolCall block 直接 return），因此工具成功率分母 = 实际执行的工具。
 >    与既有行为一致，避免统计口径变化。
@@ -422,7 +420,7 @@ async run(request: Request): Promise<Result> {
       durationMs: Date.now() - startedAt + queuedMs,
       activeMs: Date.now() - startedAt, queuedMs, turnCount: <见 9.3>, result,
       success: result.success,
-      errorClass: <见 9.6>, costUsd: <见 9.4>, tokens: <汇总>,
+      errorClass: <见 9.6>, tokens: <汇总>,
     });
     return result;
   } finally { release(); }
@@ -475,14 +473,14 @@ private async *streamModelEvents(
     if (stream && event.type === 'text_delta' && ttftAt === undefined) ttftAt = Date.now();
     yield event;
   }
-  // ...生成器收尾时按 event 结果 emit onModelCall（含 tokens/cost/errorClass/attempts）
+  // ...生成器收尾时按 event 结果 emit onModelCall（含 tokens/errorClass/attempts）
 }
 ```
 
 - `streamModel()` = `for await (event of streamModelEvents(...))` 聚合出 assistantMessage（原逻辑不变）；
 - `runLoopStream` = `for await (event of streamModelEvents(..., true))` 逐块 yield；
 - `onModelCall` 载荷：
-  - `costUsd = assistantMessage.usage?.cost?.total`
+  - `tokens = assistantMessage.usage`（input/output/cacheRead/cacheWrite）
   - `errorClass`：error 事件从 `errorMessage` 前缀解析（见 9.6）
   - `attempts`：本地累计值
   - `ttftMs`：`ttftAt - modelStartedAt`
@@ -567,16 +565,16 @@ if (attempt < maxRetries && isRetryableError(err)) {
 
 **新增用例**（`test/telemetry.test.ts`）：
 
-| 用例           | 断言                                                              |
-| -------------- | ----------------------------------------------------------------- |
-| run 成功       | onRunStart→onRunEnd 的 traceId 一致；turnCount=1；success=true    |
-| 工具循环 2 轮  | turnCount=2；onToolCall 触发 1 次、status='ok'                    |
-| 工具抛错       | onToolCall status='error'、success=false                          |
-| 权限拒绝       | onToolCall status='blocked'（或 onPermissionDenied 触发）         |
-| 模型调用带重试 | mock streamFn 第 1 次抛可重试错误 → attempts=2、onRetry 触发 1 次 |
-| 流式请求       | onRunStart/onRunEnd/onModelCall 均触发；onModelCall.stream=true   |
-| 校验失败请求   | onRunEnd success=false、errorClass='validation'                   |
-| cost 透传      | usage.cost.total 出现在 onModelCall.costUsd                       |
+| 用例           | 断言                                                                          |
+| -------------- | ----------------------------------------------------------------------------- |
+| run 成功       | onRunStart→onRunEnd 的 traceId 一致；turnCount=1；success=true                |
+| 工具循环 2 轮  | turnCount=2；onToolCall 触发 1 次、status='ok'                                |
+| 工具抛错       | onToolCall status='error'、success=false                                      |
+| 权限拒绝       | onToolCall status='blocked'（或 onPermissionDenied 触发）                     |
+| 模型调用带重试 | mock streamFn 第 1 次抛可重试错误 → attempts=2、onRetry 触发 1 次             |
+| 流式请求       | onRunStart/onRunEnd/onModelCall 均触发；onModelCall.stream=true               |
+| 校验失败请求   | onRunEnd success=false、errorClass='validation'                               |
+| token 透传     | usage.input/output/cacheRead/cacheWrite 出现在 onModelCall 与 onRunEnd.tokens |
 
 **验证命令**：`pnpm --filter @aipack/agent test && pnpm --filter @aipack/agent typecheck`
 
@@ -604,8 +602,7 @@ CREATE TABLE runs (
   input_tokens INTEGER,
   output_tokens INTEGER,
   cache_read   INTEGER,
-  cache_write  INTEGER,
-  cost_usd     REAL
+  cache_write  INTEGER
 );
 CREATE INDEX idx_runs_started ON runs(started_at);
 
@@ -621,8 +618,7 @@ CREATE TABLE spans (
   error_class  TEXT,
   attempts     INTEGER,
   input_tokens INTEGER,
-  output_tokens INTEGER,
-  cost_usd     REAL
+  output_tokens INTEGER
 );
 CREATE INDEX idx_spans_trace ON spans(trace_id);
 
@@ -648,5 +644,5 @@ run(request)
  ├─ onRetry     { attempt, status, delayMs }          ← 429/5xx 时
  ├─ onToolCall  { span, status: ok|error|blocked }    ← 每工具
  ├─ onModelCall { span }                              ← 第 2 轮 …
- └─ onRunEnd    { traceId, turns, success, costUsd }  ← 结束
+ └─ onRunEnd    { traceId, turns, success, tokens }  ← 结束
 ```

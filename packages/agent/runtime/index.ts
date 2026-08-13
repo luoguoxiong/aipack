@@ -1224,10 +1224,9 @@ export class AgentRuntime implements Runtime {
     return null;
   }
 
-  /** 汇总所有 assistant 消息的 token 用量（含 cache/cost） */
+  /** 汇总所有 assistant 消息的 token 用量（含 cache） */
   private sumUsage(messages: Message[]): Usage {
     const usage = createEmptyUsage();
-    usage.cost = { input: 0, output: 0, total: 0 };
     for (const msg of messages) {
       if (msg.role === 'assistant') {
         const u = (msg as AssistantMessage).usage;
@@ -1238,11 +1237,6 @@ export class AgentRuntime implements Runtime {
           usage.cacheRead = (usage.cacheRead ?? 0) + (u.cacheRead ?? 0);
           usage.cacheWrite = (usage.cacheWrite ?? 0) + (u.cacheWrite ?? 0);
           usage.reasoning = (usage.reasoning ?? 0) + (u.reasoning ?? 0);
-          if (u.cost) {
-            usage.cost!.input += u.cost.input ?? 0;
-            usage.cost!.output += u.cost.output ?? 0;
-            usage.cost!.total += u.cost.total ?? 0;
-          }
         }
       }
     }
@@ -1390,7 +1384,6 @@ export class AgentRuntime implements Runtime {
         durationMs: Date.now() - modelStartedAt,
         stream,
         errorClass,
-        costUsd: assistant?.usage?.cost?.total,
       });
       // 流式：记录首个模型调用的首 token 延迟（run 级 onRunEnd 读取）
       if (stream && ttftAt !== undefined && compilation.ttftMs === undefined) {
@@ -1443,7 +1436,6 @@ export class AgentRuntime implements Runtime {
       result,
       success: result.success,
       errorClass: this.runErrorClass(compilation),
-      costUsd: this.lastModelCostUsd(compilation.messages),
       tokens: {
         input: result.usage.input ?? 0,
         output: result.usage.output ?? 0,
@@ -1465,18 +1457,6 @@ export class AgentRuntime implements Runtime {
         if (!(m as AssistantMessage).errorMessage) return undefined;
         const cls = errorClassFromMessage((m as AssistantMessage).errorMessage!);
         return (cls as ErrorClass | undefined) ?? 'unknown';
-      }
-    }
-    return undefined;
-  }
-
-  /** 最后一个 assistant 消息的模型成本（USD），无则 undefined */
-  private lastModelCostUsd(messages: Message[]): number | undefined {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
-      if (m.role === 'assistant') {
-        const total = (m as AssistantMessage).usage?.cost?.total;
-        if (typeof total === 'number') return total;
       }
     }
     return undefined;

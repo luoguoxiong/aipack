@@ -47,8 +47,6 @@ export interface RunTelemetryInfo {
   /** 是否成功（Result.success） */
   success: boolean;
   errorClass?: ErrorClass;
-  /** 成本（USD）：最后一个模型调用的 usage.cost.total，无需自行算价 */
-  costUsd?: number;
   tokens: {
     input: number;
     output: number;
@@ -91,8 +89,6 @@ export interface ModelTelemetryInfo {
   durationMs: number;
   stream: boolean;
   errorClass?: ErrorClass;
-  /** 成本（USD）：usage.cost.total */
-  costUsd?: number;
 }
 
 /** 工具调用被权限策略拒绝事件载荷 */

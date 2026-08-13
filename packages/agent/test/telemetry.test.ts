@@ -380,22 +380,25 @@ describe('Telemetry: S1 校验失败 / 成本', () => {
     assert.equal(info.errorClass, 'validation');
   });
 
-  it('usage.cost.total 透传到 onModelCall.costUsd / onRunEnd.costUsd', async () => {
+  it('token 用量透传到 onModelCall.inputTokens/outputTokens 与 onRunEnd.tokens', async () => {
     const onModelCall = mock.fn(() => undefined);
     const onRunEnd = mock.fn(() => undefined);
     const msg = assistant('hello');
-    msg.usage = {
-      ...msg.usage!,
-      cost: { input: 0.0001, output: 0.0002, total: 0.0003 },
-    };
+    msg.usage = { ...msg.usage!, input: 100, output: 200, total: 300, cacheRead: 10 };
     const runtime = createRuntime({
       streamFn: mockStreamFn([msg]),
       telemetry: { onModelCall, onRunEnd },
     });
 
     await runtime.run(createRequest('hi'));
-    assert.equal(onModelCall.mock.calls[0].arguments[0].costUsd, 0.0003);
-    assert.equal(onRunEnd.mock.calls[0].arguments[0].costUsd, 0.0003);
+    assert.equal(onModelCall.mock.calls[0].arguments[0].inputTokens, 100);
+    assert.equal(onModelCall.mock.calls[0].arguments[0].outputTokens, 200);
+    assert.deepEqual(onRunEnd.mock.calls[0].arguments[0].tokens, {
+      input: 100,
+      output: 200,
+      cacheRead: 10,
+      cacheWrite: undefined,
+    });
   });
 });
 

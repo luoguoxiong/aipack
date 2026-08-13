@@ -1,10 +1,11 @@
 /**
  * REST API（observability-s2.md §6/§7）：原生 node:http，可挂载到任意现有 server。
  *
- *   GET /metrics/summary?appId&since&until&groupBy=model|tool|session
- *   GET /metrics/timeseries?appId&since&until&step&metric=requests|successRate|costUsd
- *   GET /metrics/tools?appId&since&until
- *   GET /traces?appId&since&until&status&model&tool&sessionKey&page&pageSize
+ *   GET /metrics/summary?appId&since&until&version&groupBy=model|tool|session
+ *   GET /metrics/timeseries?appId&since&until&version&step&metric=requests|successRate|tokensTotal
+ *   GET /metrics/tools?appId&since&until&version
+ *   GET /metrics/versions?appId&since&until
+ *   GET /traces?appId&since&until&status&model&tool&sessionKey&version&page&pageSize
  *   GET /traces/:traceId
  *
  * appId 缺省 = 全局聚合（所有应用合并）；指定则只看该应用。鉴权由挂载方（collector）负责。
@@ -44,6 +45,7 @@ export function createApiHandler(deps: ApiDeps): ApiHandler {
       if (path === '/metrics/summary') return metricsSummary(url, deps, res, appId);
       if (path === '/metrics/timeseries') return metricsTimeseries(url, deps, res, appId);
       if (path === '/metrics/tools') return metricsTools(url, deps, res, appId);
+      if (path === '/metrics/versions') return metricsVersions(url, deps, res, appId);
       if (path === '/traces') return tracesList(url, deps, res, appId);
 
       const traceMatch = path.match(/^\/traces\/(.+)$/);
@@ -79,8 +81,8 @@ function metricsTimeseries(
   const filter = parseFilter(url);
   const stepMs = intParam(url, 'step', 5 * 60 * 1000, 60 * 1000);
   const metric = (url.searchParams.get('metric') as TimeseriesMetric) || 'requests';
-  if (!['requests', 'successRate', 'costUsd'].includes(metric)) {
-    return json(res, 400, { error: 'metric 仅支持 requests|successRate|costUsd' });
+  if (!['requests', 'successRate', 'tokensTotal'].includes(metric)) {
+    return json(res, 400, { error: 'metric 仅支持 requests|successRate|tokensTotal' });
   }
   return json(res, 200, aggregatorFor(appId).timeseries(filter, stepMs, metric));
 }
@@ -92,6 +94,22 @@ function metricsTools(
   appId?: string,
 ): Promise<void> {
   return json(res, 200, aggregatorFor(appId).tools(parseFilter(url)));
+}
+
+/** 版本聚合：DB 直查（非内存窗口），供跨版本指标对比 */
+function metricsVersions(
+  url: URL,
+  { store }: ApiDeps,
+  res: http.ServerResponse,
+  appId?: string,
+): Promise<void> {
+  const filter = parseFilter(url);
+  const items = store.queryVersionMetrics({
+    since: filter.since,
+    until: filter.until,
+    appId,
+  });
+  return json(res, 200, { items });
 }
 
 async function tracesList(
@@ -110,6 +128,7 @@ async function tracesList(
     model: url.searchParams.get('model') || undefined,
     tool: url.searchParams.get('tool') || undefined,
     sessionKey: url.searchParams.get('sessionKey') || undefined,
+    version: filter.version,
     appId,
     offset: (page - 1) * pageSize,
     limit: pageSize,
@@ -121,12 +140,12 @@ async function tracesList(
     items: result.items.map((r) => ({
       traceId: r.traceId,
       appId: r.appId,
+      appVersion: r.appVersion,
       startedAt: r.startedAt,
       durationMs: r.durationMs,
       status: r.status,
       turns: r.turns,
-      tokens: { input: r.inputTokens, output: r.outputTokens },
-      costUsd: r.costUsd,
+      tokens: { input: r.inputTokens, output: r.outputTokens, cacheRead: r.cacheRead, cacheWrite: r.cacheWrite },
       retries: r.retries,
       sessionKey: r.sessionKey,
     })),
@@ -150,8 +169,7 @@ async function traceDetail(
       status: s.status,
       errorClass: s.errorClass,
       attempts: s.attempts,
-      tokens: { input: s.inputTokens ?? 0, output: s.outputTokens ?? 0 },
-      costUsd: s.costUsd,
+      tokens: { input: s.inputTokens ?? 0, output: s.outputTokens ?? 0, cacheRead: s.cacheRead ?? 0, cacheWrite: s.cacheWrite ?? 0 },
     })),
     // P2-1 自定义事件（时间轴）
     events: detail.events.map((e) => ({
@@ -181,6 +199,7 @@ function parseFilter(url: URL): SummaryFilter {
   return {
     since: since !== null && since !== '' ? Number(since) : undefined,
     until: until !== null && until !== '' ? Number(until) : undefined,
+    version: url.searchParams.get('version') || undefined,
   };
 }
 

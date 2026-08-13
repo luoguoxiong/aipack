@@ -26,7 +26,7 @@ export default function ObservabilityPage() {
         <LineChartOutlined style={{ color: '#6366f1' }} /> 可观测性
       </h1>
       <p className="section-subtitle">
-        aipack 内置 <b>Telemetry</b> 轻量埋点接口：token 成本、成功率、响应耗时、
+        aipack 内置 <b>Telemetry</b> 轻量埋点接口：token 消耗量、成功率、响应耗时、
         step 长度、重试次数、工具成功率等生产指标开箱即出，一次 run 的完整链路
         可通过 <b>traceId</b> 回放。
       </p>
@@ -52,7 +52,7 @@ export default function ObservabilityPage() {
                   <DashboardOutlined style={{ fontSize: 20 }} />
                   <div style={{ fontWeight: 700, marginTop: 4 }}>onRunEnd</div>
                   <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>
-                    turns / tokens / costUsd / queuedMs / success / errorClass
+                    turns / tokens / queuedMs / success / errorClass
                   </div>
                 </div>
               </div>
@@ -65,7 +65,7 @@ export default function ObservabilityPage() {
                   <FireOutlined style={{ fontSize: 20 }} />
                   <div style={{ fontWeight: 700, marginTop: 4 }}>onModelCall</div>
                   <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>
-                    attempts / tokens / costUsd / durationMs / stream
+                    attempts / tokens / durationMs / stream
                   </div>
                 </div>
                 <div className="arch-box arch-box-storage">
@@ -132,13 +132,13 @@ export default function ObservabilityPage() {
               <td>run 完成（成功或失败均触发）</td>
               <td>
                 traceId / <b>turnCount</b> / durationMs / queuedMs / activeMs / success /{' '}
-                errorClass / costUsd / tokens / ttftMs
+                errorClass / tokens / ttftMs
               </td>
             </tr>
             <tr>
               <td><span className="param-name">onModelCall</span></td>
               <td>每次模型调用完成</td>
-              <td>traceId / spanId / modelId / <b>attempts</b> / inputTokens / outputTokens / durationMs / stream / errorClass / costUsd</td>
+              <td>traceId / spanId / modelId / <b>attempts</b> / inputTokens / outputTokens / cacheRead / cacheWrite / durationMs / stream / errorClass</td>
             </tr>
             <tr>
               <td><span className="param-name">onToolCall</span></td>
@@ -194,8 +194,8 @@ export default function ObservabilityPage() {
         </h2>
         <p style={{ lineHeight: 1.8, color: '#475569' }}>
           所有指标都来自 telemetry 事件，可直接对账到 Dashboard 与 SLO。
-          成本已按 <code>model.cost</code>（每百万 token 费率，含缓存价）在 provider 层算好，
-          无需自行计价。
+          token 消耗量在 provider 层按 input/output/cacheRead/cacheWrite 四类还原，
+          无需自行汇总。
         </p>
         <CodeBlock code={obsMetricsCode} language="typescript" compact />
         <Alert
@@ -252,9 +252,9 @@ export default function ObservabilityPage() {
       <div style={{ padding: 24, background: '#f0fdf4', borderRadius: 12, border: '1px solid #bbf7d0' }}>
         <h3 style={{ marginTop: 0, color: '#166534' }}>💡 与 Extension 的分工</h3>
         <ul style={{ color: '#14532d', lineHeight: 2 }}>
-          <li>要"观测"（指标、Trace、成本） → <b>Telemetry</b>（本页）+ <b>@aipack/observability</b>（第 5 节：聚合 + SQLite + REST API）</li>
+          <li>要"观测"（指标、Trace、token 消耗量） → <b>Telemetry</b>（本页）+ <b>@aipack/observability</b>（第 5 节：聚合 + SQLite + REST API）</li>
           <li>要"干预"（改请求/上下文、block/terminate 工具） → <b>Extension / Tool Hooks</b></li>
-          <li>指标口径与成本计算已内置（provider 按 model.cost 计价），无需自行实现</li>
+          <li>指标口径与 token 汇总已内置（provider 还原 input/output/cache 四类 token），无需自行实现</li>
         </ul>
       </div>
     </div>

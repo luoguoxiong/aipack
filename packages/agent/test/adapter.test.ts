@@ -27,7 +27,6 @@ const openaiAiModel: AiModel = {
   maxTokens: 8192,
   reasoning: false,
   baseUrl: 'https://mock.example.com/v1',
-  cost: { input: 0.5, output: 1.5 },
 };
 
 const reasoningAiModel: AiModel = {
@@ -90,10 +89,9 @@ describe('adaptAiModel', () => {
     assert.equal(m.reasoning, false);
   });
 
-  it('透传 ai 扩展字段（baseUrl/cost）', () => {
-    const m = adaptAiModel(openaiAiModel) as Model & { baseUrl?: string; cost?: unknown };
+  it('透传 ai 扩展字段（baseUrl）', () => {
+    const m = adaptAiModel(openaiAiModel) as Model & { baseUrl?: string };
     assert.equal(m.baseUrl, 'https://mock.example.com/v1');
-    assert.deepEqual(m.cost, { input: 0.5, output: 1.5 });
   });
 });
 

@@ -40,6 +40,8 @@ export interface CreateObservabilityOptions {
   sampleRate?: number;
   /** P2-1 脱敏钩子：send 前对整批改写（防 PII 明文上报），示例见 docs/observability-roadmap.md §P2-1 */
   redact?: (batch: import('./types').EventBatch) => import('./types').EventBatch;
+  /** 发布版本（如 '1.3.0'），随每条 run 上报，供收集端按版本聚合对比。缺省不携带 */
+  version?: string;
 }
 
 export interface Observability {
@@ -85,6 +87,7 @@ export function createObservability(opts: CreateObservabilityOptions): Observabi
     batchSize: opts.flushBatchSize,
     sampleRate: opts.sampleRate,
     redact: opts.redact,
+    appVersion: opts.version,
   });
   const logger = createLogger({
     tags: { app: opts.appId },

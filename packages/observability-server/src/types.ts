@@ -4,10 +4,11 @@
  * 定义在 @aipack/observability（上报 SDK），本包依赖其做落盘与聚合。
  */
 
-/** 聚合查询的时间过滤（epoch ms） */
+/** 聚合查询的时间过滤（epoch ms）；version 精确匹配发布版本（缺省不过滤） */
 export interface SummaryFilter {
   since?: number;
   until?: number;
+  version?: string;
 }
 
 /** /metrics/summary 聚合结果（口径对齐 observability.md §3） */
@@ -16,10 +17,8 @@ export interface AggregatedMetrics {
   requests: number;
   /** status='success' 且无 errorClass 占比 */
   successRate: number;
-  /** 成本（USD），模型 span 累计 */
-  costUsd: number;
-  /** 未配费率（costUsd 为 0/缺省）的调用数，避免把"没配费率"误报为"零成本" */
-  costUnknown: number;
+  /** token 总消耗量（模型 span 累计，input+output+cacheRead+cacheWrite） */
+  totalTokens: number;
   /** 端到端耗时分位数（run 级 durationMs 直方图） */
   p50Ms: number;
   p95Ms: number;
@@ -41,7 +40,7 @@ export interface AggregatedMetrics {
 
 export type GroupBy = 'model' | 'tool' | 'session';
 
-export type TimeseriesMetric = 'requests' | 'successRate' | 'costUsd';
+export type TimeseriesMetric = 'requests' | 'successRate' | 'tokensTotal';
 
 export interface TimeseriesPoint {
   /** 桶起始时间（epoch ms） */
@@ -57,4 +56,31 @@ export interface ToolStat {
   successRate: number;
   avgMs: number;
   errors: number;
+}
+
+/** /metrics/versions 单版本单工具统计（口径对齐 ToolStat，keyed by tool name） */
+export interface VersionToolStat {
+  calls: number;
+  /** ok / (ok + error)，blocked/skipped 不计入分母 */
+  successRate: number;
+  avgMs: number;
+  errors: number;
+}
+
+/** /metrics/versions 单版本聚合（SQLite 直查，非内存窗口；口径对齐 AggregatedMetrics） */
+export interface VersionMetrics {
+  version: string;
+  /** 最近一次该版本上报时间（epoch ms，供面板按"最近版本"排序） */
+  lastSeenAt: number;
+  requests: number;
+  successRate: number;
+  p50Ms: number;
+  p95Ms: number;
+  p99Ms: number;
+  totalTokens: number;
+  avgTurns: number;
+  retryRate: number;
+  errorClasses: Record<string, number>;
+  /** 工具名 -> 统计（keyed by tool name 便于面板 diff） */
+  tools: Record<string, VersionToolStat>;
 }

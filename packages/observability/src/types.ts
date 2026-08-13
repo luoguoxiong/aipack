@@ -11,6 +11,8 @@ export interface RunRecord {
   sessionKey: string;
   channel?: string;
   model?: string;
+  /** 发布版本（接入方 agent 应用版本，如 '1.3.0'）。可空：旧 SDK / 未配置时缺省，服务端归入 unknown */
+  appVersion?: string;
   status: 'success' | 'error' | 'validation';
   errorClass?: string;
   turns: number;
@@ -22,7 +24,6 @@ export interface RunRecord {
   outputTokens: number;
   cacheRead?: number;
   cacheWrite?: number;
-  costUsd?: number;
 }
 
 export interface SpanRecord {
@@ -37,8 +38,9 @@ export interface SpanRecord {
   attempts?: number;
   inputTokens?: number;
   outputTokens?: number;
-  costUsd?: number;
-  /** 会话标识（支撑 session 维度成本统计） */
+  cacheRead?: number;
+  cacheWrite?: number;
+  /** 会话标识（支撑 session 维度 token 统计） */
   sessionKey?: string;
 }
 

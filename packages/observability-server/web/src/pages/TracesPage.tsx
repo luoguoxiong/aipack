@@ -119,6 +119,13 @@ export default function TracesPage() {
         ),
     },
     {
+      title: '版本',
+      dataIndex: 'appVersion',
+      width: 110,
+      render: (v?: string) =>
+        v ? <span className="mono">{v}</span> : <Tag color="default">—</Tag>,
+    },
+    {
       title: '状态',
       dataIndex: 'status',
       width: 100,
@@ -135,14 +142,17 @@ export default function TracesPage() {
     },
     {
       title: 'Tokens',
-      width: 140,
+      width: 150,
       render: (_: unknown, r: TraceItem) => `↑${r.tokens.input} ↓${r.tokens.output}`,
     },
     {
-      title: '成本',
-      dataIndex: 'costUsd',
-      width: 90,
-      render: (v?: number) => (v === undefined || v === null ? '—' : `$${Number(v).toFixed(6)}`),
+      title: 'Token 总量',
+      width: 110,
+      render: (_: unknown, r: TraceItem) => {
+        const t = r.tokens;
+        const total = t.input + t.output + (t.cacheRead ?? 0) + (t.cacheWrite ?? 0);
+        return <span className="mono">{total}</span>;
+      },
     },
     {
       title: '重试',
@@ -263,7 +273,9 @@ export default function TracesPage() {
                     </div>
                     <div style={{ color: '#6b7280', fontSize: 12 }}>
                       tokens ↑{s.tokens.input} ↓{s.tokens.output}
-                      {s.costUsd ? ` · $${Number(s.costUsd).toFixed(6)}` : ''}
+                      {s.tokens.cacheRead || s.tokens.cacheWrite
+                        ? ` · cache ↑${s.tokens.cacheRead} ↓${s.tokens.cacheWrite}`
+                        : ''}
                       {s.attempts && s.attempts > 1 ? ` · 重试 ${s.attempts - 1} 次` : ''}
                     </div>
                   </div>
@@ -355,7 +367,7 @@ export default function TracesPage() {
 
             <Card size="small" title="说明">
               <Typography.Text type="secondary">
-                Trace 即一次 run/stream：model span 含 tokens/成本/重试，tool span 含工具状态；
+                Trace 即一次 run/stream：model span 含 tokens/重试，tool span 含工具状态；
                 同一 traceId 会持久化到会话消息，可在历史会话中复盘。
               </Typography.Text>
             </Card>

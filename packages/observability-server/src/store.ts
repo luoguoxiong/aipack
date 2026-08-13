@@ -12,6 +12,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import type { RunRecord, SpanRecord, ToolCallRecord, EventRecord, RetryRecord, EventBatch } from '@aipack/observability';
 import type { AlertMetric, AlertOperator } from './alerts/rules';
+import type { VersionMetrics } from './types';
 
 /** 面板应用（appId + appSecret，动态创建，替代静态 OBS_APPS 白名单） */
 export interface AppRecord {
@@ -30,8 +31,9 @@ export interface RunQueryFilter {
   model?: string;
   tool?: string;
   sessionKey?: string;
-  /** 按应用过滤（apps 表 app_id） */
   appId?: string;
+  /** 发布版本精确匹配；历史数据 version 为 NULL 时以 'unknown' 匹配 */
+  version?: string;
   offset: number;
   limit: number;
 }
@@ -59,6 +61,8 @@ export interface TraceStore {
   insertToolCall(t: ToolCallRecord): void;
   queryRuns(filter: RunQueryFilter): { total: number; items: RunListItem[] };
   queryTrace(traceId: string): TraceDetail | undefined;
+  /** 按版本聚合（DB 直查，非内存窗口），返回按 lastSeenAt 倒序 */
+  queryVersionMetrics(filter: { since?: number; until?: number; appId?: string }): VersionMetrics[];
   /** 批量写入（事务），由收集端 ingest 调用；appId 由鉴权头推导并盖戳 */
   flush(batch: EventBatch, appId: string): void;
   /** 删除 started_at 早于 before 的三表明细（事务），返回删除行数 */
@@ -153,6 +157,7 @@ CREATE TABLE IF NOT EXISTS runs (
   session_key  TEXT,
   channel      TEXT,
   model        TEXT,
+  version      TEXT,
   status       TEXT,
   error_class  TEXT,
   turns        INTEGER,
@@ -163,8 +168,7 @@ CREATE TABLE IF NOT EXISTS runs (
   input_tokens INTEGER,
   output_tokens INTEGER,
   cache_read   INTEGER,
-  cache_write  INTEGER,
-  cost_usd     REAL
+  cache_write  INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at);
 CREATE INDEX IF NOT EXISTS idx_runs_session ON runs(session_key);
@@ -184,7 +188,8 @@ CREATE TABLE IF NOT EXISTS spans (
   attempts     INTEGER,
   input_tokens INTEGER,
   output_tokens INTEGER,
-  cost_usd     REAL,
+  cache_read   INTEGER,
+  cache_write  INTEGER,
   session_key  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_spans_trace ON spans(trace_id);
@@ -278,14 +283,37 @@ function ensureAppIdColumns(db: Database.Database): void {
   }
 }
 
+/** 存量库迁移：spans 表补 cache token 列（DDL 已含，旧库需 ALTER） */
+function ensureSpanCacheColumns(db: Database.Database): void {
+  const cols = db.prepare('PRAGMA table_info(spans)').all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === 'cache_read')) {
+    db.exec('ALTER TABLE spans ADD COLUMN cache_read INTEGER');
+  }
+  if (!cols.some((c) => c.name === 'cache_write')) {
+    db.exec('ALTER TABLE spans ADD COLUMN cache_write INTEGER');
+  }
+}
+
+/**
+ * 存量库迁移：runs 表补 version 列（DDL 已含，旧库需 ALTER；历史数据为 NULL，聚合归入 unknown）。
+ * 版本索引在此统一创建（不放进 DDL：旧库无 version 列时 DDL 建索引会失败）。
+ */
+function ensureVersionColumn(db: Database.Database): void {
+  const cols = db.prepare('PRAGMA table_info(runs)').all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === 'version')) {
+    db.exec('ALTER TABLE runs ADD COLUMN version TEXT');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_runs_version ON runs(version)');
+}
+
 const RUN_COLS =
-  'trace_id, app_id, started_at, ended_at, session_key, channel, model, status, error_class, ' +
+  'trace_id, app_id, started_at, ended_at, session_key, channel, model, version, status, error_class, ' +
   'turns, duration_ms, active_ms, queued_ms, ttft_ms, input_tokens, output_tokens, ' +
-  'cache_read, cache_write, cost_usd';
+  'cache_read, cache_write';
 
 const SPAN_COLS =
   'trace_id, app_id, span_id, kind, name, started_at, duration_ms, status, error_class, ' +
-  'attempts, input_tokens, output_tokens, cost_usd, session_key';
+  'attempts, input_tokens, output_tokens, cache_read, cache_write, session_key';
 
 const TOOL_COLS = 'trace_id, app_id, span_id, tool_name, status, duration_ms, error_class';
 
@@ -315,6 +343,8 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
     }
     this.db.exec(DDL);
     ensureAppIdColumns(this.db);
+    ensureSpanCacheColumns(this.db);
+    ensureVersionColumn(this.db);
 
     this.insertRunStmt = this.db.prepare(
       `INSERT INTO runs (${RUN_COLS}) VALUES (${RUN_COLS.split(',').map(() => '?').join(',')})`,
@@ -448,6 +478,11 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
       where.push('trace_id IN (SELECT trace_id FROM tool_calls WHERE tool_name = ?)');
       params.push(filter.tool);
     }
+    if (filter.version) {
+      // version 为 NULL 的历史数据（阶段 1 之前上报）以 'unknown' 归并匹配
+      where.push(`COALESCE(version, 'unknown') = ?`);
+      params.push(filter.version);
+    }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
     const { c } = this.db
@@ -492,6 +527,180 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
       events: events.map(rowToEvent),
       retries: retries.map(rowToRetry),
     };
+  }
+
+  /**
+   * 按版本聚合（SQLite 直查，非内存窗口）：
+   *  - 基础：runs GROUP BY version（requests/successRate/tokens/avgTurns/lastSeenAt）
+   *  - 分位数：SQLite 无 percentile 聚合，JS 侧对 duration_ms 排序求值
+   *  - 重试率：JOIN model spans（Σ(attempts-1) / 模型调用数）
+   *  - 错误分类 / 工具统计：GROUP BY / JOIN tool_calls
+   *  version 为 NULL 的历史数据统一归入 'unknown'；返回按 lastSeenAt 倒序。
+   */
+  queryVersionMetrics(filter: { since?: number; until?: number; appId?: string }): VersionMetrics[] {
+    const conds: string[] = [];
+    const params: unknown[] = [];
+    if (filter.since !== undefined) {
+      conds.push('r.started_at >= ?');
+      params.push(filter.since);
+    }
+    if (filter.until !== undefined) {
+      conds.push('r.started_at < ?');
+      params.push(filter.until);
+    }
+    if (filter.appId) {
+      conds.push('r.app_id = ?');
+      params.push(filter.appId);
+    }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    const versionExpr = `COALESCE(r.version, 'unknown')`;
+
+    // 1. run 级基础聚合
+    const runAgg = this.db
+      .prepare(
+        `SELECT ${versionExpr} AS version,
+                COUNT(*) AS requests,
+                SUM(CASE WHEN r.status = 'success' AND r.error_class IS NULL THEN 1 ELSE 0 END) AS success,
+                SUM(r.turns) AS turns_sum,
+                SUM(r.input_tokens + r.output_tokens + COALESCE(r.cache_read, 0) + COALESCE(r.cache_write, 0)) AS tokens,
+                MAX(r.started_at) AS last_seen
+         FROM runs r ${where}
+         GROUP BY ${versionExpr}`,
+      )
+      .all(...params) as Array<Record<string, unknown>>;
+
+    // 2. 分位数：按版本收集 duration_ms（升序数组）
+    const durRows = this.db
+      .prepare(
+        `SELECT ${versionExpr} AS version, r.duration_ms AS d
+         FROM runs r ${where}
+         ORDER BY r.duration_ms ASC`,
+      )
+      .all(...params) as Array<{ version: string; d: number }>;
+
+    // 3. 模型调用 / 重试（JOIN model span；重试口径对齐聚合器 retryRate）
+    const modelAgg = this.db
+      .prepare(
+        `SELECT ${versionExpr} AS version,
+                COUNT(*) AS model_calls,
+                COALESCE(SUM(MAX(s.attempts - 1, 0)), 0) AS retries
+         FROM runs r JOIN spans s ON s.trace_id = r.trace_id AND s.kind = 'model'
+         ${where}
+         GROUP BY ${versionExpr}`,
+      )
+      .all(...params) as Array<Record<string, unknown>>;
+
+    // 4. 错误分类
+    const errConds = conds.length ? [...conds, 'r.error_class IS NOT NULL'] : ['r.error_class IS NOT NULL'];
+    const errRows = this.db
+      .prepare(
+        `SELECT ${versionExpr} AS version, r.error_class AS cls, COUNT(*) AS c
+         FROM runs r WHERE ${errConds.join(' AND ')}
+         GROUP BY ${versionExpr}, r.error_class`,
+      )
+      .all(...params) as Array<{ version: string; cls: string; c: number }>;
+
+    // 5. 工具统计（JOIN tool_calls；blocked/skipped 不计入分母）
+    interface ToolAccum {
+      calls: number;
+      ok: number;
+      error: number;
+      totalMs: number;
+    }
+    const toolAccums = new Map<string, Map<string, ToolAccum>>();
+    const toolRows = this.db
+      .prepare(
+        `SELECT ${versionExpr} AS version, t.tool_name AS name, t.status AS status, t.duration_ms AS d
+         FROM tool_calls t JOIN runs r ON r.trace_id = t.trace_id
+         ${where}`,
+      )
+      .all(...params) as Array<{ version: string; name: string; status: string; d: number }>;
+    for (const row of toolRows) {
+      let byName = toolAccums.get(row.version);
+      if (!byName) {
+        byName = new Map();
+        toolAccums.set(row.version, byName);
+      }
+      const t = byName.get(row.name) ?? { calls: 0, ok: 0, error: 0, totalMs: 0 };
+      const isOk = row.status === 'ok';
+      const isErr = row.status === 'error';
+      if (isOk || isErr) {
+        t.calls += 1;
+        t.totalMs += Number(row.d);
+      }
+      if (isOk) t.ok += 1;
+      if (isErr) t.error += 1;
+      byName.set(row.name, t);
+    }
+
+    // ─── 组装 ─────────────────────────────────────────────────────
+    const byVersion = new Map<string, VersionMetrics>();
+    for (const row of runAgg) {
+      const version = String(row.version);
+      const requests = Number(row.requests);
+      byVersion.set(version, {
+        version,
+        lastSeenAt: Number(row.last_seen),
+        requests,
+        successRate: requests > 0 ? round8(Number(row.success) / requests) : 0,
+        p50Ms: 0,
+        p95Ms: 0,
+        p99Ms: 0,
+        totalTokens: Number(row.tokens),
+        avgTurns: requests > 0 ? round8(Number(row.turns_sum) / requests) : 0,
+        retryRate: 0,
+        errorClasses: {},
+        tools: {},
+      });
+    }
+
+    // 分位数（JS 侧排序求值，精确而非直方图近似）
+    const durByVersion = new Map<string, number[]>();
+    for (const row of durRows) {
+      const arr = durByVersion.get(row.version) ?? [];
+      arr.push(Number(row.d));
+      durByVersion.set(row.version, arr);
+    }
+    for (const [version, arr] of durByVersion) {
+      const m = byVersion.get(version);
+      if (!m) continue;
+      arr.sort((a, b) => a - b);
+      m.p50Ms = quantileSorted(arr, 0.5);
+      m.p95Ms = quantileSorted(arr, 0.95);
+      m.p99Ms = quantileSorted(arr, 0.99);
+    }
+
+    for (const row of modelAgg) {
+      const m = byVersion.get(String(row.version));
+      if (!m) continue;
+      const modelCalls = Number(row.model_calls);
+      m.retryRate = modelCalls > 0 ? round8(Number(row.retries) / modelCalls) : 0;
+    }
+
+    for (const row of errRows) {
+      const m = byVersion.get(row.version);
+      if (!m) continue;
+      m.errorClasses[row.cls] = Number(row.c);
+    }
+
+    for (const [version, byName] of toolAccums) {
+      const m = byVersion.get(version);
+      if (!m) continue;
+      const tools: VersionMetrics['tools'] = {};
+      for (const [name, t] of byName) {
+        tools[name] = {
+          calls: t.calls,
+          successRate: t.calls > 0 ? round8(t.ok / t.calls) : 0,
+          avgMs: t.calls > 0 ? round2(t.totalMs / t.calls) : 0,
+          errors: t.error,
+        };
+      }
+      m.tools = tools;
+    }
+
+    const out = [...byVersion.values()];
+    out.sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+    return out;
   }
 
   flush(batch: EventBatch, appId: string): void {
@@ -648,6 +857,7 @@ function rowToRun(r: Record<string, unknown>): RunListItem {
     sessionKey: String(r.session_key),
     channel: optStr(r.channel),
     model: optStr(r.model),
+    appVersion: optStr(r.version),
     status: r.status as RunRecord['status'],
     errorClass: optStr(r.error_class),
     turns: Number(r.turns),
@@ -659,7 +869,6 @@ function rowToRun(r: Record<string, unknown>): RunListItem {
     outputTokens: Number(r.output_tokens),
     cacheRead: optNum(r.cache_read),
     cacheWrite: optNum(r.cache_write),
-    costUsd: optNum(r.cost_usd),
     retries: Number(r.retries ?? 0),
   };
 }
@@ -677,7 +886,8 @@ function rowToSpan(r: Record<string, unknown>): SpanRecord {
     attempts: optNum(r.attempts),
     inputTokens: optNum(r.input_tokens),
     outputTokens: optNum(r.output_tokens),
-    costUsd: optNum(r.cost_usd),
+    cacheRead: optNum(r.cache_read),
+    cacheWrite: optNum(r.cache_write),
     sessionKey: optStr(r.session_key),
   };
 }
@@ -704,17 +914,16 @@ function optNum(v: unknown): number | undefined {
 function runArgs(r: RunRecord, appId: string | undefined): unknown[] {
   return [
     r.traceId, n(appId), r.startedAt, r.endedAt, r.sessionKey, n(r.channel), n(r.model),
-    r.status, n(r.errorClass), r.turns, r.durationMs, r.activeMs, r.queuedMs,
+    n(r.appVersion), r.status, n(r.errorClass), r.turns, r.durationMs, r.activeMs, r.queuedMs,
     n(r.ttftMs), r.inputTokens, r.outputTokens, n(r.cacheRead), n(r.cacheWrite),
-    n(r.costUsd),
   ];
 }
 
 function spanArgs(s: SpanRecord, appId: string | undefined): unknown[] {
   return [
     s.traceId, n(appId), s.spanId, s.kind, s.name, s.startedAt, s.durationMs, s.status,
-    n(s.errorClass), n(s.attempts), n(s.inputTokens), n(s.outputTokens), n(s.costUsd),
-    n(s.sessionKey),
+    n(s.errorClass), n(s.attempts), n(s.inputTokens), n(s.outputTokens),
+    n(s.cacheRead), n(s.cacheWrite), n(s.sessionKey),
   ];
 }
 
@@ -822,4 +1031,22 @@ function safeEqual(a: string, b: string): boolean {
 
 function randomHex(bytes: number): string {
   return randomBytes(bytes).toString('hex');
+}
+
+/** 升序数组线性插值分位数（对齐聚合器直方图的 p50/p95/p99 语义；空数组返回 0） */
+function quantileSorted(sorted: number[], q: number): number {
+  if (!sorted.length) return 0;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (hi === lo) return sorted[lo];
+  return sorted[lo] * (hi - pos) + sorted[hi] * (pos - lo);
+}
+
+function round8(n: number): number {
+  return Math.round(n * 1e8) / 1e8;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }

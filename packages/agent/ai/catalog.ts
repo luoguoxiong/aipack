@@ -19,57 +19,57 @@ const MOONSHOT_BASE = 'https://api.moonshot.cn/v1';
 
 export const BUILTIN_MODELS: Model[] = [
   // ── OpenAI ──────────────────────────────────────────────────────
-  { id: 'gpt-4o', name: 'GPT-4o', api: 'openai-completions', provider: 'openai', baseUrl: OPENAI_BASE, reasoning: false, input: ['text', 'image'], cost: { input: 2.5, output: 10, cacheRead: 1.25, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 16384 },
-  { id: 'gpt-4o-mini', name: 'GPT-4o Mini', api: 'openai-completions', provider: 'openai', baseUrl: OPENAI_BASE, reasoning: false, input: ['text', 'image'], cost: { input: 0.15, output: 0.6, cacheRead: 0.075, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 16384 },
-  { id: 'gpt-5', name: 'GPT-5', api: 'openai-completions', provider: 'openai', baseUrl: OPENAI_BASE, reasoning: true, input: ['text', 'image'], cost: { input: 5, output: 15, cacheRead: 2.5, cacheWrite: 0 }, contextWindow: 200000, maxTokens: 16384 },
-  { id: 'gpt-5-mini', name: 'GPT-5 Mini', api: 'openai-completions', provider: 'openai', baseUrl: OPENAI_BASE, reasoning: true, input: ['text', 'image'], cost: { input: 0.5, output: 1.5, cacheRead: 0.25, cacheWrite: 0 }, contextWindow: 200000, maxTokens: 16384 },
-  { id: 'o3', name: 'o3', api: 'openai-completions', provider: 'openai', baseUrl: OPENAI_BASE, reasoning: true, input: ['text', 'image'], cost: { input: 2, output: 8, cacheRead: 0.5, cacheWrite: 0 }, contextWindow: 200000, maxTokens: 100000 },
-  { id: 'o4-mini', name: 'o4-mini', api: 'openai-completions', provider: 'openai', baseUrl: OPENAI_BASE, reasoning: true, input: ['text', 'image'], cost: { input: 0.5, output: 1.5, cacheRead: 0.125, cacheWrite: 0 }, contextWindow: 200000, maxTokens: 100000 },
+  { id: 'gpt-4o', name: 'GPT-4o', api: 'openai-completions', provider: 'openai', baseUrl: OPENAI_BASE, reasoning: false, input: ['text', 'image'], contextWindow: 128000, maxTokens: 16384 },
+  { id: 'gpt-4o-mini', name: 'GPT-4o Mini', api: 'openai-completions', provider: 'openai', baseUrl: OPENAI_BASE, reasoning: false, input: ['text', 'image'], contextWindow: 128000, maxTokens: 16384 },
+  { id: 'gpt-5', name: 'GPT-5', api: 'openai-completions', provider: 'openai', baseUrl: OPENAI_BASE, reasoning: true, input: ['text', 'image'], contextWindow: 200000, maxTokens: 16384 },
+  { id: 'gpt-5-mini', name: 'GPT-5 Mini', api: 'openai-completions', provider: 'openai', baseUrl: OPENAI_BASE, reasoning: true, input: ['text', 'image'], contextWindow: 200000, maxTokens: 16384 },
+  { id: 'o3', name: 'o3', api: 'openai-completions', provider: 'openai', baseUrl: OPENAI_BASE, reasoning: true, input: ['text', 'image'], contextWindow: 200000, maxTokens: 100000 },
+  { id: 'o4-mini', name: 'o4-mini', api: 'openai-completions', provider: 'openai', baseUrl: OPENAI_BASE, reasoning: true, input: ['text', 'image'], contextWindow: 200000, maxTokens: 100000 },
 
   // ── DeepSeek ────────────────────────────────────────────────────
-  { id: 'deepseek-chat', name: 'DeepSeek Chat', api: 'openai-completions', provider: 'deepseek', baseUrl: DEEPSEEK_BASE, reasoning: false, input: ['text'], cost: { input: 0.14, output: 0.28, cacheRead: 0.014, cacheWrite: 0 }, contextWindow: 65536, maxTokens: 8192 },
-  { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', api: 'openai-completions', provider: 'deepseek', baseUrl: DEEPSEEK_BASE, reasoning: true, input: ['text'], cost: { input: 0.55, output: 2.19, cacheRead: 0.055, cacheWrite: 0 }, contextWindow: 65536, maxTokens: 8192 },
-  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', api: 'openai-completions', provider: 'deepseek', baseUrl: DEEPSEEK_BASE, reasoning: false, input: ['text'], cost: { input: 0.14, output: 0.28, cacheRead: 0.014, cacheWrite: 0 }, contextWindow: 131072, maxTokens: 8192 },
+  { id: 'deepseek-chat', name: 'DeepSeek Chat', api: 'openai-completions', provider: 'deepseek', baseUrl: DEEPSEEK_BASE, reasoning: false, input: ['text'], contextWindow: 65536, maxTokens: 8192 },
+  { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', api: 'openai-completions', provider: 'deepseek', baseUrl: DEEPSEEK_BASE, reasoning: true, input: ['text'], contextWindow: 65536, maxTokens: 8192 },
+  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', api: 'openai-completions', provider: 'deepseek', baseUrl: DEEPSEEK_BASE, reasoning: false, input: ['text'], contextWindow: 131072, maxTokens: 8192 },
 
   // ── Anthropic ───────────────────────────────────────────────────
-  { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', api: 'anthropic-messages', provider: 'anthropic', baseUrl: ANTHROPIC_BASE, reasoning: true, input: ['text', 'image'], cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }, contextWindow: 200000, maxTokens: 16384 },
-  { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', api: 'anthropic-messages', provider: 'anthropic', baseUrl: ANTHROPIC_BASE, reasoning: false, input: ['text', 'image'], cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }, contextWindow: 200000, maxTokens: 8192 },
-  { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', api: 'anthropic-messages', provider: 'anthropic', baseUrl: ANTHROPIC_BASE, reasoning: false, input: ['text', 'image'], cost: { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 }, contextWindow: 200000, maxTokens: 8192 },
+  { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', api: 'anthropic-messages', provider: 'anthropic', baseUrl: ANTHROPIC_BASE, reasoning: true, input: ['text', 'image'], contextWindow: 200000, maxTokens: 16384 },
+  { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', api: 'anthropic-messages', provider: 'anthropic', baseUrl: ANTHROPIC_BASE, reasoning: false, input: ['text', 'image'], contextWindow: 200000, maxTokens: 8192 },
+  { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', api: 'anthropic-messages', provider: 'anthropic', baseUrl: ANTHROPIC_BASE, reasoning: false, input: ['text', 'image'], contextWindow: 200000, maxTokens: 8192 },
 
   // ── Groq ────────────────────────────────────────────────────────
-  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', api: 'openai-completions', provider: 'groq', baseUrl: GROQ_BASE, reasoning: false, input: ['text'], cost: { input: 0.59, output: 0.79, cacheRead: 0, cacheWrite: 0 }, contextWindow: 131072, maxTokens: 32768 },
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant', api: 'openai-completions', provider: 'groq', baseUrl: GROQ_BASE, reasoning: false, input: ['text'], cost: { input: 0.05, output: 0.08, cacheRead: 0, cacheWrite: 0 }, contextWindow: 131072, maxTokens: 8192 },
+  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', api: 'openai-completions', provider: 'groq', baseUrl: GROQ_BASE, reasoning: false, input: ['text'], contextWindow: 131072, maxTokens: 32768 },
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant', api: 'openai-completions', provider: 'groq', baseUrl: GROQ_BASE, reasoning: false, input: ['text'], contextWindow: 131072, maxTokens: 8192 },
 
   // ── Google ──────────────────────────────────────────────────────
-  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', api: 'openai-completions', provider: 'google', baseUrl: GOOGLE_BASE, reasoning: false, input: ['text', 'image'], cost: { input: 0.1, output: 0.4, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1048576, maxTokens: 8192 },
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', api: 'openai-completions', provider: 'google', baseUrl: GOOGLE_BASE, reasoning: true, input: ['text', 'image'], cost: { input: 0.15, output: 0.6, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1048576, maxTokens: 8192 },
-  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', api: 'openai-completions', provider: 'google', baseUrl: GOOGLE_BASE, reasoning: true, input: ['text', 'image'], cost: { input: 1.25, output: 5, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1048576, maxTokens: 8192 },
+  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', api: 'openai-completions', provider: 'google', baseUrl: GOOGLE_BASE, reasoning: false, input: ['text', 'image'], contextWindow: 1048576, maxTokens: 8192 },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', api: 'openai-completions', provider: 'google', baseUrl: GOOGLE_BASE, reasoning: true, input: ['text', 'image'], contextWindow: 1048576, maxTokens: 8192 },
+  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', api: 'openai-completions', provider: 'google', baseUrl: GOOGLE_BASE, reasoning: true, input: ['text', 'image'], contextWindow: 1048576, maxTokens: 8192 },
 
   // ── OpenRouter ─────────────────────────────────────────────────
-  { id: 'auto', name: 'Auto (OpenRouter)', api: 'openai-completions', provider: 'openrouter', baseUrl: OPENROUTER_BASE, reasoning: false, input: ['text', 'image'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 200000, maxTokens: 8192 },
+  { id: 'auto', name: 'Auto (OpenRouter)', api: 'openai-completions', provider: 'openrouter', baseUrl: OPENROUTER_BASE, reasoning: false, input: ['text', 'image'], contextWindow: 200000, maxTokens: 8192 },
 
   // ── Mistral ─────────────────────────────────────────────────────
-  { id: 'mistral-large-latest', name: 'Mistral Large', api: 'openai-completions', provider: 'mistral', baseUrl: MISTRAL_BASE, reasoning: false, input: ['text'], cost: { input: 2, output: 6, cacheRead: 0, cacheWrite: 0 }, contextWindow: 131072, maxTokens: 8192 },
-  { id: 'mistral-small-latest', name: 'Mistral Small', api: 'openai-completions', provider: 'mistral', baseUrl: MISTRAL_BASE, reasoning: false, input: ['text'], cost: { input: 0.2, output: 0.6, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32768, maxTokens: 8192 },
+  { id: 'mistral-large-latest', name: 'Mistral Large', api: 'openai-completions', provider: 'mistral', baseUrl: MISTRAL_BASE, reasoning: false, input: ['text'], contextWindow: 131072, maxTokens: 8192 },
+  { id: 'mistral-small-latest', name: 'Mistral Small', api: 'openai-completions', provider: 'mistral', baseUrl: MISTRAL_BASE, reasoning: false, input: ['text'], contextWindow: 32768, maxTokens: 8192 },
 
   // ── xAI ────────────────────────────────────────────────────────
-  { id: 'grok-3', name: 'Grok 3', api: 'openai-completions', provider: 'xai', baseUrl: XAI_BASE, reasoning: false, input: ['text', 'image'], cost: { input: 3, output: 15, cacheRead: 0, cacheWrite: 0 }, contextWindow: 131072, maxTokens: 16384 },
-  { id: 'grok-3-mini', name: 'Grok 3 Mini', api: 'openai-completions', provider: 'xai', baseUrl: XAI_BASE, reasoning: true, input: ['text', 'image'], cost: { input: 0.3, output: 0.5, cacheRead: 0, cacheWrite: 0 }, contextWindow: 131072, maxTokens: 16384 },
+  { id: 'grok-3', name: 'Grok 3', api: 'openai-completions', provider: 'xai', baseUrl: XAI_BASE, reasoning: false, input: ['text', 'image'], contextWindow: 131072, maxTokens: 16384 },
+  { id: 'grok-3-mini', name: 'Grok 3 Mini', api: 'openai-completions', provider: 'xai', baseUrl: XAI_BASE, reasoning: true, input: ['text', 'image'], contextWindow: 131072, maxTokens: 16384 },
 
   // ── Cerebras ───────────────────────────────────────────────────
-  { id: 'llama3.1-8b', name: 'Llama 3.1 8B (Cerebras)', api: 'openai-completions', provider: 'cerebras', baseUrl: CEREBRAS_BASE, reasoning: false, input: ['text'], cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 }, contextWindow: 131072, maxTokens: 8192 },
+  { id: 'llama3.1-8b', name: 'Llama 3.1 8B (Cerebras)', api: 'openai-completions', provider: 'cerebras', baseUrl: CEREBRAS_BASE, reasoning: false, input: ['text'], contextWindow: 131072, maxTokens: 8192 },
 
   // ── Together AI ────────────────────────────────────────────────
-  { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', name: 'Llama 3.3 70B Turbo', api: 'openai-completions', provider: 'together', baseUrl: TOGETHER_BASE, reasoning: false, input: ['text'], cost: { input: 0.88, output: 0.88, cacheRead: 0, cacheWrite: 0 }, contextWindow: 131072, maxTokens: 8192 },
+  { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', name: 'Llama 3.3 70B Turbo', api: 'openai-completions', provider: 'together', baseUrl: TOGETHER_BASE, reasoning: false, input: ['text'], contextWindow: 131072, maxTokens: 8192 },
 
   // ── Fireworks ───────────────────────────────────────────────────
-  { id: 'accounts/fireworks/models/llama-v3p3-70b-instruct', name: 'Llama 3.3 70B (Fireworks)', api: 'openai-completions', provider: 'fireworks', baseUrl: FIREWORKS_BASE, reasoning: false, input: ['text'], cost: { input: 0.9, output: 0.9, cacheRead: 0, cacheWrite: 0 }, contextWindow: 131072, maxTokens: 16384 },
+  { id: 'accounts/fireworks/models/llama-v3p3-70b-instruct', name: 'Llama 3.3 70B (Fireworks)', api: 'openai-completions', provider: 'fireworks', baseUrl: FIREWORKS_BASE, reasoning: false, input: ['text'], contextWindow: 131072, maxTokens: 16384 },
 
   // ── NVIDIA NIM ─────────────────────────────────────────────────
-  { id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B (NVIDIA)', api: 'openai-completions', provider: 'nvidia', baseUrl: NVIDIA_BASE, reasoning: false, input: ['text'], cost: { input: 0.77, output: 0.77, cacheRead: 0, cacheWrite: 0 }, contextWindow: 131072, maxTokens: 16384 },
+  { id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B (NVIDIA)', api: 'openai-completions', provider: 'nvidia', baseUrl: NVIDIA_BASE, reasoning: false, input: ['text'], contextWindow: 131072, maxTokens: 16384 },
 
   // ── Moonshot ───────────────────────────────────────────────────
-  { id: 'moonshot-v1-128k', name: 'Moonshot v1 128k', api: 'openai-completions', provider: 'moonshot', baseUrl: MOONSHOT_BASE, reasoning: false, input: ['text'], cost: { input: 2.4, output: 2.4, cacheRead: 0, cacheWrite: 0 }, contextWindow: 131072, maxTokens: 8192 },
+  { id: 'moonshot-v1-128k', name: 'Moonshot v1 128k', api: 'openai-completions', provider: 'moonshot', baseUrl: MOONSHOT_BASE, reasoning: false, input: ['text'], contextWindow: 131072, maxTokens: 8192 },
 ];
 
 // ─── 图像模型目录 ───────────────────────────────────────────────────

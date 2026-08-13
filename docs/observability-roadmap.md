@@ -95,7 +95,7 @@
 | 工具成功率 | `tools()` | 某工具 < 80% |
 | 429/错误突增 | `summary().errorClasses['rate-limit']` | 单周期内新增 > N |
 | 权限拦截 | `summary().permissionDenied` | 周期内 > N |
-| 成本超预算 | `summary().costUsd` / 按天 `timeseries` | 日成本 > 预算 |
+| token 消耗超预算 | `summary().totalTokens` / 按天 `timeseries` | 日消耗 > 预算 |
 
 新增模块 `src/alerts/`：
 
@@ -153,7 +153,7 @@
 ### P1-2 标准协议
 
 - **OTLP**（[otlp.ts](../../packages/observability/src/otlp.ts)）：`createObservability({ otlp: { endpoint, serviceName, headers } })` 可选启用；旁路导出（best-effort，失败仅 warn 不影响主上报）；无 trace 数据的纯 tool/permission 批次不产生请求。
-- **Prometheus**（[prometheus.ts](../../packages/observability-server/src/prometheus.ts)）：`GET /metrics/prometheus` → `text/plain; version=0.0.4`，导出全局 + 每应用（`app_id` 标签）共 12 类指标（requests/success_ratio/retry_rate/avg_turns/p50-99_ms/cost_usd/permission_denied/errors{class}/tool_calls{tool}/tool_success_ratio）。语义：counter 类按聚合窗口计数近似导出（重启/窗口滑动会跳变，严格 counter 留待 P3）。
+- **Prometheus**（[prometheus.ts](../../packages/observability-server/src/prometheus.ts)）：`GET /metrics/prometheus` → `text/plain; version=0.0.4`，导出全局 + 每应用（`app_id` 标签）共 12 类指标（requests/success_ratio/retry_rate/avg_turns/p50-99_ms/tokens_total/permission_denied/errors{class}/tool_calls{tool}/tool_success_ratio）。语义：counter 类按聚合窗口计数近似导出（重启/窗口滑动会跳变，严格 counter 留待 P3）。
 
 ### P1-3 传输安全
 

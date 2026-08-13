@@ -233,42 +233,6 @@ function toOpenAITools(context: Context, supportsStrictMode = true): unknown[] |
   }));
 }
 
-// ─── 费用计算 ──────────────────────────────────────────────────────
-
-/**
- * 根据模型费率和用量计算费用。
- *
- * 支持分档定价（tiers）：当输入 token 超过某个阈值时使用该档费率。
- * 支持 Anthropic 1h cache write 双倍计费。
- */
-export function calculateCost(
-  model: Pick<Model, 'cost'>,
-  usage: Usage,
-): Usage['cost'] {
-  const cost = usage.cost;
-  // 无费率模型（自定义 Model 未配置 cost）跳过费用计算，避免崩溃
-  if (!model.cost) return cost;
-
-  const inputTokens = usage.input + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
-  let rates = model.cost;
-  let matchedThreshold = -1;
-  for (const tier of (model.cost as any).tiers ?? []) {
-    if (inputTokens > tier.inputTokensAbove && tier.inputTokensAbove > matchedThreshold) {
-      rates = tier;
-      matchedThreshold = tier.inputTokensAbove;
-    }
-  }
-
-  const perMillion = (n: number) => n / 1_000_000;
-
-  cost.input = perMillion(usage.input) * rates.input;
-  cost.output = perMillion(usage.output) * rates.output;
-  cost.cacheRead = perMillion(usage.cacheRead ?? 0) * rates.cacheRead;
-  cost.cacheWrite = perMillion(usage.cacheWrite ?? 0) * rates.cacheWrite;
-  cost.total = cost.input + cost.output + (cost.cacheRead ?? 0) + (cost.cacheWrite ?? 0);
-  return cost;
-}
-
 // ─── 用量统计 ──────────────────────────────────────────────────────
 
 function buildUsage(raw: any, model: Model): Usage {
@@ -292,7 +256,6 @@ function buildUsage(raw: any, model: Model): Usage {
   usage.total = usage.input + usage.output + cacheReadTokens + cacheWriteTokens;
   usage.totalTokens = usage.total;
 
-  calculateCost(model, usage);
   return usage;
 }
 

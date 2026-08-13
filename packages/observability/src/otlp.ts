@@ -44,12 +44,15 @@ function str(value: unknown): { stringValue: string } {
 function int64(value: number): { intValue: string } {
   return { intValue: String(Math.round(value || 0)) };
 }
-function double(value: number): { doubleValue: number } {
-  return { doubleValue: value || 0 };
+
+function attr(key: string, value: { stringValue?: string; intValue?: string }): object {
+  return { key, value };
 }
 
-function attr(key: string, value: { stringValue?: string; intValue?: string; doubleValue?: number }): object {
-  return { key, value };
+/** token 总消耗（input + output + cacheRead + cacheWrite）；无 token 数据时返回 undefined */
+function tokenTotal(r: { inputTokens?: number; outputTokens?: number; cacheRead?: number; cacheWrite?: number }): number | undefined {
+  if (r.inputTokens === undefined && r.outputTokens === undefined) return undefined;
+  return (r.inputTokens ?? 0) + (r.outputTokens ?? 0) + (r.cacheRead ?? 0) + (r.cacheWrite ?? 0);
 }
 
 /** RunRecord → OTLP span（根 span，kind=INTERNAL） */
@@ -64,8 +67,8 @@ function runToSpan(r: RunRecord, appId?: string): object {
     attr('aipack.duration_ms', int64(r.durationMs)),
     attr('tokens.input', int64(r.inputTokens)),
     attr('tokens.output', int64(r.outputTokens)),
-    attr('cost.usd', double(r.costUsd ?? 0)),
   ];
+  if (tokenTotal(r) !== undefined) attrs.push(attr('tokens.total', int64(tokenTotal(r)!)));
   if (appId) attrs.push(attr('aipack.app', str(appId)));
   if (r.model) attrs.push(attr('model', str(r.model)));
   if (r.errorClass) attrs.push(attr('aipack.error_class', str(r.errorClass)));
@@ -95,8 +98,8 @@ function spanToSpan(s: SpanRecord, appId?: string): object {
   if (appId) attrs.push(attr('aipack.app', str(appId)));
   if (s.inputTokens !== undefined) attrs.push(attr('tokens.input', int64(s.inputTokens)));
   if (s.outputTokens !== undefined) attrs.push(attr('tokens.output', int64(s.outputTokens)));
+  if (tokenTotal(s) !== undefined) attrs.push(attr('tokens.total', int64(tokenTotal(s)!)));
   if (s.attempts !== undefined) attrs.push(attr('aipack.attempts', int64(s.attempts)));
-  if (s.costUsd !== undefined) attrs.push(attr('cost.usd', double(s.costUsd)));
   if (s.errorClass) attrs.push(attr('aipack.error_class', str(s.errorClass)));
   return {
     traceId: bytesOf(s.traceId, 16).toString('base64'),

@@ -177,7 +177,31 @@ describe('ObservabilityTelemetry', () => {
     assert.equal(body.spans.length, 1);
     assert.equal(body.spans[0].kind, 'run');
     assert.equal(body.spans[0].sessionKey, 's');
-    assert.equal(body.spans[0].startedAt, 1000, 'run 级 startedAt 用 queuedAt');
+    assert.equal(body.runs[0].startedAt, 1000, 'run 级 startedAt 用 queuedAt');
+  });
+
+  it('appVersion：配置后注入每条 run；未配置不携带字段', async () => {
+    const send = async (opts: { appVersion?: string }, info: Record<string, unknown>) => {
+      const { fetch, calls } = mockFetch(200);
+      const reporter = { send: async (b: EventBatch) => fetch('http://x', { method: 'POST', headers: {}, body: JSON.stringify({ ...b }) }) as any };
+      const telemetry = new ObservabilityTelemetry(reporter as any, { intervalMs: 10 ** 9, ...opts });
+      telemetry.onRunStart({ traceId: 't1', queuedAt: 1000 } as any);
+      telemetry.onRunEnd(info as any);
+      await telemetry.close();
+      return calls[0].body.runs[0];
+    };
+    const info = {
+      traceId: 't1', sessionKey: 's', durationMs: 20, success: true,
+      turnCount: 2, request: { channel: 'test', model: 'm1' },
+      tokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 },
+    };
+
+    const withVer = await send({ appVersion: '1.3.0' }, info);
+    assert.equal(withVer.appVersion, '1.3.0');
+
+    const without = await send({}, info);
+    assert.equal(without.appVersion, undefined);
+    assert.ok(!('appVersion' in without), '未配置版本时不应携带 appVersion 字段');
   });
 
   it('权限拦截 → PermissionRecord 上报', async () => {
@@ -412,14 +436,14 @@ function sampleOtlpBatch(): EventBatch {
       {
         traceId: 't-otlp', startedAt: 1000, endedAt: 1100, sessionKey: 's', model: 'm1',
         status: 'error', errorClass: 'timeout', turns: 2, durationMs: 100,
-        activeMs: 90, queuedMs: 10, inputTokens: 10, outputTokens: 5, costUsd: 0.001,
+        activeMs: 90, queuedMs: 10, inputTokens: 10, outputTokens: 5, cacheRead: 2, cacheWrite: 3,
       } as RunRecord,
     ],
     spans: [
       {
         traceId: 't-otlp', spanId: 'span-1', kind: 'model', name: 'model:m1',
         startedAt: 1000, durationMs: 80, status: 'ok', attempts: 1,
-        inputTokens: 10, outputTokens: 5, costUsd: 0.001, sessionKey: 's',
+        inputTokens: 10, outputTokens: 5, cacheRead: 2, cacheWrite: 3, sessionKey: 's',
       },
     ],
     toolCalls: [],
@@ -457,7 +481,7 @@ describe('toOtlpJsonTraces', () => {
     assert.equal(runAttrs['aipack.app'].stringValue, 'app-x');
     assert.equal(runAttrs['model'].stringValue, 'm1');
     assert.equal(runAttrs['tokens.input'].intValue, '10');
-    assert.equal(runAttrs['cost.usd'].doubleValue, 0.001);
+    assert.equal(runAttrs['tokens.total'].intValue, '20', 'tokens.total = input+output+cacheRead+cacheWrite');
 
     // span kind=model
     const model = spans[1];

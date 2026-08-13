@@ -3,8 +3,8 @@
 export interface Summary {
   requests: number;
   successRate: number;
-  costUsd: number;
-  costUnknown: number;
+  /** token 总消耗量（input+output+cacheRead+cacheWrite） */
+  totalTokens: number;
   p50Ms: number;
   p95Ms: number;
   p99Ms: number;
@@ -27,6 +27,37 @@ export interface ToolStat {
   errors: number;
 }
 
+/** /metrics/versions 单版本单工具统计（keyed by tool name） */
+export interface VersionToolStat {
+  calls: number;
+  /** ok / (ok + error)，blocked/skipped 不计入分母 */
+  successRate: number;
+  avgMs: number;
+  errors: number;
+}
+
+/** /metrics/versions 单版本聚合（DB 直查，非内存窗口；口径对齐 Summary） */
+export interface VersionMetrics {
+  version: string;
+  /** 最近一次该版本上报时间（epoch ms，供面板按"最近版本"排序） */
+  lastSeenAt: number;
+  requests: number;
+  successRate: number;
+  p50Ms: number;
+  p95Ms: number;
+  p99Ms: number;
+  totalTokens: number;
+  avgTurns: number;
+  retryRate: number;
+  errorClasses: Record<string, number>;
+  /** 工具名 -> 统计（keyed by tool name 便于对比 diff） */
+  tools: Record<string, VersionToolStat>;
+}
+
+export interface VersionListResponse {
+  items: VersionMetrics[];
+}
+
 export interface TimeseriesPoint {
   t: number;
   v: number;
@@ -35,12 +66,13 @@ export interface TimeseriesPoint {
 export interface TraceItem {
   traceId: string;
   appId?: string;
+  /** 发布版本（appVersion），旧数据缺省为 undefined */
+  appVersion?: string;
   startedAt: number;
   durationMs: number;
   status: 'success' | 'error' | 'validation';
   turns: number;
-  tokens: { input: number; output: number };
-  costUsd?: number;
+  tokens: { input: number; output: number; cacheRead?: number; cacheWrite?: number };
   retries: number;
   sessionKey: string;
 }
@@ -61,8 +93,7 @@ export interface Span {
   status: 'ok' | 'error';
   errorClass?: string;
   attempts?: number;
-  tokens: { input: number; output: number };
-  costUsd?: number;
+  tokens: { input: number; output: number; cacheRead?: number; cacheWrite?: number };
 }
 
 /** P2-1 自定义事件（emit 埋点，归属 run 或指定 session） */
@@ -112,12 +143,14 @@ export type AlertMetric =
   | 'avgTurns'
   | 'retryRate'
   | 'permissionDenied'
-  | 'costUsd'
+  | 'tokensTotal'
   | 'requests'
   | 'toolSuccessRate'
-  | 'errorClassCount';
+  | 'errorClassCount'
+  | 'versionSuccessRate'
+  | 'versionP95Ms';
 
-export type AlertOperator = 'lt' | 'lte' | 'gt' | 'gte';
+export type AlertOperator = 'lt' | 'lte' | 'gt' | 'gte' | 'regress_by';
 
 export interface AlertRule {
   id: string;

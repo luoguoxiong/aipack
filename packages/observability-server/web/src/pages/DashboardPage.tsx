@@ -17,7 +17,7 @@ import {
 import { ReloadOutlined } from '@ant-design/icons';
 import type { EChartsOption } from 'echarts';
 import { api } from '../api';
-import type { AppInfo, Summary, TimeseriesPoint, ToolStat } from '../types';
+import type { AppInfo, Summary, TimeseriesPoint, ToolStat, VersionMetrics } from '../types';
 import EChart from '../components/EChart';
 import KpiCard from '../components/KpiCard';
 
@@ -35,11 +35,11 @@ const RANGE_STEP: Record<RangeKey, number> = {
   '7d': 3600_000, // 1h
 };
 
-type MetricKey = 'requests' | 'successRate' | 'costUsd';
+type MetricKey = 'requests' | 'successRate' | 'tokensTotal';
 const METRIC_LABEL: Record<MetricKey, string> = {
   requests: '请求量',
   successRate: '成功率',
-  costUsd: '成本($)',
+  tokensTotal: 'Token 消耗量',
 };
 
 const ERROR_CLASS_LABEL: Record<string, string> = {
@@ -58,6 +58,7 @@ const ERROR_CLASS_LABEL: Record<string, string> = {
 export default function DashboardPage() {
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [appId, setAppId] = useState<string | undefined>(undefined);
+  const [version, setVersion] = useState<string | undefined>(undefined);
   const [range, setRange] = useState<RangeKey>('6h');
   const [metric, setMetric] = useState<MetricKey>('requests');
   const [loading, setLoading] = useState(false);
@@ -66,25 +67,33 @@ export default function DashboardPage() {
   const [byModel, setByModel] = useState<Record<string, Summary> | null>(null);
   const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([]);
   const [tools, setTools] = useState<ToolStat[]>([]);
+  /** 版本聚合（DB 直查，按 lastSeenAt 倒序）；供版本筛选与对比卡片 */
+  const [versions, setVersions] = useState<VersionMetrics[]>([]);
+  /** 对比卡片选择的版本；缺省取最近两个有数据的版本 */
+  const [compareA, setCompareA] = useState<string | undefined>(undefined);
+  const [compareB, setCompareB] = useState<string | undefined>(undefined);
 
   const params = useMemo(() => {
     const until = Date.now();
-    return { appId, since: until - RANGE_MS[range], until };
-  }, [appId, range]);
+    return { appId, version, since: until - RANGE_MS[range], until };
+  }, [appId, version, range]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [sum, model, ts, toolList] = await Promise.all([
+      const [sum, model, ts, toolList, versionList] = await Promise.all([
         api.summary(params),
         api.summary<Record<string, Summary>>({ ...params, groupBy: 'model' }),
         api.timeseries({ ...params, step: RANGE_STEP[range], metric }),
         api.tools(params),
+        // 版本列表不随筛选变化（供切换/对比），仅按当前 appId + 时间范围
+        api.versions({ appId: params.appId, since: params.since, until: params.until }),
       ]);
       setSummary(sum);
       setByModel(model);
       setTimeseries(ts);
       setTools(toolList);
+      setVersions(versionList.items);
     } catch (err) {
       message.error((err as Error).message);
     } finally {
@@ -102,6 +111,47 @@ export default function DashboardPage() {
       .then(setApps)
       .catch(() => {});
   }, []);
+
+  // 对比卡片缺省取最近两个有数据的版本（versions 按 lastSeenAt 倒序）
+  const effA = compareA ?? versions[0]?.version;
+  const effB = compareB ?? (versions.length > 1 ? versions[1].version : versions[0]?.version);
+
+  // 版本对比 delta 行
+  const compareRows = useMemo(() => {
+    const a = versions.find((v) => v.version === effA);
+    const b = versions.find((v) => v.version === effB);
+    if (!a || !b) return [];
+    return compareVersions(a, b);
+  }, [versions, effA, effB]);
+
+  const versionOptions = useMemo(
+    () =>
+      versions.map((v) => ({
+        value: v.version,
+        label: v.version === 'unknown' ? 'unknown（旧数据）' : v.version,
+      })),
+    [versions],
+  );
+
+  // 对比表格列（标题随所选版本动态变化）
+  const compareColumns = [
+    { title: '指标', dataIndex: 'label', width: 220 },
+    { title: effA ?? '—', dataIndex: 'a', width: 120 },
+    { title: effB ?? '—', dataIndex: 'b', width: 120 },
+    {
+      title: 'Δ',
+      dataIndex: 'delta',
+      render: (v: string, r: CompareRow) => {
+        const color = r.trend === 'up' ? '#16a34a' : r.trend === 'down' ? '#dc2626' : '#9ca3af';
+        const arrow = r.trend === 'up' ? '↑' : r.trend === 'down' ? '↓' : '—';
+        return (
+          <span style={{ color, fontWeight: 600 }}>
+            {arrow} {v}
+          </span>
+        );
+      },
+    },
+  ];
 
   // 时间序列图
   const tsOption: EChartsOption = useMemo(() => {
@@ -129,11 +179,11 @@ export default function DashboardPage() {
     };
   }, [timeseries, metric, range]);
 
-  // 模型排行图（调用量 bar + 成本折线）
+  // 模型排行图（调用量 bar + token 消耗折线）
   const modelRows = useMemo(() => {
     if (!byModel) return [];
     return Object.entries(byModel)
-      .map(([model, m]) => ({ model, calls: m.requests, costUsd: m.costUsd, avgMs: m.p95Ms }))
+      .map(([model, m]) => ({ model, calls: m.requests, totalTokens: m.totalTokens, avgMs: m.p95Ms }))
       .sort((a, b) => b.calls - a.calls)
       .slice(0, 10);
   }, [byModel]);
@@ -147,7 +197,7 @@ export default function DashboardPage() {
       xAxis: { type: 'category', data: names, axisLabel: { rotate: names.length > 6 ? 30 : 0 } },
       yAxis: [
         { type: 'value', name: '调用量' },
-        { type: 'value', name: '成本($)' },
+        { type: 'value', name: 'Token 消耗量' },
       ],
       series: [
         {
@@ -157,10 +207,10 @@ export default function DashboardPage() {
           itemStyle: { color: '#3b82f6' },
         },
         {
-          name: '成本($)',
+          name: 'Token 消耗量',
           type: 'line',
           yAxisIndex: 1,
-          data: modelRows.map((r) => r.costUsd),
+          data: modelRows.map((r) => r.totalTokens),
           itemStyle: { color: '#f59e0b' },
         },
       ],
@@ -255,6 +305,17 @@ export default function DashboardPage() {
               ...apps.map((a) => ({ value: a.appId, label: `${a.name}（${a.appId}）` })),
             ]}
           />
+          <Select
+            value={version}
+            placeholder="全部版本"
+            style={{ minWidth: 150 }}
+            onChange={setVersion}
+            allowClear
+            options={versions.map((v) => ({
+              value: v.version,
+              label: v.version === 'unknown' ? 'unknown（旧数据）' : v.version,
+            }))}
+          />
           <Segmented
             value={range}
             onChange={(v) => setRange(v as RangeKey)}
@@ -284,10 +345,8 @@ export default function DashboardPage() {
         </Col>
         <Col span={4}>
           <KpiCard
-            title="成本"
-            value={summary ? Number(summary.costUsd.toFixed(6)) : 0}
-            suffix="$"
-            precision={summary && summary.costUsd >= 0.01 ? 4 : undefined}
+            title="Token 消耗量"
+            value={summary?.totalTokens ?? 0}
             color="#d97706"
           />
         </Col>
@@ -316,6 +375,26 @@ export default function DashboardPage() {
         </Col>
       </Row>
 
+      {/* 版本对比（跨版本指标对比，DB 全量聚合） */}
+      <Card size="small" title="版本对比">
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Space wrap>
+            <span style={{ color: '#6b7280', fontSize: 12 }}>对比</span>
+            <Select value={effA} placeholder="选择版本 A" style={{ minWidth: 150 }} onChange={setCompareA} options={versionOptions} />
+            <span style={{ color: '#6b7280', fontSize: 12 }}>vs</span>
+            <Select value={effB} placeholder="选择版本 B" style={{ minWidth: 150 }} onChange={setCompareB} options={versionOptions} />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              基于当前 appId 与时间范围（DB 全量，非窗口内）；↑ 变好、↓ 变差
+            </Typography.Text>
+          </Space>
+          {compareRows.length ? (
+            <Table size="small" rowKey="key" dataSource={compareRows} columns={compareColumns} pagination={false} />
+          ) : (
+            <Empty description="数据不足两个版本，暂无可对比" />
+          )}
+        </Space>
+      </Card>
+
       {/* 时间序列 + 模型排行 */}
       <Row gutter={[12, 12]}>
         <Col span={14}>
@@ -340,6 +419,12 @@ export default function DashboardPage() {
         <Col span={10}>
           <Card size="small" title="模型排行（Top 10）">
             {modelRows.length ? <EChart option={modelOption} height={280} /> : <Empty />}
+            {version ? (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                模型维度数据未按版本细分，模型排行含全部版本；版本筛选仅作用于 KPI /
+                时间序列 / 工具分析 / 错误分析
+              </Typography.Text>
+            ) : null}
           </Card>
         </Col>
       </Row>
@@ -420,4 +505,83 @@ function formatTime(t: number, range: RangeKey): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   if (range === '7d') return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// ─── 版本对比（纯函数）────────────────────────────────────────────
+
+interface CompareRow {
+  key: string;
+  label: string;
+  a: string;
+  b: string;
+  delta: string;
+  /** 相对"更好"的方向：变好 / 变差 / 持平 */
+  trend: 'up' | 'down' | 'flat';
+}
+
+const fmtInt = (n: number) => `${Math.round(n)}`;
+const fmtPct = (n: number) => `${Math.round(n * 100)}%`;
+const fmtMs = (n: number) => `${Math.round(n)}ms`;
+const fmtFloat = (n: number) => n.toFixed(1);
+
+/** 两版本指标 delta 表；better='down' 表示数值越小越好（耗时/步数/重试/错误） */
+function compareVersions(a: VersionMetrics, b: VersionMetrics): CompareRow[] {
+  const rows: CompareRow[] = [];
+  const add = (
+    key: string,
+    label: string,
+    av: number,
+    bv: number,
+    fmt: (n: number) => string,
+    better: 'up' | 'down',
+  ): void => {
+    const d = bv - av;
+    const flat = Math.abs(d) < 1e-9;
+    rows.push({
+      key,
+      label,
+      a: fmt(av),
+      b: fmt(bv),
+      delta: `${d > 0 ? '+' : ''}${fmt(d)}`,
+      trend: flat ? 'flat' : better === 'up' ? (d > 0 ? 'up' : 'down') : d < 0 ? 'up' : 'down',
+    });
+  };
+
+  add('requests', '请求量', a.requests, b.requests, fmtInt, 'up');
+  add('successRate', '成功率', a.successRate, b.successRate, fmtPct, 'up');
+  add('p95Ms', 'P95 耗时', a.p95Ms, b.p95Ms, fmtMs, 'down');
+  const tokensPer = (v: VersionMetrics) => (v.requests > 0 ? v.totalTokens / v.requests : 0);
+  add('tokensPerRequest', 'Token/请求', tokensPer(a), tokensPer(b), fmtInt, 'down');
+  add('avgTurns', '平均步数', a.avgTurns, b.avgTurns, fmtFloat, 'down');
+  add('retryRate', '重试率', a.retryRate, b.retryRate, fmtPct, 'down');
+  const errSum = (v: VersionMetrics) => Object.values(v.errorClasses).reduce((s, n) => s + n, 0);
+  add('errors', '错误次数', errSum(a), errSum(b), fmtInt, 'down');
+
+  // 工具成功率对比：合并两版本工具，按总调用量取 Top 8；单侧无调用显示 —
+  const toolNames = Array.from(new Set([...Object.keys(a.tools), ...Object.keys(b.tools)]));
+  const calls = (v: VersionMetrics, name: string) => v.tools[name]?.calls ?? 0;
+  toolNames.sort((x, y) => calls(a, y) + calls(b, y) - (calls(a, x) + calls(b, x)));
+  for (const name of toolNames.slice(0, 8)) {
+    const ta = a.tools[name];
+    const tb = b.tools[name];
+    const av = ta?.calls ? ta.successRate : undefined;
+    const bv = tb?.calls ? tb.successRate : undefined;
+    const d = av !== undefined && bv !== undefined ? bv - av : 0;
+    rows.push({
+      key: `tool:${name}`,
+      label: `工具成功率 · ${name}`,
+      a: av === undefined ? '—' : fmtPct(av),
+      b: bv === undefined ? '—' : fmtPct(bv),
+      delta: av !== undefined && bv !== undefined ? `${d > 0 ? '+' : ''}${fmtPct(d)}` : '—',
+      trend:
+        av === undefined || bv === undefined
+          ? 'flat'
+          : Math.abs(d) < 1e-9
+            ? 'flat'
+            : d > 0
+              ? 'up'
+              : 'down',
+    });
+  }
+  return rows;
 }
