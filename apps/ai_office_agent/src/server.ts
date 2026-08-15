@@ -8,6 +8,9 @@
  *   - POST /api/chat                   → SSE 流式:text/tool_start/tool_end/done
  *   - GET  /api/workspace              → 当前工作区信息(JSON)
  *   - POST /api/workspace              → 切换工作区目录(body: { path },持久化)
+ *   - PUT  /api/import-file?path=      → 导入工作区文件(body=原始字节)
+ *   - DELETE /api/import-folder        → 清空导入目录
+ *   - POST /api/import-folder/commit   → 导入完成,切换工作区为导入目录
  *   - GET  /api/files                  → 工作区文件列表(JSON,供前端文件面板)
  *   - GET  /api/files/<relpath>        → 下载工作区文件(路径校验防越界)
  *
@@ -21,12 +24,18 @@ import { loadConfig, buildModel, resolveModelChoice } from './config.js';
 import { createOfficeRuntime, runOfficeAgent, type OfficeEvent } from './runtime.js';
 import { createWorkspace } from './tools/workspace.js';
 import { listWorkspaceFiles } from './tools/file-tools.js';
+import { officecliAvailable } from './tools/officecli.js';
+import { ensureWatch, stopAllWatch } from './preview.js';
 import type { Runtime } from '@aipack/agent';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.resolve(__dirname, '../public');
 /** 工作区选择持久化文件(服务重启后沿用上次选择) */
 const STATE_FILE = path.resolve(__dirname, '../.aipack/workspace-state.json');
+/** 「选择本地文件夹」导入的工作区根目录(系统文件夹选择器只能取到内容,故采用导入方式) */
+const IMPORT_ROOT = path.resolve(__dirname, '../import-workspace');
+/** 导入单文件大小上限 */
+const IMPORT_MAX_FILE = 50 * 1024 * 1024;
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -46,6 +55,11 @@ const MIME: Record<string, string> = {
   '.md': 'text/markdown; charset=utf-8',
   '.bak': 'application/octet-stream',
 };
+
+/** 开发模式:开启前端自动刷新(public/ 改动或服务重启时浏览器自动 reload),生产可设 NODE_ENV=production 关闭 */
+const IS_DEV = process.env.NODE_ENV !== 'production';
+/** 每次服务启动都会变化,配合 tsx watch 让后端改动也能触发浏览器自动刷新 */
+const BOOT_ID = `${process.pid}:${Date.now()}`;
 
 async function main() {
   const config = loadConfig();
@@ -113,6 +127,52 @@ async function main() {
         if (p.length > 1024) return json(res, 400, { error: '路径过长(限 1024 字符)' });
         ws = await createWorkspace(path.resolve(p));
         cache.clear(); // 工具绑定工作区,切换后必须重建 Runtime
+        stopAllWatch(); // 旧工作区的 watch 预览进程一并释放
+        await saveWorkspaceState();
+        const files = await listWorkspaceFiles(ws);
+        return json(res, 200, { root: ws.root, name: path.basename(ws.root), files });
+      }
+
+      // ── PUT /api/import-file (导入工作区文件:body=原始字节) ───
+      if (req.method === 'PUT' && url.pathname === '/api/import-file') {
+        const rel = (url.searchParams.get('path') || '').replace(/^[/\\]+/, '');
+        if (!rel || rel.includes('\0') || rel.split(/[/\\]/).includes('..')) {
+          return json(res, 400, { error: '路径无效' });
+        }
+        if (rel.length > 1024) return json(res, 400, { error: '路径过长' });
+        const abs = path.join(IMPORT_ROOT, rel);
+        await fs.mkdir(path.dirname(abs), { recursive: true });
+        const chunks: Buffer[] = [];
+        let total = 0;
+        for await (const chunk of req) {
+          total += (chunk as Buffer).length;
+          if (total > IMPORT_MAX_FILE) {
+            return json(res, 413, { error: '单文件超过 50MB' });
+          }
+          chunks.push(chunk as Buffer);
+        }
+        await fs.writeFile(abs, Buffer.concat(chunks));
+        return json(res, 200, { ok: true, path: rel });
+      }
+
+      // ── DELETE /api/import-folder (清空导入目录) ───────────────
+      if (req.method === 'DELETE' && url.pathname === '/api/import-folder') {
+        await fs.rm(IMPORT_ROOT, { recursive: true, force: true });
+        return json(res, 200, { ok: true });
+      }
+
+      // ── POST /api/import-folder/commit (导入完成,切换工作区) ──
+      if (req.method === 'POST' && url.pathname === '/api/import-folder/commit') {
+        let stat;
+        try {
+          stat = await fs.stat(IMPORT_ROOT);
+        } catch {
+          return json(res, 400, { error: '请先选择文件夹导入文件' });
+        }
+        if (!stat.isDirectory()) return json(res, 400, { error: '导入目录异常' });
+        ws = await createWorkspace(IMPORT_ROOT);
+        cache.clear(); // 工具绑定工作区,切换后必须重建 Runtime
+        stopAllWatch(); // 旧工作区的 watch 预览进程一并释放
         await saveWorkspaceState();
         const files = await listWorkspaceFiles(ws);
         return json(res, 200, { root: ws.root, name: path.basename(ws.root), files });
@@ -135,6 +195,17 @@ async function main() {
       // ── GET /api/files/<relpath> (下载) ───────────────────────
       if (req.method === 'GET' && url.pathname.startsWith('/api/files/')) {
         return handleFileDownload(url.pathname, ws, res);
+      }
+
+      // ── GET /api/preview/<relpath> (在线预览) ──────────────────
+      if (req.method === 'GET' && url.pathname.startsWith('/api/preview/')) {
+        return handlePreview(url.pathname, ws, res);
+      }
+
+      // ── GET /api/live-reload (开发模式前端自动刷新指纹) ─────
+      if (req.method === 'GET' && url.pathname === '/api/live-reload') {
+        if (!IS_DEV) return json(res, 404, { error: 'Not Found' });
+        return json(res, 200, { v: `${BOOT_ID}:${await publicFingerprint()}` });
       }
 
       // ── 静态资源 ──────────────────────────────────────────────
@@ -169,6 +240,7 @@ async function main() {
   const shutdown = async (sig: string) => {
     console.log(`\n[${sig}] 正在关闭...`);
     server.close();
+    stopAllWatch(); // 释放所有 watch 预览进程
     await Promise.allSettled([...cache.values()].map((rt) => rt.close()));
     process.exit(0);
   };
@@ -276,6 +348,93 @@ async function handleChat(
   }
 }
 
+// ─── 在线预览工作区文件 ────────────────────────────────────────────
+
+/** 可在线预览的文件类型分类(按扩展名) */
+const PREVIEW_TEXT_EXTS = new Set(['.txt', '.md', '.csv', '.json', '.log', '.html']);
+const PREVIEW_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico']);
+const PREVIEW_OFFICE_EXTS = new Set(['.xlsx', '.docx', '.pptx']);
+const PREVIEW_MAX_CHARS = 300_000; // 文本类预览长度上限
+
+/**
+ * GET /api/preview/<relpath> → JSON:
+ *   - Office(xlsx/docx/pptx):officecli view 转文本 → { kind:'office', content }
+ *   - 文本类:直接读 → { kind:'text', content }
+ *   - 图片:base64 dataUrl → { kind:'image', dataUrl }
+ *   - PDF:浏览器原生渲染 → { kind:'pdf', url }(指向下载端点)
+ *   - 其余二进制 → { kind:'unsupported' }
+ * 路径校验与下载端点同一套(拒绝绝对路径与 .. 逃逸)。
+ */
+async function handlePreview(pathname: string, ws: { root: string }, res: http.ServerResponse) {
+  let relPath: string;
+  try {
+    relPath = decodeURIComponent(pathname.slice('/api/preview/'.length));
+    if (!relPath || relPath.includes('\0')) throw new Error('bad path');
+  } catch {
+    return json(res, 400, { error: '路径参数无效' });
+  }
+  const root = path.resolve(ws.root);
+  const abs = path.resolve(root, path.normalize(relPath).replace(/^[/\\]+/, ''));
+  const rel = path.relative(root, abs);
+  if (rel.startsWith('..') || path.isAbsolute(rel) || rel.startsWith('.trash')) {
+    return json(res, 403, { error: '禁止访问工作区外文件' });
+  }
+  try {
+    if (!(await fs.stat(abs)).isFile()) throw new Error('not a file');
+  } catch {
+    return json(res, 404, { error: `文件不存在: ${relPath}` });
+  }
+  const name = path.basename(abs);
+  const ext = path.extname(abs).toLowerCase();
+
+  if (PREVIEW_OFFICE_EXTS.has(ext)) {
+    if (!(await officecliAvailable())) {
+      return json(res, 200, {
+        kind: 'error',
+        name,
+        ext,
+        message: '预览 Office 文档需要安装 officecli:npm i -g @officecli/officecli 或 brew install officecli',
+      });
+    }
+    try {
+      // 所见即所得预览:officecli watch 渲染(与 Office 排版一致),前端 iframe 嵌入
+      const port = await ensureWatch(abs);
+      return json(res, 200, { kind: 'office-watch', name, ext, url: `http://localhost:${port}/` });
+    } catch (e) {
+      return json(res, 200, { kind: 'error', name, ext, message: `预览失败: ${(e as Error).message}` });
+    }
+  }
+
+  if (PREVIEW_TEXT_EXTS.has(ext)) {
+    let content = await fs.readFile(abs, 'utf-8');
+    if (content.length > PREVIEW_MAX_CHARS) {
+      content = content.slice(0, PREVIEW_MAX_CHARS) + '\n\n[…内容过长,仅显示前 300KB…]';
+    }
+    return json(res, 200, { kind: 'text', name, ext, content });
+  }
+
+  if (PREVIEW_IMAGE_EXTS.has(ext)) {
+    const data = await fs.readFile(abs);
+    return json(res, 200, {
+      kind: 'image',
+      name,
+      ext,
+      dataUrl: `data:${MIME[ext] || 'application/octet-stream'};base64,${data.toString('base64')}`,
+    });
+  }
+
+  if (ext === '.pdf') {
+    return json(res, 200, { kind: 'pdf', name, url: `/api/files/${encodeURIComponent(relPath)}` });
+  }
+
+  return json(res, 200, {
+    kind: 'unsupported',
+    name,
+    ext,
+    message: '该类型暂不支持在线预览,请下载后查看',
+  });
+}
+
 // ─── 下载工作区文件 ───────────────────────────────────────────────
 
 async function handleFileDownload(pathname: string, ws: { root: string }, res: http.ServerResponse) {
@@ -310,6 +469,44 @@ async function handleFileDownload(pathname: string, ws: { root: string }, res: h
 
 // ─── 静态资源 ──────────────────────────────────────────────────────
 
+/** 开发模式注入到 HTML 的自动刷新脚本:轮询 /api/live-reload,指纹变化则整页刷新 */
+const LIVE_RELOAD_SCRIPT = `<script>
+(function () {
+  var __lr = null;
+  function poll() {
+    fetch('/api/live-reload', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (__lr && __lr !== d.v) { location.reload(); return; }
+        __lr = d.v;
+      })
+      .catch(function () {})
+      .then(function () { setTimeout(poll, 800); });
+  }
+  poll();
+})();
+<\/script>`;
+
+/** public/ 目录内容指纹(文件名 + mtime + size),用于驱动前端自动刷新 */
+async function publicFingerprint(): Promise<string> {
+  let entries: string[];
+  try {
+    entries = (await fs.readdir(PUBLIC_DIR)).sort();
+  } catch {
+    return '';
+  }
+  const parts: string[] = [];
+  for (const name of entries) {
+    try {
+      const s = await fs.stat(path.join(PUBLIC_DIR, name));
+      parts.push(`${name}:${s.mtimeMs}:${s.size}`);
+    } catch {
+      // 忽略被并发删除的文件
+    }
+  }
+  return parts.join('|');
+}
+
 async function serveStatic(pathname: string, res: http.ServerResponse) {
   const safe = path.normalize(pathname).replace(/^(\.\.[/\\])+/, '');
   let filePath = path.join(PUBLIC_DIR, safe);
@@ -323,7 +520,20 @@ async function serveStatic(pathname: string, res: http.ServerResponse) {
   try {
     const data = await fs.readFile(filePath);
     const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    const headers: Record<string, string> = { 'Content-Type': MIME[ext] || 'application/octet-stream' };
+    if (IS_DEV && (ext === '.html' || ext === '.js' || ext === '.css')) {
+      // 开发模式禁用缓存,保证改动后刷新即最新
+      headers['Cache-Control'] = 'no-cache';
+      if (ext === '.html') {
+        // 注入 live-reload 脚本(仅内存中,不改磁盘文件)
+        const html = data.toString('utf-8');
+        const out = html.includes('</body>') ? html.replace('</body>', `${LIVE_RELOAD_SCRIPT}\n</body>`) : html + LIVE_RELOAD_SCRIPT;
+        res.writeHead(200, headers);
+        res.end(out);
+        return;
+      }
+    }
+    res.writeHead(200, headers);
     res.end(data);
   } catch {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });

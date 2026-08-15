@@ -60,7 +60,7 @@ export function createFileListTool(ws: Workspace): Tool {
     parameters: {
       type: 'object',
       properties: {
-        dir: { type: 'string', description: '可选,只列某个子目录(相对工作区,如 "output")' },
+        dir: { type: 'string', description: '可选,只列某个子目录(相对工作区,如 "docs")' },
       },
     },
     permissions: ['fs:read'],

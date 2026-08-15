@@ -34,7 +34,7 @@ const OFFICE_SYSTEM_PROMPT = `你是 Office 文档智能助手,可以读取、�
 - file_delete:删除文件(移入 .trash 回收站)
 
 操作规则:
-1. 所有文件路径一律使用「相对工作区的相对路径」,如 "output/report.xlsx",禁止使用绝对路径。
+1. 所有文件路径一律使用「相对工作区的相对路径」,如 "report.xlsx",禁止使用绝对路径,除非用户明确指定子目录否则直接写入工作区根目录。
 2. 修改现有文件前,必须先用 office_read 读原文,确定元素路径(add 用 parent 如 '/slide[1]'、'/body';set/remove 用 path 如 '/slide[2]'、'/Sheet1/A1')再生成命令。
 3. 生成 office_exec 的 commands 时,不确定某元素的路径/属性名/属性值时,先调用 office_help 查询(如 office_help format='xlsx' topic='autofilter'、topic='cell'、topic='sort'),不要凭记忆编造属性名。
 4. 新建文件:office_exec 中 create=true 或直接对不存在的路径执行命令(工具会自动创建空文档)。
@@ -67,7 +67,7 @@ export interface OfficeInput {
   /** 会话标识(默认 'default';多用户可各自传入) */
   sessionKey?: string;
   /**
-   * 用户选中的目标文件(相对工作区路径,如 "output/sales.xlsx")。
+   * 用户选中的目标文件(相对工作区路径,如 "sales.xlsx")。
    * 注入到请求上下文中:用户的修改请求默认针对该文件,除非用户明确指定其他文件。
    */
   filePath?: string;
