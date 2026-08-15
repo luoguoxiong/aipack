@@ -48,7 +48,7 @@ export function createOfficeReadTool(ws: Workspace): Tool {
     parameters: {
       type: 'object',
       properties: {
-        filePath: { type: 'string', description: 'Office 文件路径(相对工作区,如 "output/report.docx")' },
+        filePath: { type: 'string', description: 'Office 文件路径(相对工作区,如 "report.docx")' },
         mode: { type: 'string', enum: ['outline', 'text'], description: '可选,读取模式:outline 大纲 / text 纯文本;缺省按扩展名自动判断(xlsx→text,docx/pptx→outline)' },
         maxLines: { type: 'number', description: '可选,输出行数上限(默认 60),大文档可调小' },
       },
@@ -162,7 +162,7 @@ export function createOfficeExecTool(ws: Workspace): Tool {
       properties: {
         filePath: {
           type: 'string',
-          description: '目标文件(相对工作区,如 "output/定制.pptx")。已存在则在其上追加/修改;不存在会自动创建空文档',
+          description: '目标文件(相对工作区,如 "定制.pptx")。已存在则在其上追加/修改;不存在会自动创建空文档',
         },
         create: {
           type: 'boolean',

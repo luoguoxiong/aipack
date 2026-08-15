@@ -10,7 +10,7 @@
   - `office_exec`(增/改/删):LLM 识别用户意图,动态生成 OfficeCLI `batch` 命令数组(`create` 空文档 → `add`/`set`/`remove` 元素 → `close` 刷盘),覆盖创建/修改/删除全场景,不依赖任何预置版式
   - `file_list`(查工作区)/ `file_delete`(删,移入 `.trash` 回收站而非硬删除)
 - **OfficeCLI 渲染引擎**:`officecli` 单二进制(Apache-2.0、跨平台、无需安装 Office),`npm i -g @officecli/officecli` 或 `brew install officecli` 即可。LLM 按用户输入自由组合任意元素:文本/标题/列表/表格/图表/图片/自定义每页布局/页眉页脚等,生成质量远优于手写 docx/pptxgenjs 库
-- **工作区间切换**:前端可输入任意本地目录作为工作区(持久化到 `.aipack/workspace-state.json`,重启后沿用),所有工具/文件面板/下载都跟随当前工作区
+- **工作区间切换**:前端点击「选择文件夹」用系统文件夹选择器选取本地目录,经上传导入切换为工作区(持久化到 `.aipack/workspace-state.json`,重启后沿用);也可经 `POST /api/workspace` 指定任意本地目录。所有工具/文件面板/下载都跟随当前工作区
 - **选中文件修改**:文件面板「选中修改」后,发送的消息会自动附带目标文件上下文,Agent 默认先读取该文件再按提示修改
 - **安全边界**:所有工具路径强制限制在当前工作区内(`resolveInWorkspace` 拒绝绝对路径与 `..` 逃逸),删除前须向用户确认(系统提示词约束),回收站机制防误删
 - **并发安全**:同一文件的「读-改-写」整文件操作经 per-file 互斥锁串行化,避免并发覆盖;覆盖写前自动备份 `.bak`
@@ -78,7 +78,7 @@ cp .env.example .env
 ### 4. 启动
 
 ```bash
-# 开发(热重载)
+# 开发(后端热重载 + 前端自动刷新)
 pnpm --filter ai-office-agent dev
 
 # 或带 Key
@@ -97,6 +97,20 @@ pnpm --filter ai-office-agent serve
 - 「把 销售报表.xlsx 的表头(A1:K1)改成红色加粗并填充浅红」
 - 「生成一份 Word 周报 output/周报.docx,含标题、本周总结和下周计划表格」
 - 「生成一个 5 页的产品发布会 PPT output/发布会.pptx」
+
+### 5. 桌面端(Tauri)
+
+`src-tauri/` 是一个 Tauri 2 桌面外壳:应用启动时由 Rust 主进程拉起本机 Node 服务(`dist/server.js`,动态空闲端口),窗口直接加载 `http://127.0.0.1:<port>`,退出时自动清理服务子进程。
+
+```bash
+# 前置:Rust 工具链(rustup default stable)+ pnpm --filter ai-office-agent install
+pnpm --filter ai-office-agent tauri:dev    # tsc 构建 dist + tauri dev 启动窗口
+```
+
+桌面端与网页版差异:
+
+- 「选择文件夹」走 **Tauri 原生目录选择器**(`pick_workspace_dir` 命令)直接拿到本地绝对路径,`POST /api/workspace` 直连切换工作区,**免上传、无浏览器信任弹窗**;网页版仍走系统文件夹选择器上传导入
+- 环境变量可用 `AIPACK_OFFICE_NODE`(node 可执行文件)与 `AIPACK_OFFICE_SERVER_ENTRY`(服务入口)覆盖
 
 ## 工作原理
 
@@ -130,8 +144,12 @@ pnpm --filter ai-office-agent serve
 | `POST` | `/api/chat`            | SSE 流式对话;body `{ message, model?, apiKey?, sessionKey?, filePath? }` |
 | `GET`  | `/api/workspace`       | 当前工作区信息(`root` / `name` / `defaultRoot`)                          |
 | `POST` | `/api/workspace`       | 切换工作区;body `{ path }`(持久化,重启沿用)                              |
+| `PUT`  | `/api/import-file?path=` | 导入工作区文件(body=原始字节;配合页面拖拽文件夹导入)                   |
+| `DELETE` | `/api/import-folder`  | 清空导入目录                                                              |
+| `POST` | `/api/import-folder/commit` | 导入完成,将工作区切换为导入目录                                      |
 | `GET`  | `/api/files`           | 当前工作区文件列表(JSON)                                                 |
-| `GET`  | `/api/files/<relpath>` | 下载工作区文件(路径校验防越界)                                           |
+| `GET`  | `/api/files/<relpath>`   | 下载工作区文件(路径校验防越界)                                            |
+| `GET`  | `/api/preview/<relpath>` | 在线预览工作区文件:Office(xlsx/docx/pptx)经 `officecli watch` 所见即所得渲染(与 Office 排版一致,iframe 嵌入);文本/图片/PDF 原生预览 |
 
 > `filePath` 为选中的目标文件(相对工作区路径),会注入到请求上下文,引导 Agent 先读取该文件再修改。
 
@@ -151,6 +169,8 @@ event: error   data: {"message":"..."}   # 出错时
 # 类型检查
 pnpm --filter ai-office-agent typecheck
 
+# 边改边预览:dev 模式下修改 public/ 前端或 src/ 后端代码,浏览器页面会自动刷新;
+# 静态资源带 Cache-Control: no-cache,不会出现改了看不见的情况。设 NODE_ENV=production 可关闭自动刷新
 # 目录结构
 # src/
 #   config.ts              环境变量、模型装配与工作区解析

@@ -9,7 +9,10 @@
     "start": "tsx src/server.ts",
     "build": "tsc",
     "serve": "node dist/server.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "tauri": "tauri",
+    "tauri:dev": "tsc && tauri dev",
+    "tauri:build": "tsc && tauri build"
   },
   "keywords": [
     "ai",
@@ -27,6 +30,7 @@
     "@aipack/agent": "workspace:*"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2",
     "@types/node": "^20.12.0",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0"

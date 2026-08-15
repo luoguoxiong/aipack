@@ -7,75 +7,99 @@
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <header class="hero">
-    <div class="hero__inner">
-      <h1>📊 AI Office Agent</h1>
-      <p class="hero__sub">基于 aipack 的 Office 文档智能体 · Excel / Word / PPT 增删改查 · 文件工作区 + 回收站</p>
-      <div id="status" class="status">读取服务状态…</div>
-      <div class="hero-controls">
-        <label class="field">
-          <span>LLM 模型</span>
-          <select id="model"></select>
-        </label>
-        <label class="field">
-          <span>LLM API Key <span id="apiKeyHint" class="hint"></span></span>
-          <div class="input-with-toggle">
-            <input id="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" spellcheck="false" />
-            <button id="apiKeyToggle" type="button" class="btn btn--ghost btn--sm" aria-label="显示/隐藏">👁</button>
-          </div>
-        </label>
+  <!-- 顶栏:品牌 + 选择文件夹 + 文件工具条 + 模型/API Key 入口(弹窗) -->
+  <header class="topbar">
+    <div class="topbar__brand">
+      <span class="logo" title="AI Office Agent">📊</span>
+      <span class="brand-name">AI Office Agent</span>
+      <button id="pickFolder" type="button" class="btn btn--sm" title="选择本地文件夹作为工作区">📂 选择文件夹</button>
+    </div>
+    <div class="wsbar">
+      <div class="wsbar__row">
+        <div class="cselect hidden" id="fileSelect">
+          <button type="button" class="cselect__trigger" id="fileSelectTrigger" title="选择文件">
+            <span id="fileSelectLabel" class="cselect__label">暂无文件</span>
+            <span class="cselect__caret">▾</span>
+          </button>
+          <div id="fileSelectMenu" class="cselect__menu hidden"></div>
+        </div>
       </div>
-      <div class="workspace-row">
-        <label class="field">
-          <span>📁 工作区间(目录) <span id="workspaceState" class="hint"></span></span>
-          <div class="input-with-toggle">
-            <input id="workspaceInput" type="text" placeholder="/path/to/workspace" spellcheck="false" />
-            <button id="workspaceApply" type="button" class="btn btn--ghost">切换</button>
-            <button id="workspaceDefault" type="button" class="btn btn--ghost" title="回到默认工作区">默认</button>
-          </div>
-        </label>
-      </div>
-      <div class="examples">
-        <span class="examples__label">试试:</span>
-        <button class="chip" data-prompt="新建一个 Excel 文件 output/销售报表.xlsx,包含两个 sheet:3 月销售与 4 月销售,每张表有产品、销量、销售额列,各填 5 行数据">📈 新建 Excel 报表</button>
-        <button class="chip" data-prompt="读取 销售报表.xlsx,总结每月总销售额并对比">📖 读取并分析 Excel</button>
-        <button class="chip" data-prompt="生成一份 Word 周报 output/周报.docx,包含标题、本周工作总结(4 条要点)和下周计划(表格)">📄 生成 Word 周报</button>
-        <button class="chip" data-prompt="生成一个 5 页的产品发布会 PPT output/发布会.pptx,主题为「AI 办公助手发布」">🎞️ 生成 PPT</button>
-      </div>
+      <input id="folderInput" type="file" hidden webkitdirectory multiple />
+    </div>
+    <div class="topbar__actions">
+      <button id="openModelPicker" type="button" class="btn btn--sm" title="选择模型">🧠 <span id="modelLabel">模型</span></button>
     </div>
   </header>
 
-  <main class="layout">
-    <section class="card chat-card">
+  <!-- 工作台:预览面板(中央主区域)+ 右侧停靠聊天栏 -->
+  <main class="workbench">
+    <section class="files-area">
+      <div id="previewPane" class="preview-pane">
+        <div class="preview-pane__head">
+          <span id="previewPaneTitle">👁 文件预览</span>
+          <button id="previewPaneClose" type="button" class="btn btn--ghost btn--sm">✕ 关闭</button>
+        </div>
+        <div id="previewPaneBody" class="preview-pane__body"></div>
+      </div>
+    </section>
+
+    <!-- 右侧停靠聊天栏 -->
+    <aside class="chat-box">
+      <div class="chat-box__head">
+        <span>💬 AI Office 助手</span>
+      </div>
+      <button id="chatToggle" type="button" class="btn btn--ghost btn--sm chat-toggle-btn" title="收起对话框">▶</button>
       <div id="messages" class="messages">
         <div class="msg msg--assistant">
-          <div class="msg__bubble">你好!我是 Office 文档助手,可以帮你<span class="hl">创建 / 读取 / 修改 / 删除</span>Excel、Word、PPT 文件。生成的文件会出现在右侧「工作区文件」面板,可直接下载。</div>
+          <div class="msg__bubble">👋 你好!告诉我你想做什么,我帮你 <b>创建 / 读取 / 修改 / 删除</b> Excel、Word、PPT 文件。文件会显示在中间区域,点击卡片即可选中并预览。</div>
         </div>
       </div>
       <div class="composer">
         <div id="selectedFileBar" class="selected-bar hidden"></div>
+        <div class="quick-prompts">
+          <button class="chip" data-prompt="新建一个 Excel 文件 销售报表.xlsx,包含两个 sheet:3 月销售与 4 月销售,每张表有产品、销量、销售额列,各填 5 行数据">📈 新建 Excel</button>
+          <button class="chip" data-prompt="读取 销售报表.xlsx,总结每月总销售额并对比">📖 分析 Excel</button>
+          <button class="chip" data-prompt="生成一份 Word 周报 周报.docx,包含标题、本周工作总结(4 条要点)和下周计划(表格)">📄 生成 Word</button>
+          <button class="chip" data-prompt="生成一个 5 页的产品发布会 PPT 发布会.pptx,主题为「AI 办公助手发布」">🎞️ 生成 PPT</button>
+        </div>
         <div class="composer-row">
-          <textarea id="input" rows="2" placeholder="例如:把 销售报表.xlsx 中 B3 单元格改成 999,并在末尾追加一行数据…(Enter 发送, Shift+Enter 换行)"></textarea>
+          <textarea id="input" rows="2" placeholder="描述需求…(Enter 发送, Shift+Enter 换行)"></textarea>
           <button id="sendBtn" class="btn btn--primary">发送</button>
         </div>
       </div>
-    </section>
-
-    <aside class="card files-card">
-      <div class="files-head">
-        <h2>📁 工作区文件</h2>
-        <button id="refreshFiles" class="btn btn--ghost btn--sm">刷新</button>
-      </div>
-      <ul id="fileList" class="file-list">
-        <li class="file-list__empty">暂无文件</li>
-      </ul>
-      <p class="files-hint">生成的文件都保存在 <code>office-workspace/</code> 目录,删除操作会移入 <code>.trash/</code> 回收站。</p>
     </aside>
   </main>
 
-  <footer class="footer">
-    <span>Powered by <a href="https://github.com/luoguoxiong/aipack" target="_blank" rel="noopener">aipack</a></span>
-  </footer>
+  <!-- 模型 + API Key 设置弹窗 -->
+  <div id="settingsPicker" class="modal-mask hidden">
+    <div class="modal-card">
+      <div class="modal-card__head">
+        <span>⚙️ 模型与 API Key</span>
+        <button type="button" class="btn btn--ghost btn--sm" data-close="settingsPicker">✕</button>
+      </div>
+      <div class="modal-card__body">
+        <div class="p-sec__title">🧠 模型</div>
+        <label class="p-field">提供商 / 模型
+          <div class="cselect" id="model">
+            <button type="button" class="cselect__trigger" id="modelTrigger" title="选择模型">
+              <span id="modelTriggerLabel" class="cselect__label">选择模型</span>
+              <span class="cselect__caret">▾</span>
+            </button>
+            <div id="modelMenu" class="cselect__menu cselect__menu--modal hidden"></div>
+          </div>
+        </label>
+        <div class="p-divider"></div>
+        <div class="p-sec__title">🔑 API Key</div>
+        <p id="apiKeyHint" class="p-hint"></p>
+        <label class="p-field">API Key
+          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+        </label>
+        <div class="p-row">
+          <button id="apiKeySave" type="button" class="btn btn--primary">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="/app.js"></script>
 </body>

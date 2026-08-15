@@ -6,5 +6,12 @@ node_modules/
 # Office 文件工作区(生成的 xlsx/docx/pptx 都在这里)
 office-workspace/
 
+# 浏览器导入的临时工作区数据
+import-workspace/
+
 # aipack 会话数据
 .aipack/
+
+# Tauri 构建产物
+src-tauri/target/
+src-tauri/gen/

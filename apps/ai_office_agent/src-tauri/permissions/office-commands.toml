@@ -1,0 +1,6 @@
+# AI Office Agent 应用自定义命令的权限声明
+# 需与 src/main.rs 中的 generate_handler! 保持同步
+[[permission]]
+identifier = "allow-pick-workspace-dir"
+description = "允许调用 pick_workspace_dir(原生目录选择器)"
+commands = { allow = ["pick_workspace_dir"] }
