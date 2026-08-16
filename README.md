@@ -74,11 +74,12 @@ pnpm add -g @aipack-ai/cli
 ### 首次使用
 
 ```bash
-# 1. 启动交互式聊天（无 API Key 时自动进入设置向导）
-aipack chat
+# 1. 交互模式（REPL，/help 查看斜杠命令）
+aipack
 
-# 2. 或一次性提问
-aipack run "用一句话介绍 aipack"
+# 2. 非交互单次提问（支持管道 stdin）
+aipack -p "用一句话介绍 aipack"
+cat src/index.ts | aipack -p "这段代码有什么问题？"
 ```
 
 ### 安装（作为库使用）
@@ -165,17 +166,18 @@ Agent 框架内核，提供：
 
 **包路径**: [packages/cli](./packages/cli)
 
-基于 aipack 框架的 AI 命令行助手。
+基于 aipack 框架的终端 AI 编程助手，内置 read/write/edit/bash 工具与智能权限策略。
 
 ```bash
-aipack chat              # 交互式聊天（默认命令）
-aipack run "你好"        # 一次性提问
-aipack continue <key>    # 继续历史会话
-aipack replay <key>      # 回放会话复现问题
-aipack sessions list     # 列出所有会话
-aipack init --local      # 初始化项目配置
-aipack models            # 查看支持的模型
-aipack reset all         # 重置所有数据
+aipack                          # 交互模式（REPL + 斜杠命令）
+aipack -p "你好"                # 非交互单次提问（支持管道 stdin）
+aipack --mode json "..."        # JSON 事件流输出
+aipack -c "继续上次话题"        # 继续当前目录最近会话
+aipack -r                       # 浏览并选择历史会话
+aipack --model deepseek/deepseek-chat "..."
+aipack @package.json "分析依赖" # 附带文件上下文
+aipack --list-models            # 查看模型目录
+aipack approvals list           # 跨进程审批单管理
 ```
 
 ### 3. `@aipack-ai/memory` — 持久化记忆插件
@@ -335,7 +337,7 @@ API Key 支持以下方式（优先级从高到低）：
    ANTHROPIC_API_KEY=sk-xxx
    ```
 
-3. **CLI 向导**：首次运行 `aipack chat` 无任何 Key 时自动进入设置。
+3. **环境变量探测**：启动时自动检测已配置 Key 的提供商（`aipack --list-models` 查看状态）。
 
 变量名规则：`<PROVIDER_ID_UPPERCASE>_API_KEY`，如 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`GROQ_API_KEY` 等。
 
