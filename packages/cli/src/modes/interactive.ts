@@ -218,7 +218,8 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
         break;
 
       case '/tools':
-        console.log(chalk.dim('内置工具通过 --tools/--exclude-tools 配置；当前运行时未提供列举接口'));
+        console.log(chalk.dim('内置工具: read, write, edit, bash, find, grep, ls'));
+        console.log(chalk.dim('通过 --tools / --exclude-tools / --no-tools 配置启停'));
         break;
 
       case '/approvals': {

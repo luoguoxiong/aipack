@@ -174,7 +174,7 @@ ${'工具选项:'}
   --no-tools, -nt                       禁用全部工具
   --safe                                保守模式：写文件/shell 全部人工确认
 
-  内置工具: read, write, edit, bash
+  内置工具: read, write, edit, bash, find, grep, ls
   默认权限: 读写文件静默放行（工作区范围内）；bash 仅危险命令
             （sudo、rm -rf ~、磁盘写入、远程脚本管道等）需确认
 
