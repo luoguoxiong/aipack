@@ -360,6 +360,48 @@ describe('maxTurns 限制', () => {
     const assistantCount = msgs.filter(m => m.role === 'assistant').length;
     assert.ok(assistantCount <= 3, `不应超过 maxTurns，实际 ${assistantCount}`);
   });
+
+  it('达到上限时 stopReason 标记为 max_turns', async () => {
+    // 每次都返回 toolCall，永不停止
+    const streamFn: StreamFn = async function* () {
+      yield {
+        type: 'done',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'toolCall', id: `tc_${Date.now()}_${Math.random()}`, name: 'loop_tool', arguments: {} }],
+          stopReason: 'toolUse',
+          usage: { input: 1, output: 1, total: 2 },
+          timestamp: Date.now(),
+        } as AssistantMessage,
+      };
+    };
+
+    const tool: Tool = {
+      name: 'loop_tool',
+      description: '循环工具',
+      parameters: Type.Object({}),
+      execute: async () => ({ content: [], details: {} }),
+    };
+
+    const runtime = createRuntime({ streamFn, tools: [tool], maxTurns: 2 });
+    const result = await runtime.run(createRequest('loop'));
+
+    assert.equal(result.success, true);
+    assert.equal(result.stopReason, 'max_turns', '回合上限耗尽应标记 stopReason');
+    assert.equal(result.metadata.maxTurns, true);
+  });
+
+  it('正常结束时 stopReason 不带 max_turns 标记', async () => {
+    const runtime = createRuntime({
+      streamFn: mockToolStreamFn([]), // 首轮即返回纯文本
+      maxTurns: 3,
+    });
+    const result = await runtime.run(createRequest('hi'));
+
+    assert.equal(result.success, true);
+    assert.equal(result.stopReason, 'stop');
+    assert.equal(result.metadata.maxTurns, undefined);
+  });
 });
 
 describe('Result.resources 快照', () => {

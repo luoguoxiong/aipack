@@ -745,6 +745,9 @@ export class AgentRuntime implements Runtime {
         }
       }
 
+      // 回合上限耗尽（循环条件失效而非 break 退出，maxTurns 已减至 -1）：
+      // 模型仍请求工具调用但被截断，标记供 buildResult 输出 'max_turns'
+      if (maxTurns < 0) compilation.maxTurnsExhausted = true;
       compilation.turnCount = turnCount;
     } finally {
       this.markIdle(session);
@@ -837,6 +840,9 @@ export class AgentRuntime implements Runtime {
         }
       }
 
+      // 回合上限耗尽（循环条件失效而非 break 退出，maxTurns 已减至 -1）：
+      // 模型仍请求工具调用但被截断，标记供 buildResult 输出 'max_turns'
+      if (maxTurns < 0) compilation.maxTurnsExhausted = true;
       compilation.turnCount = turnCount;
     } finally {
       this.markIdle(session);
@@ -1509,6 +1515,11 @@ export class AgentRuntime implements Runtime {
       builder.stopReason('terminated').metadata('terminateReason', compilation.terminateReason);
     }
 
+    // 回合上限耗尽：调用方据此区分"正常完成"与"被截断"（模型仍想调用工具）
+    if (compilation.maxTurnsExhausted) {
+      builder.stopReason('max_turns').metadata('maxTurns', true);
+    }
+
     return builder.build();
   }
 
@@ -1543,11 +1554,31 @@ export class AgentRuntime implements Runtime {
   }
 
   /** 等待指定会话空闲（默认会话；基于 promise，无轮询） */
-  async waitForIdle(sessionKey?: string): Promise<void> {
+  async waitForIdle(sessionKey?: string, timeoutMs?: number): Promise<void> {
     const session = this._sessions.get(sessionKey ?? this._sessionKey);
     if (!session || !session.isStreaming) return;
-    await new Promise<void>(resolve => {
-      session.idleResolvers.push(resolve);
+
+    if (timeoutMs === undefined) {
+      await new Promise<void>(resolve => {
+        session.idleResolvers.push(resolve);
+      });
+      return;
+    }
+
+    // 带超时等待：超时 reject 并把自己从等待队列移除，避免 markIdle 唤醒残留 resolver
+    await new Promise<void>((resolve, reject) => {
+      const resolver = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        const i = session.idleResolvers.indexOf(resolver);
+        if (i >= 0) session.idleResolvers.splice(i, 1);
+        reject(new Error(
+          `[Runtime] waitForIdle 超时（${timeoutMs}ms）: ${sessionKey ?? 'default'}`,
+        ));
+      }, timeoutMs);
+      session.idleResolvers.push(resolver);
     });
   }
 
