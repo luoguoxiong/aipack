@@ -1,15 +1,14 @@
 # Netlify 部署配置 (仓库根目录)
-# Netlify 默认从仓库根目录读取此文件,通过 base 指向 web-docs 子项目
 # 文档: https://docs.netlify.com/configure-builds/file-based-configuration/
 
 [build]
-  # 构建基目录: web-docs 是独立的 pnpm 项目 (有自己的 pnpm-lock.yaml)
-  # Netlify 会切换到此目录运行 install 和 build,避免误装根 workspaces
-  base = "web-docs"
-  # 构建命令: Netlify 自动检测 pnpm-lock.yaml 并执行 pnpm install,这里只需构建
-  command = "pnpm build"
-  # 发布目录 (相对 base,vite.config.ts 中 outDir: '../dist')
-  publish = "dist"
+  # 构建命令: 显式进入 web-docs 并用 --ignore-workspace 安装依赖
+  # web-docs 不在根 pnpm-workspace.yaml 成员列表中 (只有 packages/* 和 apps/*),
+  # 但 pnpm 会向上查找发现根 workspace,导致安装 14 个根子项目而非 web-docs 依赖。
+  # --ignore-workspace 让 pnpm 把 web-docs 当独立项目安装。
+  command = "cd web-docs && pnpm install --frozen-lockfile --ignore-workspace && pnpm build"
+  # 发布目录 (vite.config.ts 中 outDir: '../dist')
+  publish = "web-docs/dist"
 
 [build.environment]
   # 锁定 Node 版本以匹配本地开发环境
