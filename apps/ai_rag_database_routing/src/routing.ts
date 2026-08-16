@@ -9,7 +9,7 @@
  * 回答阶段:命中数据库 → 取 top-4 片段作为上下文流式生成(SSE);
  *          网页兜底 → 用搜索结果作为上下文流式生成。
  */
-import { createRequest, type Runtime } from '@aipack/agent';
+import { createRequest, type Runtime } from '@aipack-ai/agent';
 import type { CollectionId } from './vectordb.js';
 import { VectorStore, isCollectionId, COLLECTIONS } from './vectordb.js';
 import { searchWeb } from './search.js';

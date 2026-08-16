@@ -15,8 +15,8 @@ import {
   adaptAiModel,
   createStreamFnFromAi,
   BUILTIN_PROVIDERS,
-} from '@aipack/agent';
-import type { Model, StreamFn } from '@aipack/agent';
+} from '@aipack-ai/agent';
+import type { Model, StreamFn } from '@aipack-ai/agent';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

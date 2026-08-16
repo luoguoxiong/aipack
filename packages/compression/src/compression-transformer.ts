@@ -17,8 +17,8 @@
 
 import type {
   ContextResource, TransformContext, Model, StreamFn, SessionStorage,
-} from '@aipack/agent';
-import { BaseTransformer, extractTextFromResource } from '@aipack/agent';
+} from '@aipack-ai/agent';
+import { BaseTransformer, extractTextFromResource } from '@aipack-ai/agent';
 import type { TokenEstimator } from './token-estimator';
 import type { CompressionConfig } from './config';
 import { validateConfig } from './config';

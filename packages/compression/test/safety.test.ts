@@ -13,7 +13,7 @@ import {
   createForkAbortController,
   runFork,
 } from '../src/safety';
-import type { ContextResource } from '@aipack/agent';
+import type { ContextResource } from '@aipack-ai/agent';
 
 function makeResource(
   id: string,

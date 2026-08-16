@@ -12,11 +12,11 @@ export interface PackageInfo {
 export const packages: PackageInfo[] = [
   {
     id: 'aipack',
-    name: '@aipack/agent',
+    name: '@aipack-ai/agent',
     tag: '核心框架',
     description: 'Agent 框架：Runtime + Extension + Transformer 三层架构。核心调度、会话持久化、工具执行、上下文转换均自研实现，不依赖任何外部 Agent 框架。',
     icon: '📦',
-    install: 'pnpm add @aipack/agent',
+    install: 'pnpm add @aipack-ai/agent',
     features: [
       'Runtime 核心调度器：请求 → 任务图 → 转换器链 → 模型 → 工具 → 结果',
       'Tapable 扩展机制：Extension 钩子 + ContextTransformer 链式转换',
@@ -40,11 +40,11 @@ export const packages: PackageInfo[] = [
   },
   {
     id: 'aipack-coding',
-    name: '@aipack/coding',
+    name: '@aipack-ai/coding',
     tag: '编码工具集',
     description: 'coding 工具集 + coding agent 工厂 + CLI。提供 7 个零依赖 coding 工具（文件读写、命令执行、代码搜索），内置权限策略与 workspace 沙箱。',
     icon: '💻',
-    install: 'pnpm add @aipack/coding',
+    install: 'pnpm add @aipack-ai/coding',
     features: [
       '7 个内置工具：read_file / write_file / edit_file / list_directory / run_command / grep / glob',
       'createCodingAgent() 工厂：一键组装模型 + Runtime + 工具集 + 系统提示词',
@@ -63,11 +63,11 @@ export const packages: PackageInfo[] = [
   },
   {
     id: 'aipack-memory',
-    name: '@aipack/memory',
+    name: '@aipack-ai/memory',
     tag: '持久化记忆',
     description: '持久化记忆插件：capture → compress → index → recall/inject → consolidate 闭环。自动捕获要点、跨会话检索注入、BM25 + 向量双路混合召回。',
     icon: '🧠',
-    install: 'pnpm add @aipack/memory',
+    install: 'pnpm add @aipack-ai/memory',
     features: [
       '自动捕获：每轮对话结束自动提取要点存为可检索记忆',
       '自动注入：每轮开始自动检索相关记忆，sentinel 机制防累积',
@@ -85,11 +85,11 @@ export const packages: PackageInfo[] = [
   },
   {
     id: 'aipack-compression',
-    name: '@aipack/compression',
+    name: '@aipack-ai/compression',
     tag: '上下文压缩',
     description: '五级上下文压缩策略：L1 工具输出裁剪 → L2 消息摘要 → L3 任务状态提取 → L4 会话检查点 → L5 新会话交接。动态 import，默认关闭。',
     icon: '🗜️',
-    install: 'pnpm add @aipack/compression',
+    install: 'pnpm add @aipack-ai/compression',
     features: [
       'L1 Tool Output Trim：对超大工具输出做结构保留裁剪',
       'L2 Message Summarize：超过阈值的历史消息滚动摘要',
@@ -105,17 +105,17 @@ export const packages: PackageInfo[] = [
   },
   {
     id: 'aipack-observability',
-    name: '@aipack/observability',
+    name: '@aipack-ai/observability',
     tag: '可观测性',
     description: '可观测性上报 SDK（S2）：埋点上报模式，客户端只需 appId+appSecret 一行接入，6 类 Telemetry 事件自动批量上报，失败本地缓存补报。',
     icon: '📡',
-    install: 'pnpm add @aipack/observability',
+    install: 'pnpm add @aipack-ai/observability',
     features: [
       '埋点上报：createObservability({ appId, appSecret, endpoint }) 一行接入',
       '6 类 Telemetry 事件自动批量上报（5s/50 条），注入 runtime 即生效',
       '失败分级容错：网络错/5xx/429 本地缓存补报，4xx 丢弃；缓存有上限裁剪',
       '上报串行合并，事件路径零阻塞、失败不阻断 run()',
-      '零重依赖：运行时无第三方依赖（peer 依赖 @aipack/agent）',
+      '零重依赖：运行时无第三方依赖（peer 依赖 @aipack-ai/agent）',
       '记录类型共享：RunRecord/SpanRecord/ToolCallRecord/PermissionRecord/EventBatch',
     ],
     keyApis: [
@@ -126,11 +126,11 @@ export const packages: PackageInfo[] = [
   },
   {
     id: 'aipack-observability-server',
-    name: '@aipack/observability-server',
+    name: '@aipack-ai/observability-server',
     tag: '可观测性',
     description: '可观测性收集服务（S2）：接收 SDK 埋点上报，统一完成 SQLite 落盘（runs/spans/tool_calls）+ 内存聚合（p50/p95/p99）+ REST 查询，appId+Secret 鉴权。',
     icon: '🗄️',
-    install: 'pnpm add @aipack/observability-server',
+    install: 'pnpm add @aipack-ai/observability-server',
     features: [
       '独立部署：bin `observability-server` 一键启动，或宿主应用组装 createCollector',
       '上报鉴权：appId+Secret 白名单（OBS_APPS），未授权 401 拒绝',
@@ -148,11 +148,11 @@ export const packages: PackageInfo[] = [
   },
   {
     id: 'aipack-cli',
-    name: '@aipack/cli',
+    name: '@aipack-ai/cli',
     tag: '命令行工具',
     description: '基于 aipack 框架的命令行助手。交互式聊天、会话管理、历史回放、一次性提问、模型列表、配置向导等，支持 aipack.config.js 扩展。',
     icon: '⌨️',
-    install: 'pnpm add -g @aipack/cli',
+    install: 'pnpm add -g @aipack-ai/cli',
     features: [
       'aipack chat：交互式聊天（首次启动 API Key 向导）',
       'aipack run [message]：一次性提问，支持 stdin 管道',
@@ -173,7 +173,7 @@ export const packages: PackageInfo[] = [
   },
   {
     id: 'vscode-aipack-coding',
-    name: '@aipack/vscode-coding',
+    name: '@aipack-ai/vscode-coding',
     tag: 'VSCode 扩展',
     description: 'VSCode 扩展：基于 aipack-coding 的 WebView 聊天面板。在编辑器内直接进行编码对话，利用 coding 工具集操作工作区文件与命令。',
     icon: '🎯',

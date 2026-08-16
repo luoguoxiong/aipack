@@ -10,7 +10,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { ContextResource, Model, StreamFn, StreamResult, SessionStorage, StoredSession } from '@aipack/agent';
+import type { ContextResource, Model, StreamFn, StreamResult, SessionStorage, StoredSession } from '@aipack-ai/agent';
 import {
   createCompressionTransformer,
   loadCompressionConfig,

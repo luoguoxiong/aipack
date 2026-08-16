@@ -15,7 +15,7 @@
  */
 
 import { Command } from 'commander';
-import { createFileSessionStorage, type AiModel } from '@aipack/agent';
+import { createFileSessionStorage, type AiModel } from '@aipack-ai/agent';
 import type { AipackConfig, CliOptions } from './config';
 import { loadConfig } from './config';
 import { loadEnvFile } from './env';

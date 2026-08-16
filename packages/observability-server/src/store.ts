@@ -3,14 +3,14 @@
  *
  * 接口抽象存储：未来可替换为 ElasticsearchStore / OTLP 导出，消费侧零改动。
  * SQLiteStore 用 better-sqlite3（同步 API），落盘由收集端 ingest 批量调用。
- * 记录类型（RunRecord/SpanRecord/ToolCallRecord）来自 @aipack/observability。
+ * 记录类型（RunRecord/SpanRecord/ToolCallRecord）来自 @aipack-ai/observability。
  */
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import type { RunRecord, SpanRecord, ToolCallRecord, EventRecord, RetryRecord, EventBatch } from '@aipack/observability';
+import type { RunRecord, SpanRecord, ToolCallRecord, EventRecord, RetryRecord, EventBatch } from '@aipack-ai/observability';
 import type { AlertMetric, AlertOperator } from './alerts/rules';
 import type { VersionMetrics } from './types';
 

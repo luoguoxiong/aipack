@@ -5,7 +5,7 @@
  * 与 createCodingPlugin / createCodingAgent 共享。
  */
 
-import type { Tool } from '@aipack/agent';
+import type { Tool } from '@aipack-ai/agent';
 import type { CodingToolContext, CodingToolsOptions } from '../types';
 import { createReadFileTool } from './read-file';
 import { createWriteFileTool } from './write-file';

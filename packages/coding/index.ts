@@ -10,7 +10,7 @@
  * run_command 内置权限策略（白名单 allow/deny/confirm + 确认回调）。
  *
  * 快速开始：
- *   import { createCodingAgent } from '@aipack/coding';
+ *   import { createCodingAgent } from '@aipack-ai/coding';
  *   const agent = await createCodingAgent({ provider: 'deepseek', model: 'deepseek-chat' });
  *   const result = await agent.runtime.run(createRequest('读 package.json 并总结'));
  *   await agent.close();
@@ -71,4 +71,4 @@ export {
 export type { WalkOptions } from './src/utils/text';
 
 // ─── 从 aipack 再导出常用类型（方便单一 import） ───────────────────
-export type { Tool, ToolResult, Extension, ContextTransformer, StreamFn } from '@aipack/agent';
+export type { Tool, ToolResult, Extension, ContextTransformer, StreamFn } from '@aipack-ai/agent';

@@ -1,8 +1,8 @@
 /**
- * 上报 SDK 测试（@aipack/observability）：
+ * 上报 SDK 测试（@aipack-ai/observability）：
  *  - HttpReporter：上报成功/失败分级（5xx 缓存、4xx 丢弃）/ 补报 / 裁剪，用 mock fetch
  *  - ObservabilityTelemetry：事件 → 原始记录转换 + 批量上报
- * 端到端（真实收集服务）见 @aipack/observability-server 的测试。
+ * 端到端（真实收集服务）见 @aipack-ai/observability-server 的测试。
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';

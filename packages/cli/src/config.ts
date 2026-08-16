@@ -15,7 +15,7 @@ import path from 'path';
 import os from 'os';
 import { randomBytes } from 'crypto';
 import { pathToFileURL } from 'url';
-import type { RuntimeOptions } from '@aipack/agent';
+import type { RuntimeOptions } from '@aipack-ai/agent';
 
 /**
  * aipack Runtime 透传选项（写入配置文件的字段）。
@@ -70,7 +70,7 @@ export interface CliOptions {
  * aipack 配置文件允许的字段（aipack.config.js / aipack.config.json / config.json）。
  * 字段均为可选；未配置时使用默认值，优先级：默认值 < 配置文件 < 环境变量 < CLI 参数。
  * 在 aipack.config.js 顶部加一行类型注解即可获得 IDE 代码提示：
- *   `@type {import('@aipack/cli').AipackConfigFile}`
+ *   `@type {import('@aipack-ai/cli').AipackConfigFile}`
  */
 export interface RawFileConfig extends AipackRuntimeConfig {
   /** 模型提供商 ID（如 deepseek / openai / anthropic），运行 "aipack models" 查看全部 */

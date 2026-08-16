@@ -4,13 +4,13 @@
 
 export const qsInstallCode = [
   '# 使用 pnpm（推荐）',
-  'pnpm add @aipack/agent',
+  'pnpm add @aipack-ai/agent',
   '',
   '# 或使用 npm',
-  'npm install @aipack/agent',
+  'npm install @aipack-ai/agent',
   '',
   '# 或使用 yarn',
-  'yarn add @aipack/agent',
+  'yarn add @aipack-ai/agent',
 ].join('\n');
 
 export const qsEnvCode = [
@@ -38,7 +38,7 @@ export const qsFirstAppCode = [
   '  getBuiltinModel,',
   '  adaptAiModel,',
   '  createStreamFnFromAi,',
-  '} from "@aipack/agent";',
+  '} from "@aipack-ai/agent";',
   '',
   'async function main() {',
   '  // 1. 选择模型 + 从环境变量读取 Key',
@@ -82,7 +82,7 @@ export const qsStreamingCode = [
   '  getBuiltinModel,',
   '  adaptAiModel,',
   '  createStreamFnFromAi,',
-  '} from "@aipack/agent";',
+  '} from "@aipack-ai/agent";',
   '',
   'const runtime = createRuntime({',
   '  model: adaptAiModel(getBuiltinModel("deepseek", "deepseek-chat")),',
@@ -133,7 +133,7 @@ export const qsMultiTurnCode = [
   '  getBuiltinModel,',
   '  adaptAiModel,',
   '  createStreamFnFromAi,',
-  '} from "@aipack/agent";',
+  '} from "@aipack-ai/agent";',
   '',
   'const aiModel = getBuiltinModel("deepseek", "deepseek-chat");',
   '',
@@ -168,14 +168,14 @@ export const qsMultiTurnCode = [
 ].join('\n');
 
 export const qsToolCode = [
-  'import { Type } from "@aipack/agent/ai";',
+  'import { Type } from "@aipack-ai/agent/ai";',
   'import {',
   '  createRuntime,',
   '  createRequest,',
   '  getBuiltinModel,',
   '  adaptAiModel,',
   '  createStreamFnFromAi,',
-  '} from "@aipack/agent";',
+  '} from "@aipack-ai/agent";',
   '',
   'const runtime = createRuntime({',
   '  model: adaptAiModel(getBuiltinModel("deepseek", "deepseek-chat")),',

@@ -1,5 +1,5 @@
 {
-  "name": "@aipack/cli",
+  "name": "@aipack-ai/cli",
   "version": "0.1.0",
   "description": "aipack 命令行工具：交互式聊天、一次性提问、会话管理与回放",
   "type": "module",
@@ -14,7 +14,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
-    "prebuild": "pnpm --filter @aipack/agent build",
+    "prebuild": "pnpm --filter @aipack-ai/agent build",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts"
   },
@@ -29,7 +29,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@aipack/agent": "workspace:*",
+    "@aipack-ai/agent": "workspace:*",
     "commander": "^12.1.0"
   },
   "devDependencies": {

@@ -1,4 +1,4 @@
-# @aipack/agent 生产可观测性设计
+# @aipack-ai/agent 生产可观测性设计
 
 > 目标：让 Agent 生产运行可量化、可诊断。覆盖指标采集、Trace 关联、成本核算、
 > 存储导出、Dashboard 展示。
@@ -336,7 +336,7 @@ GET /traces/:traceId
 
 | 步骤             | 内容                                                                            | 验收                                                                  |
 | ---------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| **S1 采集层**    | Telemetry 扩展 + traceId + turnCount + retry 回调 + token 透传（详细设计见 §9） | `pnpm --filter @aipack/agent test` 全绿；`telemetry.test.ts` 增补用例 |
+| **S1 采集层**    | Telemetry 扩展 + traceId + turnCount + retry 回调 + token 透传（详细设计见 §9） | `pnpm --filter @aipack-ai/agent test` 全绿；`telemetry.test.ts` 增补用例 |
 | **S2 聚合存储**  | Telemetry 实现（内存聚合 + SQLite 落盘 + REST API）                             | 跑一次 run 后 `/metrics/summary`、`/traces/:id` 返回正确数据          |
 | **S3 Dashboard** | 单页面板 + Trace 详情页，接聚合 API                                             | 端到端：run → 面板图表 → trace 下钻                                   |
 
@@ -347,7 +347,7 @@ GET /traces/:traceId
 > 目标：让上述 8 项指标以结构化事件从框架流出，全部为**增量改动**，现有 `Telemetry` 接口
 > 实现方（onRunEnd/onToolCall/onModelCall）不受影响——新增字段只增不删。
 >
-> **✅ 状态：S1 已实现（2026-08-11）**，`pnpm --filter @aipack/agent test` 435 用例全绿、
+> **✅ 状态：S1 已实现（2026-08-11）**，`pnpm --filter @aipack-ai/agent test` 435 用例全绿、
 > workspace 10 包 typecheck 通过。实现与设计的两处偏差：
 >
 > 1. `onRunEnd` 在 `_run`/`_stream` 内部上报（而非 §9.2 草图的 run()/stream()），
@@ -576,7 +576,7 @@ if (attempt < maxRetries && isRetryableError(err)) {
 | 校验失败请求   | onRunEnd success=false、errorClass='validation'                               |
 | token 透传     | usage.input/output/cacheRead/cacheWrite 出现在 onModelCall 与 onRunEnd.tokens |
 
-**验证命令**：`pnpm --filter @aipack/agent test && pnpm --filter @aipack/agent typecheck`
+**验证命令**：`pnpm --filter @aipack-ai/agent test && pnpm --filter @aipack-ai/agent typecheck`
 
 ---
 

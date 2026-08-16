@@ -13,8 +13,8 @@
  * 每 consolidateEvery 次捕获触发一次合并。
  */
 
-import { BaseExtension } from '@aipack/agent';
-import type { RuntimeHooks, ExtensionContext, Request, Result } from '@aipack/agent';
+import { BaseExtension } from '@aipack-ai/agent';
+import type { RuntimeHooks, ExtensionContext, Request, Result } from '@aipack-ai/agent';
 import type { MemoryEventSink, MemoryStore } from '../types';
 import type { SummarizeFn } from '../types';
 import { runCaptureExtractor } from './extractor';

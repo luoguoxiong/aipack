@@ -1,5 +1,5 @@
 {
-  "name": "@aipack/vscode-coding",
+  "name": "@aipack-ai/vscode-coding",
   "version": "0.1.0",
   "description": "基于 aipack-coding 的 VSCode AI coding 助手扩展：Webview 聊天面板 + 流式输出 + 工具卡片 + 命令确认 + 跨会话记忆",
   "publisher": "aipack",
@@ -203,7 +203,7 @@
         "aipack.memory.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "启用跨会话记忆（@aipack/memory），自动 capture/recall 项目约定与决策"
+          "description": "启用跨会话记忆（@aipack-ai/memory），自动 capture/recall 项目约定与决策"
         },
         "aipack.memory.baseDir": {
           "type": "string",
@@ -237,24 +237,24 @@
   },
   "scripts": {
     "build": "node esbuild.config.mjs",
-    "prebuild": "pnpm --filter @aipack/agent build && pnpm --filter @aipack/memory build && pnpm --filter @aipack/coding build",
+    "prebuild": "pnpm --filter @aipack-ai/agent build && pnpm --filter @aipack-ai/memory build && pnpm --filter @aipack-ai/coding build",
     "watch": "node esbuild.config.mjs --watch",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "package:vsix": "NODE_OPTIONS='--require ./scripts/vsce-polyfill.cjs' vsce package --no-dependencies"
   },
   "dependencies": {
-    "@aipack/coding": "workspace:*"
+    "@aipack-ai/coding": "workspace:*"
   },
   "peerDependencies": {
-    "@aipack/memory": "workspace:*"
+    "@aipack-ai/memory": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.12.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^2.32.0",
-    "@aipack/agent": "workspace:*",
-    "@aipack/memory": "workspace:*",
+    "@aipack-ai/agent": "workspace:*",
+    "@aipack-ai/memory": "workspace:*",
     "esbuild": "^0.23.0",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0"
