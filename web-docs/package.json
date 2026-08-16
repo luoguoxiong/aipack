@@ -1,5 +1,5 @@
 {
-  "name": "@aipack/docs",
+  "name": "@aipack-ai/docs",
   "version": "0.1.0",
   "private": true,
   "description": "aipack 框架文档网站 - 包含使用指南、API 文档、扩展教程和示例代码",

@@ -16,8 +16,8 @@ import {
 } from 'node:crypto';
 import type {
   ContextResource, Model, Context, StreamFn,
-} from '@aipack/agent';
-import { extractTextFromResource } from '@aipack/agent';
+} from '@aipack-ai/agent';
+import { extractTextFromResource } from '@aipack-ai/agent';
 import type { TokenEstimator } from './token-estimator';
 import type { CompressionTelemetry } from './telemetry';
 import { createTelemetry } from './telemetry';

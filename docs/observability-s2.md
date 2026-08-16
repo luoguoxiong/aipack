@@ -1,4 +1,4 @@
-# S2 聚合存储实施文档（@aipack/observability）
+# S2 聚合存储实施文档（@aipack-ai/observability）
 
 > 对应 [observability.md](./observability.md) §5.1 档位 A（自建轻量）、§6 REST API、
 > §8 S2 验收、附录 A SQLite 表结构。
@@ -22,7 +22,7 @@
 ## 2. 总体架构（数据流）
 
 ```
-【客户端 SDK】（@aipack/observability）
+【客户端 SDK】（@aipack-ai/observability）
 runtime emitTelemetry（6 类事件，S1 已埋）
   └─► ObservabilityTelemetry.onXxx        （实现 Telemetry 接口）
         └─► 原始记录（RunRecord / SpanRecord / ToolCallRecord / PermissionRecord）入队
@@ -56,7 +56,7 @@ packages/observability/              # 上报 SDK（客户端，零重依赖）
 │   ├── types.ts         # 记录类型（RunRecord/SpanRecord/ToolCallRecord/PermissionRecord/EventBatch）
 │   └── index.ts         # createObservability({ appId, appSecret, endpoint })
 ├── test/observability.test.ts       # reporter 单元 + 事件→记录转换
-├── package.json         # deps: 无运行时依赖（peer: @aipack/agent）
+├── package.json         # deps: 无运行时依赖（peer: @aipack-ai/agent）
 └── tsup.config.ts / tsconfig.json
 
 packages/observability-server/       # 收集服务（独立部署，含 SQLite）
@@ -73,7 +73,7 @@ packages/observability-server/       # 收集服务（独立部署，含 SQLite�
 │   └── loadEnv.ts       # 零依赖 .env 加载
 ├── test/observability-server.test.ts # 端到端验收（§9）
 ├── .env.example / README.md
-└── package.json         # deps: @aipack/observability(workspace)、better-sqlite3
+└── package.json         # deps: @aipack-ai/observability(workspace)、better-sqlite3
 ```
 
 **依赖方向**：`observability-server` → 依赖 `observability`（记录类型共享），
@@ -141,7 +141,7 @@ export interface ToolStat {
 
 export class Aggregator {
   constructor(opts?: { windowMs?: number; bucketMs?: number });
-  // record 驱动（收集端 ingest 后喂入，不再依赖 @aipack/agent 类型）
+  // record 驱动（收集端 ingest 后喂入，不再依赖 @aipack-ai/agent 类型）
   ingestRun(r: RunRecord): void;
   ingestModelCall(s: SpanRecord): void; // s.kind === 'model'
   ingestToolCall(t: ToolCallRecord): void;
@@ -475,7 +475,7 @@ GET /traces/:traceId
 
 ```ts
 // apps/xxx/src/server.ts
-import { createObservability } from '@aipack/observability';
+import { createObservability } from '@aipack-ai/observability';
 
 const obs = createObservability({
   appId: 'travel-app',
@@ -498,8 +498,8 @@ PORT=8787
 DB_PATH=.aipack/collector.db
 OBS_APPS=travel-app:sk-travel123,blog-app:sk-blog456
 
-pnpm --filter @aipack/observability-server dev
-# 或构建后全局安装：pnpm --filter @aipack/observability-server build && pnpm --global add .
+pnpm --filter @aipack-ai/observability-server dev
+# 或构建后全局安装：pnpm --filter @aipack-ai/observability-server build && pnpm --global add .
 ```
 
 ### 8.3 备份与恢复、容器部署（P2-3）
@@ -569,11 +569,11 @@ docker run -d --name obs --restart unless-stopped \
 **验证命令**：
 
 ```bash
-pnpm --filter @aipack/observability test      # 上报 SDK 测试（6 用例）
-pnpm --filter @aipack/observability typecheck
-pnpm --filter @aipack/observability-server test      # 收集服务端到端（10 用例）
-pnpm --filter @aipack/observability-server typecheck
-pnpm --filter @aipack/agent test              # 回归（框架零改动，应全绿）
+pnpm --filter @aipack-ai/observability test      # 上报 SDK 测试（6 用例）
+pnpm --filter @aipack-ai/observability typecheck
+pnpm --filter @aipack-ai/observability-server test      # 收集服务端到端（10 用例）
+pnpm --filter @aipack-ai/observability-server typecheck
+pnpm --filter @aipack-ai/agent test              # 回归（框架零改动，应全绿）
 ```
 
 ---
@@ -614,8 +614,8 @@ packages/observability-server/     # 单包：收集服务 + 内嵌面板
 
 构建与开发：
 
-- `pnpm --filter @aipack/observability-server build` → tsup 后端到 `dist/` + vite 前端到 `dist/public/`
-- `pnpm --filter @aipack/observability-server dev:web` → vite dev（5175，代理 /api /metrics /traces → :8787）
+- `pnpm --filter @aipack-ai/observability-server build` → tsup 后端到 `dist/` + vite 前端到 `dist/public/`
+- `pnpm --filter @aipack-ai/observability-server dev:web` → vite dev（5175，代理 /api /metrics /traces → :8787）
 
 ### 11.2 关键设计
 
@@ -651,8 +651,8 @@ packages/observability-server/     # 单包：收集服务 + 内嵌面板
 
 ### 11.5 验收
 
-- 后端：`pnpm --filter @aipack/observability-server test` 15/15 通过（含登录/创建应用/数据隔离/
+- 后端：`pnpm --filter @aipack-ai/observability-server test` 15/15 通过（含登录/创建应用/数据隔离/
   删除应用后 ingest 401/重置密钥用例）。
-- 前端：`pnpm --filter @aipack/observability-server typecheck`（后端 + web）+ `build` 通过。
-- 启动方式：`ADMIN_PASS=xxx pnpm --filter @aipack/observability-server dev`，
+- 前端：`pnpm --filter @aipack-ai/observability-server typecheck`（后端 + web）+ `build` 通过。
+- 启动方式：`ADMIN_PASS=xxx pnpm --filter @aipack-ai/observability-server dev`，
   浏览器打开 `http://localhost:8787` 登录 → 创建应用 → SDK 上报 → Dashboard 出数据 → Trace 下钻。

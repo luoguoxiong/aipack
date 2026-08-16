@@ -22,8 +22,8 @@ import {
   type RuntimePair,
   type RuntimeRegistry,
 } from './runtime.js';
-import { createObservability } from '@aipack/observability';
-import type { Observability } from '@aipack/observability';
+import { createObservability } from '@aipack-ai/observability';
+import type { Observability } from '@aipack-ai/observability';
 import { describeSearchBackend } from './tools/search.js';
 import { generateIcs } from './itinerary.js';
 

@@ -9,7 +9,7 @@
  *
  * 容错细节:每层 try/catch + fetch 超时(8s,避免阻断层卡死)+ 1 次重试 + User-Agent。
  */
-import type { Tool } from '@aipack/agent';
+import type { Tool } from '@aipack-ai/agent';
 
 export interface SearchResult {
   title: string;

@@ -18,7 +18,7 @@ export type {
   CliOptions,
   SessionsConfig,
 } from './src/config';
-export type { RuntimeOptions } from '@aipack/agent';
+export type { RuntimeOptions } from '@aipack-ai/agent';
 
 export { loadEnvFile, saveEnvFile } from './src/env';
 

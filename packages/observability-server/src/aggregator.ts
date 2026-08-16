@@ -8,7 +8,7 @@
  */
 
 import { Histogram } from './histogram';
-import type { RunRecord, SpanRecord, ToolCallRecord, PermissionRecord, RetryRecord } from '@aipack/observability';
+import type { RunRecord, SpanRecord, ToolCallRecord, PermissionRecord, RetryRecord } from '@aipack-ai/observability';
 import type {
   AggregatedMetrics,
   GroupBy,

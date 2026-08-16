@@ -7,7 +7,7 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { Tool } from '@aipack/agent';
+import type { Tool } from '@aipack-ai/agent';
 import type { Workspace } from './workspace.js';
 import { resolveInWorkspace, assertExists } from './workspace.js';
 

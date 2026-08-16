@@ -1,7 +1,7 @@
 // 可观测性文档代码示例：数组 join 避免模板解析问题
 
 export const obsTelemetryCode = [
-  'import { createRuntime, createRequest } from "@aipack/agent";',
+  'import { createRuntime, createRequest } from "@aipack-ai/agent";',
   '',
   '// Telemetry：面向生产观测的轻量埋点接口（全可选，失败不阻断主流程）',
   'const runtime = createRuntime({',
@@ -101,7 +101,7 @@ export const obsMetricsCode = [
 
 export const obsS2SetupCode = [
   '// 客户端 SDK：埋点上报模式，只需 appId + appSecret',
-  'import { createObservability } from "@aipack/observability";',
+  'import { createObservability } from "@aipack-ai/observability";',
   '',
   'const obs = createObservability({',
   '  appId: "travel-app",',
@@ -120,13 +120,13 @@ export const obsS2SetupCode = [
 ].join('\n');
 
 export const obsS2CollectorCode = [
-  '// 后台收集服务：@aipack/observability-server（独立包部署）',
+  '// 后台收集服务：@aipack-ai/observability-server（独立包部署）',
   '// .env',
   'PORT=8787',
   'DB_PATH=.aipack/collector.db',
   'OBS_APPS=travel-app:sk-travel123,blog-app:sk-blog456',
   '',
-  '$ pnpm --filter @aipack/observability-server dev',
+  '$ pnpm --filter @aipack-ai/observability-server dev',
   '',
   '// 收到上报：SQLite 落盘（runs/spans/tool_calls）+ 内存聚合（实时指标）',
   'POST /api/v1/ingest   埋点上报（x-app-id + x-app-secret 鉴权）',

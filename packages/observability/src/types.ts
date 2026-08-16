@@ -1,6 +1,6 @@
 /**
- * 上报 SDK 记录类型（@aipack/observability）。
- * 客户端 telemetry 事件转成这些原始记录后批量上报；收集服务（@aipack/observability-server）
+ * 上报 SDK 记录类型（@aipack-ai/observability）。
+ * 客户端 telemetry 事件转成这些原始记录后批量上报；收集服务（@aipack-ai/observability-server）
  * 依赖这些类型做落盘与聚合。
  */
 

@@ -9,7 +9,7 @@
  *   L5: NewSessionHandoff    新会话交接（保底重置）
  *
  * 快速接入：
- *   import { createCompressionTransformer, loadCompressionConfig } from '@aipack/compression';
+ *   import { createCompressionTransformer, loadCompressionConfig } from '@aipack-ai/compression';
  *   const transformer = createCompressionTransformer({
  *     config: loadCompressionConfig(),
  *     model, streamFn, contextWindow: model.contextWindow,
@@ -121,5 +121,5 @@ export type {
   Model,
   StreamFn,
   SessionStorage,
-} from '@aipack/agent';
-export { BaseTransformer } from '@aipack/agent';
+} from '@aipack-ai/agent';
+export { BaseTransformer } from '@aipack-ai/agent';

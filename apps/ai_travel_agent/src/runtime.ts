@@ -16,7 +16,7 @@ import {
   type StreamFn,
   type Runtime,
   type Telemetry,
-} from '@aipack/agent';
+} from '@aipack-ai/agent';
 import { createSearchTool } from './tools/search.js';
 import { buildModel } from './config.js';
 import { createHash } from 'node:crypto';

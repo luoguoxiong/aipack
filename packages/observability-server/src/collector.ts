@@ -15,7 +15,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { EventBatch } from '@aipack/observability';
+import type { EventBatch } from '@aipack-ai/observability';
 import { Aggregator } from './aggregator';
 import { createApiHandler, type ApiHandler } from './server';
 import { createAdminHandler, type AdminHandler } from './admin';

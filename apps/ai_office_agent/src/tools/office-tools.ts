@@ -19,7 +19,7 @@
  *   - commands 中携带文件路径的 props(src/image/out)做工作区越界校验
  */
 import { promises as fs } from 'node:fs';
-import type { Tool } from '@aipack/agent';
+import type { Tool } from '@aipack-ai/agent';
 import type { Workspace } from './workspace.js';
 import { resolveInWorkspace, assertExists, backupFile, ensureDirForFile } from './workspace.js';
 import { withFileLock } from '../utils/mutex.js';

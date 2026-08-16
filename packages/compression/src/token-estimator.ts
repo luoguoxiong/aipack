@@ -8,8 +8,8 @@
  *  - estimateAllDelta 增量接口：基于上次快照做 delta，避免全量 reduce
  */
 
-import type { ContextResource } from '@aipack/agent';
-import { extractTextFromResource } from '@aipack/agent';
+import type { ContextResource } from '@aipack-ai/agent';
+import { extractTextFromResource } from '@aipack-ai/agent';
 
 // ─── 接口 ─────────────────────────────────────────────────────────
 

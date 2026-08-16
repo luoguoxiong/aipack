@@ -6,8 +6,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import { getBuiltinModels, getEnvApiKey } from '@aipack/agent';
-import type { AiModel } from '@aipack/agent';
+import { getBuiltinModels, getEnvApiKey } from '@aipack-ai/agent';
+import type { AiModel } from '@aipack-ai/agent';
 import { resolveModel } from '../model';
 
 /**

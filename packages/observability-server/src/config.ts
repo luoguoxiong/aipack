@@ -13,7 +13,7 @@
  *               ADMIN_PASS 为显式配置,则以之派生;两者都缺省(密码自动生成)
  *               时回退内存会话(行为同 P1)
  *   STATIC_DIR  可选:面板静态文件目录(构建产物)。缺省自动定位到本包 dist/public
- *               (即 `pnpm --filter @aipack/observability-server build` 的产出),
+ *               (即 `pnpm --filter @aipack-ai/observability-server build` 的产出),
  *               存在则 GET / 直接返回面板
  *
  * 数据保留（retention）:
@@ -85,7 +85,7 @@ export function loadConfig(): CollectorConfig {
   const admin = resolveAdmin();
   if (!staticDir) {
     console.log(
-      '[observability-server] 未找到面板构建产物(dist/public)。运行 pnpm --filter @aipack/observability-server build 或配置 STATIC_DIR 后即可通过 http://localhost:' +
+      '[observability-server] 未找到面板构建产物(dist/public)。运行 pnpm --filter @aipack-ai/observability-server build 或配置 STATIC_DIR 后即可通过 http://localhost:' +
         port +
         ' 访问面板。',
     );

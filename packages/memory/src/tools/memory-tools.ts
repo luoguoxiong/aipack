@@ -11,8 +11,8 @@
  *   - delete_memory(id)
  */
 
-import type { Tool, ToolResult } from '@aipack/agent';
-import { createTextContent } from '@aipack/agent';
+import type { Tool, ToolResult } from '@aipack-ai/agent';
+import { createTextContent } from '@aipack-ai/agent';
 import type { MemoryStore } from '../types';
 
 export interface MemoryToolsOptions {

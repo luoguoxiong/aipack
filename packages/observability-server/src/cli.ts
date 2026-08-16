@@ -1,5 +1,5 @@
 /**
- * @aipack/observability-server/src/cli.ts — 收集服务启动入口（bin: observability-server）。
+ * @aipack-ai/observability-server/src/cli.ts — 收集服务启动入口（bin: observability-server）。
  *
  *   POST /api/v1/ingest           客户端埋点上报(appId+Secret 动态鉴权)→ SQLite 落盘 + 聚合
  *   POST /api/auth/login|logout   面板登录/登出
@@ -9,7 +9,7 @@
  *   GET  /traces/*                Trace 明细查询(需登录)
  *   GET  /*                       面板静态文件(STATIC_DIR 配置时)
  *
- * 启动: pnpm --filter @aipack/observability-server dev
+ * 启动: pnpm --filter @aipack-ai/observability-server dev
  * 客户端接入:
  *   const obs = createObservability({ appId: 'travel-app', appSecret: 'sk-xxx', endpoint: 'http://localhost:8787' });
  */

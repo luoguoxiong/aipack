@@ -15,10 +15,10 @@
 import * as vscode from 'vscode';
 import path from 'path';
 import fs from 'fs';
-import { createCodingAgent } from '@aipack/coding';
-import type { CodingAgent } from '@aipack/coding';
-import { createRequest } from '@aipack/agent';
-import type { Message, ResultChunk } from '@aipack/agent';
+import { createCodingAgent } from '@aipack-ai/coding';
+import type { CodingAgent } from '@aipack-ai/coding';
+import { createRequest } from '@aipack-ai/agent';
+import type { Message, ResultChunk } from '@aipack-ai/agent';
 import { createQuickPickConfirmFn } from './confirm';
 import { loadConfigAndSyncEnv } from './config';
 

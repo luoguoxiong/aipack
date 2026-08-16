@@ -5,7 +5,7 @@
  * CompressionTelemetryExtension 通过 afterTransform hook 读取并上报。
  */
 
-import type { Extension, ExtensionContext, RuntimeHooks, ContextResource } from '@aipack/agent';
+import type { Extension, ExtensionContext, RuntimeHooks, ContextResource } from '@aipack-ai/agent';
 
 // ─── 共享状态键 ───────────────────────────────────────────────────
 

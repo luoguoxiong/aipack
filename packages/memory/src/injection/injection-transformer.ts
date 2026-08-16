@@ -15,9 +15,9 @@
  *   - 合并进最新 user 消息语义自然，且 content 中的 sentinel 可跨轮识别剥离。
  */
 
-import { BaseTransformer } from '@aipack/agent';
-import type { ContextResource, ContentBlock, TextContent } from '@aipack/agent';
-import { ContextResourceBuilder } from '@aipack/agent';
+import { BaseTransformer } from '@aipack-ai/agent';
+import type { ContextResource, ContentBlock, TextContent } from '@aipack-ai/agent';
+import { ContextResourceBuilder } from '@aipack-ai/agent';
 import type { HybridRetriever } from '../retrieval/hybrid-retriever';
 import {
   buildMemoryBlock,
@@ -58,7 +58,7 @@ export class MemoryInjectionTransformer extends BaseTransformer {
 
   protected async run(
     resources: ContextResource[],
-    _context: import('@aipack/agent').TransformContext,
+    _context: import('@aipack-ai/agent').TransformContext,
   ): Promise<ContextResource[]> {
     if (resources.length === 0) return resources;
 

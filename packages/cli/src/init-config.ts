@@ -11,7 +11,7 @@
 import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
-import { getBuiltinModels, getBuiltinProviders, type AiModel } from '@aipack/agent';
+import { getBuiltinModels, getBuiltinProviders, type AiModel } from '@aipack-ai/agent';
 import type { RawFileConfig } from './config';
 import { getConfigPath } from './config';
 
@@ -169,7 +169,7 @@ function buildJsConfigContent(config: RawFileConfig): string {
   lines.push('/**');
   lines.push(' * aipack 配置文件（字段均可选，可直接写 JS 逻辑）');
   lines.push(' * 取消注释并按需修改下面的示例字段；保存后运行 "aipack chat" 生效。');
-  lines.push(" * @type {import('@aipack/cli').AipackConfigFile}");
+  lines.push(" * @type {import('@aipack-ai/cli').AipackConfigFile}");
   lines.push(' */');
   lines.push(moduleType === 'esm' ? 'export default {' : 'module.exports = {');
 

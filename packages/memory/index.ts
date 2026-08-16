@@ -14,7 +14,7 @@
  *   - summarizeFn → LLM 摘要压缩
  *
  * 快速接入（aipack.config.js）：
- *   import { createMemoryPlugin } from '@aipack/memory';
+ *   import { createMemoryPlugin } from '@aipack-ai/memory';
  *   const mem = createMemoryPlugin({ baseDir: '~/.aipack/memory' });
  *   const r = mem.install();
  *   export default { ..., extensions: r.extensions, transformers: r.transformers, tools: r.tools };
@@ -89,4 +89,4 @@ export { createMemoryTools } from './src/tools/memory-tools';
 export type { MemoryToolsOptions } from './src/tools/memory-tools';
 
 // ─── 从 aipack 再导出常用类型（方便单一 import） ───────────────────
-export type { Extension, ContextTransformer, Tool, ToolResult } from '@aipack/agent';
+export type { Extension, ContextTransformer, Tool, ToolResult } from '@aipack-ai/agent';

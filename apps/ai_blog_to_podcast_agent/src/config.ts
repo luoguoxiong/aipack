@@ -13,8 +13,8 @@ import {
   adaptAiModel,
   createStreamFnFromAi,
   BUILTIN_PROVIDERS,
-} from '@aipack/agent';
-import type { Model, StreamFn } from '@aipack/agent';
+} from '@aipack-ai/agent';
+import type { Model, StreamFn } from '@aipack-ai/agent';
 import { describeScrapeBackend } from './tools/scrape.js';
 
 /** 各 provider 的默认模型 id(与 ai/catalog.ts 对齐) */

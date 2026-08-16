@@ -220,19 +220,19 @@ export default function ObservabilityPage() {
           <DatabaseOutlined /> 5. 埋点上报与后台收集（双包）
         </h2>
         <p style={{ lineHeight: 1.8, color: '#475569' }}>
-          生产落地拆两个包：<b>@aipack/observability</b>（上报 SDK，零重依赖）+
-          <b> @aipack/observability-server</b>（收集服务，独立部署）。客户端只需{' '}
+          生产落地拆两个包：<b>@aipack-ai/observability</b>（上报 SDK，零重依赖）+
+          <b> @aipack-ai/observability-server</b>（收集服务，独立部署）。客户端只需{' '}
           <code>appId + appSecret</code>，6 类 telemetry 事件自动批量 POST 到收集服务；
           收集端统一完成 SQLite 落盘（runs / spans / tool_calls）+ 内存聚合
           （p50/p95/p99 在线直方图），并提供 REST 查询 API。上报失败自动写本地缓存，
           收集服务恢复后补报——事件路径零阻塞、失败不阻断 run()。
         </p>
         <h3 className="subsection-title" style={{ fontSize: 16, marginTop: 24 }}>
-          客户端接入（@aipack/observability）
+          客户端接入（@aipack-ai/observability）
         </h3>
         <CodeBlock code={obsS2SetupCode} language="typescript" />
         <h3 className="subsection-title" style={{ fontSize: 16, marginTop: 24 }}>
-          后台收集服务（@aipack/observability-server）
+          后台收集服务（@aipack-ai/observability-server）
         </h3>
         <CodeBlock code={obsS2CollectorCode} language="bash" />
         <h3 className="subsection-title" style={{ fontSize: 16, marginTop: 24 }}>
@@ -252,7 +252,7 @@ export default function ObservabilityPage() {
       <div style={{ padding: 24, background: '#f0fdf4', borderRadius: 12, border: '1px solid #bbf7d0' }}>
         <h3 style={{ marginTop: 0, color: '#166534' }}>💡 与 Extension 的分工</h3>
         <ul style={{ color: '#14532d', lineHeight: 2 }}>
-          <li>要"观测"（指标、Trace、token 消耗量） → <b>Telemetry</b>（本页）+ <b>@aipack/observability</b>（第 5 节：聚合 + SQLite + REST API）</li>
+          <li>要"观测"（指标、Trace、token 消耗量） → <b>Telemetry</b>（本页）+ <b>@aipack-ai/observability</b>（第 5 节：聚合 + SQLite + REST API）</li>
           <li>要"干预"（改请求/上下文、block/terminate 工具） → <b>Extension / Tool Hooks</b></li>
           <li>指标口径与 token 汇总已内置（provider 还原 input/output/cache 四类 token），无需自行实现</li>
         </ul>

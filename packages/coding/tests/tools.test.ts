@@ -11,7 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { execFile } from 'child_process';
-import type { ToolResult, TextContent } from '@aipack/agent';
+import type { ToolResult, TextContent } from '@aipack-ai/agent';
 import { createCodingTools } from '../src/tools';
 import { PermissionManager } from '../src/permission';
 import type { ConfirmContext, ConfirmResult } from '../src/permission';

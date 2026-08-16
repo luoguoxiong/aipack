@@ -6,8 +6,8 @@
  */
 
 import readline from 'readline';
-import { createRequest } from '@aipack/agent';
-import type { AssistantMessage, Runtime } from '@aipack/agent';
+import { createRequest } from '@aipack-ai/agent';
+import type { AssistantMessage, Runtime } from '@aipack-ai/agent';
 import type { AipackConfig } from './config';
 import { listSessions } from './sessions';
 

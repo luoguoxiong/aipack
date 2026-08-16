@@ -73,7 +73,7 @@ const minimalExample = `import {
   getBuiltinModel,
   adaptAiModel,
   createStreamFnFromAi,
-} from '@aipack/agent';
+} from '@aipack-ai/agent';
 
 // 1. 获取内置模型（需配置环境变量：DEEPSEEK_API_KEY）
 const aiModel = getBuiltinModel('deepseek', 'deepseek-chat');

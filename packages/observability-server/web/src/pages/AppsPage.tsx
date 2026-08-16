@@ -216,7 +216,7 @@ export default function AppsPage() {
           </Form.Item>
           <Typography.Text type="secondary">
             创建后将自动生成 appId 与 appSecret，用于接入
-            <span className="mono"> @aipack/observability</span> 上报 SDK。
+            <span className="mono"> @aipack-ai/observability</span> 上报 SDK。
           </Typography.Text>
         </Form>
       </Modal>
