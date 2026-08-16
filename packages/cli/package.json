@@ -6,7 +6,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "aipack": "dist/cli.js"
+    "aipack": "dist/bin.js"
   },
   "exports": {
     ".": {
@@ -22,7 +22,7 @@
     "build": "tsup",
     "prebuild": "pnpm --filter @aipack-ai/agent build",
     "typecheck": "tsc --noEmit",
-    "dev": "tsx src/cli.ts"
+    "dev": "tsx src/bin.ts"
   },
   "keywords": [
     "cli",
