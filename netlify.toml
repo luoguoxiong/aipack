@@ -1,0 +1,36 @@
+# Netlify 部署配置 (仓库根目录)
+# Netlify 默认从仓库根目录读取此文件,通过 base 指向 web-docs 子项目
+# 文档: https://docs.netlify.com/configure-builds/file-based-configuration/
+
+[build]
+  # 构建基目录: web-docs 是独立的 pnpm 项目 (有自己的 pnpm-lock.yaml)
+  # Netlify 会切换到此目录运行 install 和 build,避免误装根 workspaces
+  base = "web-docs"
+  # 构建命令: 安装依赖并构建生产产物
+  command = "pnpm install --frozen-lockfile && pnpm build"
+  # 发布目录 (相对 base,vite.config.ts 中 outDir: '../dist')
+  publish = "dist"
+
+[build.environment]
+  # 锁定 Node 版本以匹配本地开发环境
+  NODE_VERSION = "18"
+  # 启用 pnpm (Netlify 通过 corepack 自动识别)
+  NPM_FLAGS = "--version"
+
+# SPA 路由支持: 所有路径回退到 index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# 静态资源长缓存 (vite 构建产物带 hash)
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# HTML 不缓存,确保更新即时生效
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
