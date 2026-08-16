@@ -124,8 +124,8 @@ export async function main(argv: string[]): Promise<number> {
   return process.exitCode === 1 ? 1 : 0;
 }
 
-// ── 直接执行（bin）──
-if (process.argv[1] && process.argv[1].endsWith('cli.js')) {
+// ── 直接执行（bin 打包为 cli.js；开发模式 tsx 运行 cli.ts）──
+if (process.argv[1] && /cli\.(js|mjs|ts)$/.test(process.argv[1])) {
   main(process.argv.slice(2))
     .then(code => process.exit(code))
     .catch(err => {
