@@ -8,6 +8,7 @@
  * - onModelCall：单次模型调用（含 token 用量、重试次数、成本与耗时）
  * - onRetry：provider 内部单次重试（per-attempt 粒度，含退避时长）
  * - onPermissionDenied：工具调用被权限策略拒绝
+ * - onApprovalPending / onApprovalResolved：异步审批挂起与结算（Human-in-the-loop）
  *
  * 设计原则：
  * - 全可选（未实现的方法静默跳过）
@@ -101,6 +102,30 @@ export interface PermissionDeniedTelemetryInfo {
   reason: string;
 }
 
+/** 审批单挂起事件载荷（pending 决策触发，可据此做"等待审批"告警） */
+export interface ApprovalPendingTelemetryInfo {
+  traceId?: string;
+  sessionKey: string;
+  /** 审批单 id（外部以 id 批准 / 驳回） */
+  approvalId: string;
+  toolName: string;
+  permissions: readonly string[];
+  args: unknown;
+  /** 审批超时时刻（epoch ms；未配置超时为 undefined） */
+  expiresAt?: number;
+}
+
+/** 审批单结算事件载荷（批准 / 驳回 / 超时 / 取消） */
+export interface ApprovalResolvedTelemetryInfo {
+  traceId?: string;
+  sessionKey: string;
+  approvalId: string;
+  toolName: string;
+  outcome: 'approved' | 'denied' | 'timeout' | 'cancelled';
+  /** 挂起时长 ms */
+  waitedMs: number;
+}
+
 /** run()/stream() 开始事件载荷（入队前触发） */
 export interface RunStartTelemetryInfo {
   traceId: string;
@@ -159,8 +184,12 @@ export interface Telemetry {
   onRetry?(info: RetryTelemetryInfo): void | Promise<void>;
   /** 内置摘要压缩完成（摘要成功或降级硬截断均触发） */
   onCompaction?(info: CompactionTelemetryInfo): void | Promise<void>;
-  /** 工具调用被 PermissionPolicy 拒绝（confirm 拒绝 / deny 决策均触发） */
+  /** 工具调用被 PermissionPolicy 拒绝（confirm 拒绝 / deny 决策 / pending 未批准均触发） */
   onPermissionDenied?(info: PermissionDeniedTelemetryInfo): void | Promise<void>;
+  /** 审批单挂起（pending 决策 → 等待外部批准） */
+  onApprovalPending?(info: ApprovalPendingTelemetryInfo): void | Promise<void>;
+  /** 审批单结算（批准 / 驳回 / 超时 / 取消） */
+  onApprovalResolved?(info: ApprovalResolvedTelemetryInfo): void | Promise<void>;
 }
 
 /** 空实现（默认），便于组合 */

@@ -45,6 +45,16 @@ export interface SessionsConfig {
   maxAge?: number;
 }
 
+export interface ApprovalsConfig {
+  enabled: boolean;
+  /** 需要审批的工具名 / 能力前缀（匹配工具名或 permissions 声明，支持粒度互换） */
+  tools: string[];
+  /** 审批单存储目录（已解析的绝对路径） */
+  baseDir: string;
+  /** 审批等待超时（毫秒） */
+  timeoutMs: number;
+}
+
 export interface AipackConfig {
   provider: string;
   model: string;
@@ -52,6 +62,7 @@ export interface AipackConfig {
   workspace: string; // 已解析的绝对路径
   sessionKey: string; // 每次启动自动生成的会话 key
   sessions: SessionsConfig;
+  approvals: ApprovalsConfig;
   /** 配置文件透传的 aipack Runtime 选项（tools/extensions 等，可能为 undefined） */
   runtime?: Partial<RuntimeOptions>;
   /** 实际生效的配置文件路径（未使用配置文件时为 undefined） */
@@ -91,6 +102,18 @@ export interface RawFileConfig extends AipackRuntimeConfig {
     baseDir?: string;
     /** 会话最长保留天数（可选） */
     maxAge?: number;
+  };
+  /** 工具审批配置（Human-in-the-loop：危险工具挂起等待人工批准） */
+  approvals?: {
+    /** 是否启用审批（默认 false，显式开启） */
+    enabled?: boolean;
+    /** 需要审批的工具名 / 能力前缀
+     *（匹配工具名或其 permissions 声明；默认 shell / fs:write / fs:delete / net） */
+    tools?: string[];
+    /** 审批单存储目录（支持 ~ 开头，缺省为 <cwd>/.aipack/approvals） */
+    baseDir?: string;
+    /** 审批等待超时毫秒数（默认 300000 = 5 分钟，超时视为拒绝） */
+    timeoutMs?: number;
   };
 }
 
@@ -257,6 +280,14 @@ export async function loadConfig(cli: CliOptions = {}): Promise<AipackConfig> {
         merged.sessions?.maxAge !== undefined
           ? merged.sessions.maxAge * 24 * 60 * 60 * 1000
           : undefined,
+    },
+    approvals: {
+      enabled: merged.approvals?.enabled ?? false,
+      tools: merged.approvals?.tools ?? ['shell', 'fs:write', 'fs:delete', 'net'],
+      baseDir: resolveHome(
+        merged.approvals?.baseDir || path.join(process.cwd(), '.aipack', 'approvals'),
+      ),
+      timeoutMs: merged.approvals?.timeoutMs ?? 300_000,
     },
     runtime: Object.keys(runtime).length > 0 ? runtime : undefined,
     configPath: effectiveConfigPath,

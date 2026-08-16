@@ -8,6 +8,7 @@ import { createRequest } from '@aipack-ai/agent';
 import type { AssistantMessage, AiModel } from '@aipack-ai/agent';
 import type { AipackConfig } from './config';
 import { createAipackRuntime } from './runtime';
+import { attachApprovalPrompt, approvalRuntimeOverrides, type ApprovalSetup } from './approvals';
 
 export interface RunResult {
   content: string;
@@ -18,8 +19,15 @@ export async function runOnce(
   message: string,
   config: AipackConfig,
   model?: AiModel,
+  approvalSetup?: ApprovalSetup,
 ): Promise<RunResult> {
-  const runtime = createAipackRuntime(config, model);
+  const runtime = createAipackRuntime(config, model, approvalRuntimeOverrides(approvalSetup));
+
+  // 审批提示：先附加再恢复，重启遗留的孤儿审批单也进入询问队列
+  if (approvalSetup) {
+    attachApprovalPrompt(approvalSetup.approvals);
+    await approvalSetup.approvals.restore();
+  }
 
   try {
     let finalText = '';

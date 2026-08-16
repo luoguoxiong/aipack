@@ -100,6 +100,9 @@ export {
   createDenyAllPolicy,
   createAllowAllPolicy,
   hasPermission,
+  createApprovalManager,
+  toStoredApproval,
+  fromStoredApproval,
 } from './permission';
 export type {
   PermissionDecision,
@@ -107,6 +110,15 @@ export type {
   PermissionPolicy,
   PermissionRule,
   CreatePermissionPolicyOptions,
+  PendingApproval,
+  ApprovalOutcome,
+  ApprovalOutcomeStatus,
+  ApprovalCreateOptions,
+  ApprovalManager,
+  CreateApprovalManagerOptions,
+  StoredApproval,
+  ApprovalAuditRecord,
+  ApprovalStore,
 } from './permission';
 
 // ─── Session: 会话持久化契约 ──────────────────────────────────────

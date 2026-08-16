@@ -11,6 +11,7 @@
  *   models       列出内置模型
  *   replay       回放历史会话
  *   sessions     list / clear / delete
+ *   approvals    list / approve / deny（工具审批 Human-in-the-loop）
  *   reset        all / config / logs / sessions / memory
  */
 
@@ -27,6 +28,7 @@ import { runOnce } from './run';
 import { replaySession } from './replay';
 import { clearSessions, deleteSession, listSessions } from './sessions';
 import { printModels } from './models';
+import { setupApprovals, approvalRuntimeOverrides, listPendingApprovals, settleApproval } from './approvals';
 import {
   confirmAction,
   resetAll,
@@ -117,10 +119,11 @@ program
   .description('启动交互式聊天（默认命令）')
   .action(async () => {
     const { config, model } = await init();
-    const runtime = createAipackRuntime(config, model);
+    const approvalSetup = setupApprovals(config);
+    const runtime = createAipackRuntime(config, model, approvalRuntimeOverrides(approvalSetup));
     printInitInfo(config, model);
     console.log('');
-    await startChat(runtime, config, `${model.provider}/${model.id}`);
+    await startChat(runtime, config, `${model.provider}/${model.id}`, approvalSetup);
   });
 
 // ─── 命令：continue ────────────────────────────────────────────────
@@ -144,11 +147,12 @@ program
     // 用指定会话 key 覆盖自动生成的新 key，runtime 会 hydrate 加载历史上下文
     config.sessionKey = sessionKey;
 
-    const runtime = createAipackRuntime(config, model);
+    const approvalSetup = setupApprovals(config);
+    const runtime = createAipackRuntime(config, model, approvalRuntimeOverrides(approvalSetup));
     printInitInfo(config, model);
     console.log(`已恢复会话：${sessionKey}（${stored.messages.length} 条历史消息）`);
     console.log('');
-    await startChat(runtime, config, `${model.provider}/${model.id}`);
+    await startChat(runtime, config, `${model.provider}/${model.id}`, approvalSetup);
   });
 
 // ─── 命令：run ─────────────────────────────────────────────────────
@@ -176,7 +180,8 @@ program
     }
 
     const { config, model } = await init();
-    await runOnce(message, config, model);
+    const approvalSetup = setupApprovals(config);
+    await runOnce(message, config, model, approvalSetup);
   });
 
 // ─── 命令：init ───────────────────────────────────────────────────
@@ -312,6 +317,62 @@ sessionsCmd
     const config = await loadConfig(getCliOptions());
     const ok = await deleteSession(config, sessionKey);
     console.log(ok ? `✅ 已删除会话：${sessionKey}` : `⚠️  会话不存在：${sessionKey}`);
+  });
+
+// ─── 命令：approvals ──────────────────────────────────────────────
+
+const approvalsCmd = program
+  .command('approvals')
+  .description('审批单管理（Human-in-the-loop，需配置 approvals.enabled）');
+
+approvalsCmd
+  .command('list')
+  .description('列出未决审批单（含进程重启遗留的孤儿审批单）')
+  .action(async () => {
+    const config = await loadConfig(getCliOptions());
+    const pendingApprovals = await listPendingApprovals(config);
+    if (pendingApprovals.length === 0) {
+      console.log('（无未决审批单）');
+      return;
+    }
+    for (const a of pendingApprovals) {
+      const age = Math.round((Date.now() - a.createdAt) / 1000);
+      console.log(`  - ${a.id}`);
+      console.log(`    工具: ${a.toolName}  等待: ${age}s`);
+      console.log(`    参数: ${a.args}`);
+    }
+    console.log(
+      `\n共 ${pendingApprovals.length} 条（存储目录：${config.approvals.baseDir}）`,
+    );
+    console.log('处理：aipack approvals approve <id> / aipack approvals deny <id>');
+  });
+
+approvalsCmd
+  .command('approve')
+  .description('批准一条审批单（结算写入审计；适用于孤儿审批单）')
+  .argument('<id>', '审批单 id')
+  .action(async (id: string) => {
+    const config = await loadConfig(getCliOptions());
+    const result = await settleApproval(config, id, true);
+    console.log(
+      result === 'settled'
+        ? `✅ 已批准：${id}`
+        : `⚠️  审批单不存在或已结算：${id}（运行 "aipack approvals list" 查看）`,
+    );
+  });
+
+approvalsCmd
+  .command('deny')
+  .description('驳回一条审批单（结算写入审计；适用于孤儿审批单）')
+  .argument('<id>', '审批单 id')
+  .action(async (id: string) => {
+    const config = await loadConfig(getCliOptions());
+    const result = await settleApproval(config, id, false);
+    console.log(
+      result === 'settled'
+        ? `❌ 已驳回：${id}`
+        : `⚠️  审批单不存在或已结算：${id}（运行 "aipack approvals list" 查看）`,
+    );
   });
 
 // ─── 命令：reset ───────────────────────────────────────────────────

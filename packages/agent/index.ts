@@ -82,6 +82,13 @@ export {
   createFileSessionStorage,
 } from './session';
 
+// ─── Approval: 审批持久化实现（Phase 2，契约见 core 的 ApprovalStore）───
+export {
+  FileApprovalStore,
+  defaultApprovalDir,
+  MemoryApprovalStore,
+} from './approval';
+
 // ─── AI 模型层(从 ./ai 选择性重导出,便于单包消费)─────────────────
 // 完整 AI surface 见 'aipack/ai' 子路径;此处仅重导出消费者常用、且不与
 // core 同名冲突的符号,外加 Model as AiModel 别名。
@@ -109,4 +116,6 @@ export type {
   ModelTelemetryInfo,
   RetryTelemetryInfo,
   PermissionDeniedTelemetryInfo,
+  ApprovalPendingTelemetryInfo,
+  ApprovalResolvedTelemetryInfo,
 } from './telemetry';

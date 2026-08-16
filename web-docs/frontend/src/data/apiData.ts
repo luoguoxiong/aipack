@@ -37,7 +37,9 @@ export const apiList: ApiItem[] = [
       { name: 'options.transformers', type: 'ContextTransformer[]', description: '预注册的上下文转换器，按数组顺序链式执行（上一个输出作为下一个输入）' },
       { name: 'options.sessionStorage', type: 'SessionStorage', description: '会话存储适配器，启用后会话自动持久化' },
       { name: 'options.maxSessions', type: 'number', description: '内存会话上限，超限按 LRU 淘汰最久未用会话（默认 256）。仅影响内存态，持久化会话不受影响' },
-      { name: 'options.permissionPolicy', type: 'PermissionPolicy', description: '框架级工具权限策略（可选）。未配置时全部放行（向后兼容），生产环境建议配置；deny 产出 details.blocked 结果、不终止 run，模型可换策略' },
+      { name: 'options.permissionPolicy', type: 'PermissionPolicy', description: '框架级工具权限策略（可选）。未配置时全部放行（向后兼容），生产环境建议配置；deny 产出 details.blocked 结果、不终止 run，模型可换策略。check 可返回 pending 走异步审批通道（需配置 approvals）' },
+      { name: 'options.approvals', type: 'ApprovalManager', description: '审批管理器（Human-in-the-loop，可选）。permissionPolicy 返回 pending 时，Runtime 挂起工具调用并创建审批单，外部任意时机 resolve(id, true/false) 恢复执行；未配置时 pending 视为 deny。由 createApprovalManager 创建' },
+      { name: 'options.approvalTimeoutMs', type: 'number', description: '审批等待超时毫秒数（默认 300000 = 5 分钟）。超时审批单以 timeout 结算，对应工具调用被拒绝（保守）' },
       { name: 'options.telemetry', type: 'Telemetry', description: '轻量可观测：onRunEnd / onToolCall / onModelCall / onRetry / onCompaction 等，全可选、上报失败不影响主流程' },
       { name: 'options.maxTurns', type: 'number', description: '单次请求最大对话回合数，默认 50，防止失控循环' },
       { name: 'options.toolTimeoutMs', type: 'number', description: '单个工具执行超时（毫秒），默认 120000' },
@@ -365,7 +367,7 @@ await sm.deleteSession('user-9');           // 内存 + 存储`,
     name: 'createPermissionPolicy()',
     kind: 'function',
     signature: 'createPermissionPolicy(options: { rules, defaultDecision? }): PermissionPolicy',
-    description: '创建规则型工具权限策略。规则按顺序匹配，命中即采用该决策（allow/deny/confirm）；无规则匹配时默认 deny（deny-by-default）。confirm 决策会调用 confirmFn 完成人工确认（未提供时视为 deny）。配合 Tool.permissions 能力声明与 RuntimeOptions.permissionPolicy 使用，是框架级安全底线。',
+    description: '创建规则型工具权限策略。规则按顺序匹配，命中即采用该决策（allow/deny/confirm/pending）；无规则匹配时默认 deny（deny-by-default）。confirm 为内联人工确认（confirmFn 在当前调用内返回，未提供视为 deny，适合交互式 CLI）；pending 走异步审批单通道（需 RuntimeOptions.approvals，适合 Web / 长任务 / 远程审批）。配合 Tool.permissions 能力声明使用，是框架级安全底线。',
     category: '权限安全',
     params: [
       { name: 'options.rules', type: 'PermissionRule[]', required: true, description: '规则列表：name / toolName(正则) / permission(前缀匹配) / matchArgs(参数谓词) / decision' },
@@ -442,6 +444,81 @@ const runtime = createRuntime({
   // ...model / streamFn
   permissionPolicy: createDenyAllPolicy(),
 });`,
+  },
+  {
+    id: 'createApprovalManager',
+    name: 'createApprovalManager()',
+    kind: 'function',
+    signature: 'createApprovalManager(options?: { store?: ApprovalStore }): ApprovalManager',
+    description: '创建审批管理器：pending 决策的审批单生命周期管理。解耦关键——发起 run 的调用栈与批准人之间以审批单 id 通信，Runtime 挂起等待 wait()，外部任意时机调 resolve()，两者无需共享调用栈（Web / 桌面端 / 长任务审批场景）。配置 store 后审批单持久化，进程重启可经 restore() 恢复未决列表（恢复的是"孤儿"审批单：可批准/驳回且结果落审计，但原 run 已丢失）。方法：create / wait / list / resolve / cancel / restore / close / onPending / onSettled。',
+    category: '权限安全',
+    params: [
+      { name: 'options.store', type: 'ApprovalStore', description: '可选持久化存储（FileApprovalStore / MemoryApprovalStore）。create 落盘、结算清理 + 审计（fire-and-forget，失败仅警告）；未配置时纯内存（进程内有效）' },
+    ],
+    returns: 'ApprovalManager 实例，传入 createRuntime 的 approvals 选项',
+    example: `import {
+  createRuntime,
+  createRequest,
+  createApprovalManager,
+  FileApprovalStore,
+  getBuiltinModel,
+  adaptAiModel,
+  createStreamFnFromAi,
+} from '@aipack-ai/agent';
+
+// 配置持久化：审批单落盘，进程重启后 restore() 恢复
+const approvals = createApprovalManager({
+  store: new FileApprovalStore({ baseDir: '~/.aipack/approvals' }),
+});
+await approvals.restore(); // 恢复重启遗留的孤儿审批单（触发 onPending）
+
+const aiModel = getBuiltinModel('deepseek', 'deepseek-chat');
+const runtime = createRuntime({
+  model: adaptAiModel(aiModel),
+  streamFn: createStreamFnFromAi(aiModel),
+  approvals,                       // 启用异步审批通道
+  approvalTimeoutMs: 5 * 60_000,   // 等待超时：视为拒绝（保守）
+  permissionPolicy: {
+    async check(req) {
+      // 部署工具挂起等待人工批准，其余放行
+      return req.toolName === 'deploy' ? 'pending' : 'allow';
+    },
+  },
+});
+
+// UI / 遥测侧：感知新审批单并处理（与发起 run 的调用栈解耦）
+approvals.onPending((a) => {
+  console.log('待审批:', a.request.toolName, a.request.args);
+  // 展示审批卡片，人工点击后：
+  // approvals.resolve(a.id, true);  // 或 false 驳回
+});
+approvals.onSettled((o) => {
+  console.log('结算:', o.status, '等待 ' + o.waitedMs + 'ms');
+});
+
+// 发起 run：deploy 工具调用会挂起，直到 resolve / 超时 / abort
+const result = await runtime.run(createRequest('执行部署'));
+
+// 优雅退出：未决审批单保留在存储中，下次启动 restore() 继续
+process.on('SIGINT', () => approvals.close());`,
+  },
+  {
+    id: 'FileApprovalStore',
+    name: 'FileApprovalStore',
+    kind: 'class',
+    signature: 'new FileApprovalStore(options?: { baseDir?: string })',
+    description: '审批单文件持久化存储（默认 ~/.aipack/approvals/，与 sessions 平级）。布局：<id>.json 未决审批单（temp + rename 原子写，结算即删除）、history.jsonl 结算审计（追加写，含 status / waitedMs / reason）、.corrupt 损坏隔离（load 时改名保留现场）。load 按创建时间升序返回。MemoryApprovalStore 为内存实现（测试 / 嵌入式）。',
+    category: '权限安全',
+    params: [
+      { name: 'options.baseDir', type: 'string', description: '审批单目录（默认 ~/.aipack/approvals）' },
+    ],
+    example: `import { FileApprovalStore, createApprovalManager } from '@aipack-ai/agent';
+
+const store = new FileApprovalStore({ baseDir: './data/approvals' });
+const approvals = createApprovalManager({ store });
+
+// CLI 场景等价物：aipack.config.js 中 approvals: { enabled: true, baseDir: ... }
+// 命令：aipack approvals list / approve <id> / deny <id>`,
   },
   {
     id: 'hasPermission',
