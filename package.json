@@ -16,6 +16,8 @@
     "docs:build": "pnpm --dir web-docs build",
     "docs:preview": "pnpm --dir web-docs preview",
     "docs:typecheck": "pnpm --dir web-docs typecheck",
+    "docs:deploy": "pnpm --dir web-docs deploy:prod",
+    "docs:deploy:preview": "pnpm --dir web-docs deploy:preview",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "pnpm build && changeset publish"

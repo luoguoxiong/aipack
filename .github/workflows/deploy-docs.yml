@@ -1,0 +1,63 @@
+name: Deploy Docs
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'web-docs/**'
+      - '.github/workflows/deploy-docs.yml'
+  # 支持手动触发
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build & Deploy to Netlify
+    runs-on: ubuntu-latest
+    # 防止 fork 触发部署
+    if: github.repository == 'luoguoxiong/aipack'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: pnpm
+          cache-dependency-path: web-docs/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm --dir web-docs install --frozen-lockfile
+
+      - name: Build docs
+        run: pnpm --dir web-docs build
+
+      - name: Install Netlify CLI
+        run: npm install -g netlify-cli
+
+      - name: Deploy to Netlify
+        run: |
+          netlify deploy \
+            --dir web-docs/dist \
+            --site ${{ secrets.NETLIFY_SITE_ID }} \
+            --auth ${{ secrets.NETLIFY_AUTH_TOKEN }} \
+            --prod
+        env:
+          # 避免 CI 环境下的交互提示
+          CI: true
+
+      - name: Summary
+        run: |
+          echo "### Docs deployed to Netlify" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Site: https://app.netlify.com/" >> $GITHUB_STEP_SUMMARY
