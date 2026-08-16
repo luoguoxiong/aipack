@@ -3,9 +3,10 @@
  */
 import os from 'node:os';
 import path from 'node:path';
+import pkg from '../package.json';
 
-export const APP_NAME = 'aipack';
-export const VERSION = '0.1.0';
+export const APP_NAME = pkg.name.replace(/^@[^/]+\//, '');
+export const VERSION = pkg.version;
 
 /** 全局配置目录（默认 ~/.aipack，可用 AIPACK_CONFIG_DIR 覆盖） */
 export function defaultConfigDir(): string {
