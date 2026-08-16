@@ -119,6 +119,8 @@ export interface ResultChunk {
   toolCallId?: string;
   /** 是否错误 */
   isError?: boolean;
+  /** done 类型：最终 Result 摘要（usage / stopReason / toolsUsed 等，供调用方统计展示） */
+  result?: Result;
 }
 
 // ─── 工厂函数 ─────────────────────────────────────────────────────

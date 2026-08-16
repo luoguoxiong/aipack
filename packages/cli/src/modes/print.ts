@@ -12,16 +12,23 @@ export async function runPrintMode(
 ): Promise<void> {
   const renderer = new ChunkRenderer({ toolStream: process.stderr });
   let error: string | undefined;
+  let usage: { input?: number; output?: number } | undefined;
 
   try {
     for await (const chunk of runtime.stream(request) as AsyncGenerator<ResultChunk>) {
       if (chunk.type === 'error') error = chunk.content;
+      if (chunk.type === 'done' && chunk.result?.usage) usage = chunk.result.usage;
       renderer.render(chunk);
     }
   } catch (err) {
     process.stderr.write(chalk.red(`错误: ${err instanceof Error ? err.message : String(err)}\n`));
     process.exitCode = 1;
     return;
+  }
+
+  // token 用量写 stderr（保持 stdout 纯文本可管道）
+  if (usage && (usage.input || usage.output)) {
+    process.stderr.write(chalk.dim(`tokens: ↑${(usage.input ?? 0).toLocaleString()} ↓${(usage.output ?? 0).toLocaleString()}\n`));
   }
 
   if (error) process.exitCode = 1;

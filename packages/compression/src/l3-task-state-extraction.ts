@@ -125,7 +125,10 @@ export class TaskStateExtraction {
     // + 最近 N 条非 pinned 资源；不再粗暴丢弃 pinned
     const pinned = resources.filter(r => r.pinned);
     const unpinned = resources.filter(r => !r.pinned);
-    const recent = unpinned.slice(-this.config.protectedRecentCount);
+    // protectedRecentCount=0 语义为"不保护"，slice(-0) 会返回整个数组，需特判
+    const recent = this.config.protectedRecentCount > 0
+      ? unpinned.slice(-this.config.protectedRecentCount)
+      : [];
 
     // 去重：pinned 中已包含的资源不再重复加入 recent
     const pinnedIds = new Set(pinned.map(r => r.id));

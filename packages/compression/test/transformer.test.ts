@@ -193,13 +193,15 @@ test('transformer: setHandoffHook 在 L5 触发时被调用', async () => {
       normalizeWhitespace: false,
     },
     l2: {
-      enabled: true, threshold: 0.2, targetRatio: 0.1,
+      // 关闭 L2/L3/L4：精确测试 L5 触发时 handoff hook 被调用
+      // （开启时 L2 会先摘要降 token，L5 阈值不再满足）
+      enabled: false, threshold: 0.2, targetRatio: 0.1,
       forkMaxTokens: 100, minResourcesToCompress: 1,
       protectedRecentCount: 0, maxCompressionDepth: 5,
     },
-    l3: { enabled: true, threshold: 0.3, targetRatio: 0.1, forkMaxTokens: 100, protectedRecentCount: 0 },
+    l3: { enabled: false, threshold: 0.3, targetRatio: 0.1, forkMaxTokens: 100, protectedRecentCount: 0 },
     l4: {
-      enabled: true, threshold: 0.4, targetRatio: 0.1,
+      enabled: false, threshold: 0.4, targetRatio: 0.1,
       checkpointStorage: 'memory', minWorkingSet: 0,
       failOnPersistError: false,
     },

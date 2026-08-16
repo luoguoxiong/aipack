@@ -110,6 +110,13 @@ export interface Runtime {
   /** 清除指定会话消息（仅内存,不影响已持久化数据） */
   clearSession(sessionKey?: string): void;
 
+  /**
+   * 手动压缩指定会话历史（如 /compact 命令）：跳过阈值判断，
+   * 直接压缩至 targetRatio 保留量并持久化。
+   * 返回压缩模式；compaction 未启用或无可压缩段时返回 null。
+   */
+  compact(sessionKey?: string): Promise<'summary' | 'truncate' | null>;
+
   /** 删除指定会话(内存 + 存储),返回是否删除成功 */
   deleteSession(sessionKey?: string): Promise<boolean>;
 

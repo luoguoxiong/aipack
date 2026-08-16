@@ -24,6 +24,12 @@ import {
   createApprovalManager,
   FileApprovalStore,
 } from '@aipack-ai/agent';
+import {
+  createCompressionTransformer,
+  loadCompressionConfig,
+  type CompressionConfig,
+  type ContextCompressionTransformer,
+} from '@aipack-ai/compression';
 import type {
   Runtime,
   Tool,
@@ -186,6 +192,69 @@ export interface BuiltRuntime {
   approvalManager?: ApprovalManager;
   model: ResolvedModel;
   config: AipackCliConfig;
+  /** 五级压缩转换器（--no-compaction 时为 undefined） */
+  compressionTransformer?: ContextCompressionTransformer;
+}
+
+// ─── 上下文压缩 ───────────────────────────────────────────────────
+
+/**
+ * 加载压缩配置：默认配置 + aipack.config.js 的 compression 字段 +
+ * --compaction-config 指定的 JSON 文件（后者优先级最高）。
+ * 文件读取/解析失败仅告警，回退默认配置（不阻塞启动）。
+ */
+async function loadCompressionSettings(
+  args: Args,
+  config: AipackCliConfig,
+): Promise<CompressionConfig> {
+  const overrides: Record<string, unknown> = {};
+  const fromConfigFile = (config as { compression?: Record<string, unknown> }).compression;
+  if (fromConfigFile) Object.assign(overrides, fromConfigFile);
+
+  if (args.compactionConfig) {
+    try {
+      const raw = await fs.readFile(args.compactionConfig, 'utf8');
+      Object.assign(overrides, JSON.parse(raw));
+    } catch (err) {
+      console.warn(`[aipack] 压缩配置文件加载失败（${args.compactionConfig}），使用默认配置:`,
+        err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return loadCompressionConfig(overrides);
+}
+
+/**
+ * 构建五级压缩转换器（L1 裁剪 → L2 摘要 → L3 状态提取 → L4 检查点 → L5 新会话交接）。
+ * 作为第一级 transformer 加入 runtime 降级链：五级压缩 → runtime 内置摘要压缩 → 硬截断。
+ */
+async function buildCompressionTransformer(opts: {
+  args: Args;
+  config: AipackCliConfig;
+  model: ResolvedModel;
+  streamFn: ReturnType<typeof createStreamFnFromAi>;
+  storage?: SessionStorage;
+}): Promise<ContextCompressionTransformer | undefined> {
+  if (opts.args.noCompaction) return undefined;
+
+  const compressionConfig = await loadCompressionSettings(opts.args, opts.config);
+  const transformer = createCompressionTransformer({
+    config: compressionConfig,
+    model: adaptAiModel(opts.model.aiModel),
+    streamFn: opts.streamFn,
+    sessionStorage: opts.storage,
+    contextWindow: opts.model.aiModel.contextWindow,
+  });
+
+  // L5 交接钩子：runtime 暂无 switchSession API，先输出提示（历史会话已归档保留）
+  transformer.setHandoffHook(({ handoff }) => {
+    console.warn(
+      `[aipack] 上下文已达极限，已生成交接文档并切换到新会话 ${handoff.newSessionId}。` +
+      `恢复: aipack --session ${handoff.newSessionId}`,
+    );
+  });
+
+  return transformer;
 }
 
 const DEFAULT_APPROVAL_CAPABILITIES = ['fs:write', 'shell:exec'];
@@ -240,6 +309,15 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
   // ── 系统提示词 ──
   const systemPrompt = buildSystemPrompt(args);
 
+  // ── 上下文压缩（五级 transformer + runtime 内置摘要兜底）──
+  const compressionTransformer = await buildCompressionTransformer({
+    args,
+    config,
+    model,
+    streamFn,
+    storage,
+  });
+
   // ── 组装 Runtime ──
   const runtime = await createRuntime({
     model: adaptAiModel(model.aiModel),
@@ -253,7 +331,9 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
     permissionPolicy: policy,
     approvals: approvalManager,
     maxTurns: 50,
-    compaction: { enabled: true },
+    transformers: compressionTransformer ? [compressionTransformer] : [],
+    // --no-compaction 时一并关闭内置摘要压缩（仅保留硬截断兜底）
+    compaction: args.noCompaction ? { enabled: false } : { enabled: true },
   });
 
   return {
@@ -263,6 +343,7 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
     approvalManager,
     model,
     config,
+    compressionTransformer,
   };
 }
 

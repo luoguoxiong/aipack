@@ -169,7 +169,10 @@ export class MessageSummarize {
 
   /** 识别可压缩块 */
   private identifyCompressible(resources: ContextResource[]): ContextResource[] {
-    const recent = resources.slice(-this.config.protectedRecentCount);
+    // protectedRecentCount=0 语义为"不保护"，slice(-0) 会返回整个数组，需特判
+    const recent = this.config.protectedRecentCount > 0
+      ? resources.slice(-this.config.protectedRecentCount)
+      : [];
     const recentIds = new Set(recent.map(r => r.id));
     const pairMap = buildToolPairMap(resources);
 
