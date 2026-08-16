@@ -753,7 +753,7 @@ export class AgentRuntime implements Runtime {
       await this._hooks.afterEmit.promise(result);
       await this._hooks.done.promise(result, finalRequest);
 
-      yield { type: 'done' };
+      yield { type: 'done', result };
       await this.emitRunEnd(finalRequest, sessionKey, compilation, result, queuedMs, activeStartedAt);
     } catch (err) {
       const error = err as Error;
@@ -763,7 +763,7 @@ export class AgentRuntime implements Runtime {
       await this._hooks.failed.promise(error, finalRequest);
       const result = new ResultBuilder().error(error.message).build();
       yield { type: 'error', content: error.message };
-      yield { type: 'done' };
+      yield { type: 'done', result };
       await this.emitRunEnd(finalRequest, sessionKey, compilation, result, queuedMs, activeStartedAt);
     } finally {
       await this.persistSessionSafe(finalRequest, sessionKey);
@@ -1690,6 +1690,52 @@ export class AgentRuntime implements Runtime {
     console.warn(
       `[Runtime] 上下文达阈值（约 ${total} token > ${triggerTokens}），已${mode === 'summary' ? '摘要压缩' : '截断'}历史`,
     );
+  }
+
+  /**
+   * 手动压缩指定会话（交互命令 /compact 等）：跳过阈值判断，
+   * 直接将历史压缩至 targetRatio 保留量（复用 maybeCompactByThreshold
+   * 的保留段计算与 compactOrTruncate 执行路径），压缩后持久化。
+   */
+  async compact(sessionKey?: string): Promise<'summary' | 'truncate' | null> {
+    if (!this._compaction || this._compaction.enabled === false) return null;
+    const key = sessionKey ?? this._sessionKey;
+    const session = this.getSession(key);
+    const messages = session.messages;
+    if (messages.length === 0) return null;
+
+    const contextWindow = this._model.contextWindow;
+    if (!contextWindow || contextWindow <= 0) return null;
+
+    // 与 maybeCompactByThreshold 相同的保留段计算：保留 target 的一半（最新消息）
+    const targetTokens = Math.floor(
+      contextWindow * (this._compaction.targetRatio ?? 0.5),
+    );
+    const keepTokens = Math.max(Math.floor(targetTokens / 2), 1);
+
+    let kept = 0;
+    let split = messages.length;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (kept >= keepTokens) {
+        split = i + 1;
+        break;
+      }
+      kept += estimateMessageTokens(messages[i]);
+      split = i;
+    }
+    // 无可压缩段（最新消息已占满保留预算）
+    if (split <= 0 || split >= messages.length) return null;
+
+    const mode = await this.compactOrTruncate(
+      messages, split, key, `manual-${Date.now().toString(36)}`,
+      new AbortController().signal, 'threshold',
+    );
+    try {
+      await this.persistSession(key, session);
+    } catch (err) {
+      console.warn('[Runtime] 手动压缩后持久化失败:', (err as Error)?.message);
+    }
+    return mode;
   }
 
   /**

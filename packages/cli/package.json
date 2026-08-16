@@ -22,6 +22,7 @@
     "build": "tsup",
     "prebuild": "pnpm --filter @aipack-ai/agent build",
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
     "dev": "tsx src/bin.ts"
   },
   "keywords": [
@@ -37,6 +38,7 @@
   },
   "dependencies": {
     "@aipack-ai/agent": "workspace:*",
+    "@aipack-ai/compression": "workspace:*",
     "chalk": "^5.3.0"
   },
   "devDependencies": {

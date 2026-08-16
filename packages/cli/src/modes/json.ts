@@ -17,6 +17,10 @@ export async function runJsonMode(
         toolName: chunk.toolName,
         toolCallId: chunk.toolCallId,
         isError: chunk.isError,
+        // done 类型：透出最终 Result 摘要（usage / stopReason / toolsUsed）供程序消费
+        usage: chunk.result?.usage,
+        stopReason: chunk.result?.stopReason,
+        toolsUsed: chunk.result?.toolsUsed,
         timestamp: Date.now(),
       });
       process.stdout.write(`${line}\n`);

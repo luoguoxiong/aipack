@@ -107,6 +107,9 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
   }
 
   // ── 请求执行 ──
+  /** 会话内累计 token（跨多次 send） */
+  let usageTotal = { input: 0, output: 0 };
+
   async function send(text: string): Promise<void> {
     if (!text.trim()) return;
     busy = true;
@@ -124,6 +127,14 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
     try {
       for await (const chunk of runtime.stream(request) as AsyncGenerator<ResultChunk>) {
         renderer.render(chunk);
+        if (chunk.type === 'done' && chunk.result?.usage) {
+          const u = chunk.result.usage as { input?: number; output?: number };
+          usageTotal.input += u.input ?? 0;
+          usageTotal.output += u.output ?? 0;
+        }
+      }
+      if (usageTotal.input > 0 || usageTotal.output > 0) {
+        console.log(chalk.dim(`  tokens: ↑${usageTotal.input.toLocaleString()} ↓${usageTotal.output.toLocaleString()}（累计）`));
       }
     } catch (err) {
       console.log(chalk.red(`错误: ${err instanceof Error ? err.message : String(err)}`));
@@ -214,8 +225,20 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
 
       case '/clear':
         runtime.clearSession(activeKey);
+        usageTotal = { input: 0, output: 0 };
         console.log(chalk.green('会话已清空（仅内存）'));
         break;
+
+      case '/compact': {
+        console.log(chalk.dim('压缩会话历史...'));
+        const mode = await runtime.compact(activeKey);
+        if (mode === null) {
+          console.log(chalk.yellow('无可压缩内容（消息过少或压缩已通过 --no-compaction 关闭）'));
+        } else {
+          console.log(chalk.green(`已完成${mode === 'summary' ? '摘要压缩' : '截断压缩'}，消息数: ${runtime.getMessages(activeKey).length}`));
+        }
+        break;
+      }
 
       case '/tools':
         console.log(chalk.dim('内置工具: read, write, edit, bash, find, grep, ls'));
@@ -266,6 +289,7 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
   /session                当前会话信息
   /sessions               列出历史会话
   /clear                  清空当前会话（仅内存）
+  /compact                手动压缩会话历史（释放上下文空间）
   /approvals              未决审批单
   /approve <id>           批准
   /deny <id>              驳回

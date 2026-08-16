@@ -29,6 +29,10 @@ export interface Args {
   listModels?: string | true;
   /** 保守模式：写文件与 shell 全部人工确认 */
   safe?: boolean;
+  /** 关闭上下文压缩（内置摘要压缩与五级压缩 transformer 均不启用） */
+  noCompaction?: boolean;
+  /** 压缩配置文件路径（JSON，DeepPartial<CompressionConfig> 结构，叠加在默认配置上） */
+  compactionConfig?: string;
   /** 位置参数（用户消息） */
   messages: string[];
   /** @file 引用 */
@@ -108,6 +112,10 @@ export function parseArgs(args: string[]): Args {
       result.noTools = true;
     } else if (arg === '--safe') {
       result.safe = true;
+    } else if (arg === '--no-compaction') {
+      result.noCompaction = true;
+    } else if (arg === '--compaction-config' && i + 1 < args.length) {
+      result.compactionConfig = args[++i];
     } else if (arg === '--print' || arg === '-p') {
       result.print = true;
       const next = args[i + 1];
@@ -179,6 +187,8 @@ ${'工具选项:'}
             （sudo、rm -rf ~、磁盘写入、远程脚本管道等）需确认
 
 ${'其他:'}
+  --no-compaction                       关闭上下文压缩（长会话可能溢出）
+  --compaction-config <文件>            压缩配置 JSON（覆盖默认阈值）
   --system-prompt <文本>                替换默认系统提示词
   --append-system-prompt <文本>         追加系统提示词（可多次）
   --help, -h                            显示帮助
