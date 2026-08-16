@@ -1,6 +1,6 @@
 {
   "name": "ai-travel-agent",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "基于 aipack 的 AI 旅行行程规划 Web 应用(Researcher + Planner 双 Agent + ICS 导出)",
   "type": "module",

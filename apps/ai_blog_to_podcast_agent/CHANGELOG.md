@@ -1,5 +1,12 @@
 # ai-blog-to-podcast-agent
 
+## 0.1.3
+
+### Patch Changes
+
+- Updated dependencies [[`6d518d8`](https://github.com/luoguoxiong/aipack/commit/6d518d81840d5cee73f0050f1f199b5ce153c5e6)]:
+  - @aipack-ai/agent@0.3.0
+
 ## 0.1.2
 
 ### Patch Changes
