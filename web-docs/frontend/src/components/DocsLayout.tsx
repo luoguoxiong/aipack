@@ -99,7 +99,11 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     else if (path === '/packages' || path.startsWith('/packages')) items = packagesMenu;
     const selected = location.pathname + (location.hash || '');
     return {
-      selectedKey: items.find((m) => selected.startsWith(m.key))?.key || path,
+      // 精确匹配优先，避免 '/examples' 前缀项抢先匹配掉 '/examples#memory' 等锚点项
+      selectedKey:
+        items.find((m) => m.key === selected)?.key ||
+        items.find((m) => selected.startsWith(m.key))?.key ||
+        path,
       openKeys: items.map((m) => m.key),
       rootPath: path,
     };
@@ -118,10 +122,12 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
   const handleClick = ({ key }: { key: string }) => {
     const [path, hash] = key.split('#');
     const target = hash ? `${path}#${hash}` : path;
-    if (path !== location.pathname) {
+    if (target !== location.pathname + location.hash) {
+      // 统一走 navigate 更新 URL（含 hash），由页面响应 hash 变化
+      // （如 /examples 页需先切换 Tab 才能定位锚点）
       navigate(target);
-    } else if (hash) {
-      // 同页内跳转
+    }
+    if (hash) {
       const el = document.getElementById(hash);
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else {
