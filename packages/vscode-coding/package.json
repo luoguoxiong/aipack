@@ -4,6 +4,7 @@
   "description": "基于 aipack-coding 的 VSCode AI coding 助手扩展：Webview 聊天面板 + 流式输出 + 工具卡片 + 命令确认 + 跨会话记忆",
   "publisher": "aipack",
   "license": "MIT",
+  "private": true,
   "repository": {
     "type": "git",
     "url": "https://github.com/luoguoxiong/aipack",
