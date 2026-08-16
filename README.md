@@ -1,6 +1,6 @@
 <div align="center">
 
-![aipack logo](./image/logo.png)
+<img src="./image/logo.png" alt="aipack logo" width="120" />
 
 # aipack
 
