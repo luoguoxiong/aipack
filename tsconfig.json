@@ -20,7 +20,6 @@
       "@aipack-ai/agent": ["./packages/agent/index.ts"],
       "@aipack-ai/agent/*": ["./packages/agent/*"],
       "@aipack-ai/memory": ["./packages/memory/index.ts"],
-      "@aipack-ai/coding": ["./packages/coding/index.ts"],
       "@aipack-ai/compression": ["./packages/compression/index.ts"],
       "@aipack-ai/observability": ["./packages/observability/src/index.ts"],
       "@aipack-ai/observability-server": ["./packages/observability-server/src/index.ts"]

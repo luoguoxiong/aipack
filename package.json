@@ -10,8 +10,6 @@
     "example:agent-memory": "tsx examples/agent-memory.ts",
     "example:compression": "tsx examples/compression-demo.ts",
     "lint": "tsc --noEmit",
-    "example:coding": "tsx packages/coding/examples/round-trip.ts",
-    "example:coding:llm": "tsx packages/coding/examples/real-llm.ts",
     "docs:dev": "pnpm --dir web-docs dev",
     "docs:build": "pnpm --dir web-docs build",
     "docs:preview": "pnpm --dir web-docs preview",
@@ -37,7 +35,6 @@
   },
   "devDependencies": {
     "@aipack-ai/cli": "workspace:*",
-    "@aipack-ai/coding": "workspace:*",
     "@aipack-ai/compression": "workspace:*",
     "@changesets/changelog-github": "^0.5.2",
     "@changesets/cli": "^2.31.1",
