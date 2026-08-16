@@ -2,8 +2,8 @@ import { defineConfig } from 'tsup';
 
 export default defineConfig({
   entry: {
-    index: 'index.ts',
     cli: 'src/cli.ts',
+    index: 'index.ts',
   },
   format: ['esm'],
   target: 'es2022',
@@ -12,4 +12,5 @@ export default defineConfig({
   clean: true,
   outDir: 'dist',
   skipNodeModulesBundle: true,
+  external: ['@aipack-ai/agent', '@aipack-ai/agent/ai'],
 });

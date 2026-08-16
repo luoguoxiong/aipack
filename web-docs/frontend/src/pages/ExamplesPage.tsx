@@ -89,10 +89,11 @@ export default function ExamplesPage() {
           <SettingOutlined /> aipack.config.js（CLI 配置）
         </h2>
         <p style={{ lineHeight: 1.8, color: '#475569' }}>
-          用 aipack-cli 而非写代码时，通过 <code>aipack.config.js</code>
-          即可组合 memory 记忆、自定义扩展/工具；开启 <code>approvals.enabled</code>{' '}
-          后危险工具调用会挂起，终端审批卡片人工 y/N 批准（审批单落盘，重启自动恢复）。
-          配置优先级：默认值 &lt; 配置文件 &lt; 环境变量 &lt; CLI 选项。
+          用 aipack-cli 而非写代码时，默认权限策略已开箱即用：读写文件静默放行，bash
+          仅危险命令（sudo、rm -rf ~、磁盘写入等）弹出<b>方向键选择器</b>确认（允许 /
+          总是允许 / 拒绝）。通过 <code>aipack.config.js</code> 可自定义权限规则，或开启{' '}
+          <code>approvals.enabled</code> 将危险操作挂起为异步审批单（落盘持久化，
+          支持跨终端 <code>aipack approvals</code> 结算）。
         </p>
         <CodeBlock code={exCliConfigCode} />
       </div>
