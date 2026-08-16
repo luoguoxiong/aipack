@@ -1,6 +1,6 @@
-#!/usr/bin/env node
 /**
- * aipack CLI 入口：子命令分发 + 模式路由
+ * aipack CLI 主逻辑：子命令分发 + 模式路由
+ * 可执行入口见 src/bin.ts（bin: dist/bin.js）
  */
 import chalk from 'chalk';
 import type { PermissionRequest } from '@aipack-ai/agent';
@@ -122,14 +122,4 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   return process.exitCode === 1 ? 1 : 0;
-}
-
-// ── 直接执行（bin 打包为 cli.js；开发模式 tsx 运行 cli.ts）──
-if (process.argv[1] && /cli\.(js|mjs|ts)$/.test(process.argv[1])) {
-  main(process.argv.slice(2))
-    .then(code => process.exit(code))
-    .catch(err => {
-      console.error(chalk.red(`致命错误: ${err instanceof Error ? err.stack ?? err.message : String(err)}`));
-      process.exit(1);
-    });
 }

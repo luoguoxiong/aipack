@@ -5,7 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import pkg from '../package.json';
 
-export const APP_NAME = pkg.name.replace(/^@[^/]+\//, '');
+/** 命令名：优先取 bin 名称（aipack），兜底包名去 scope */
+export const APP_NAME =
+  Object.keys(pkg.bin ?? {})[0] ?? pkg.name.replace(/^@[^/]+\//, '');
 export const VERSION = pkg.version;
 
 /** 全局配置目录（默认 ~/.aipack，可用 AIPACK_CONFIG_DIR 覆盖） */
