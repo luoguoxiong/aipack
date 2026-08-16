@@ -8,16 +8,22 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# 顶层 permissions：确保 changesets/action 创建 Version PR 时拥有足够权限
+# 注意：同时需要在 GitHub 仓库 Settings → Actions → General 中配置：
+#   1. Workflow permissions → Read and write permissions
+#   2. 勾选 Allow GitHub Actions to create and approve pull requests
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+  issues: write
+
 jobs:
   release:
     name: Version & Publish
     runs-on: ubuntu-latest
     # 防止 fork PR 触发发布
     if: github.repository == 'luoguoxiong/aipack'
-    permissions:
-      contents: write
-      pull-requests: write
-      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
