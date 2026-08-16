@@ -1,6 +1,6 @@
 {
   "name": "ai-rag-database-routing",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "基于 aipack 的 RAG 数据库路由应用(向量路由 → LLM 路由 → 网页搜索兜底)",
   "type": "module",
