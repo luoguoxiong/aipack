@@ -11,7 +11,7 @@ import {
   loadCompressionConfig,
   ConsoleTelemetryReporter,
 } from '../index';
-import type { ContextResource, Model, StreamFn, StreamResult } from '@aipack/agent';
+import type { ContextResource, Model, StreamFn, StreamResult } from '@aipack-ai/agent';
 
 // ─── Mock 模型 ────────────────────────────────────────────────────
 

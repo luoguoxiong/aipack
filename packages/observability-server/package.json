@@ -1,5 +1,5 @@
 {
-  "name": "@aipack/observability-server",
+  "name": "@aipack-ai/observability-server",
   "version": "0.1.0",
   "description": "aipack 可观测性收集服务(S2)：接收 SDK 埋点上报,SQLite 落盘 + 内存聚合 + REST 查询",
   "type": "module",
@@ -22,7 +22,7 @@
   "scripts": {
     "build": "tsup && vite build --config web/vite.config.ts",
     "build:web": "vite build --config web/vite.config.ts",
-    "prebuild": "pnpm --filter @aipack/observability build || true",
+    "prebuild": "pnpm --filter @aipack-ai/observability build || true",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
     "test": "node --import tsx --test test/observability-server.test.ts",
     "dev": "tsx src/cli.ts",
@@ -43,11 +43,11 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@aipack/observability": "workspace:*",
+    "@aipack-ai/observability": "workspace:*",
     "better-sqlite3": "^11.10.0"
   },
   "devDependencies": {
-    "@aipack/agent": "workspace:*",
+    "@aipack-ai/agent": "workspace:*",
     "@ant-design/icons": "^5.4.0",
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^20.12.0",

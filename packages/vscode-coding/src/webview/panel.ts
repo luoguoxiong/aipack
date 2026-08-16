@@ -12,7 +12,7 @@
  */
 
 import * as vscode from 'vscode';
-import type { ResultChunk } from '@aipack/agent';
+import type { ResultChunk } from '@aipack-ai/agent';
 import type { AgentService } from '../agent';
 import { getWebviewHtml } from './html';
 import type { WebviewInbound, WebviewOutbound } from '../types';

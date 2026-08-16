@@ -1,5 +1,5 @@
 /**
- * 收集服务端到端验收（@aipack/observability-server，observability-s2.md §9）：
+ * 收集服务端到端验收（@aipack-ai/observability-server，observability-s2.md §9）：
  * 起真实收集服务（createCollector + http server）→ SDK 埋点上报 → 查询 /metrics、/traces 断言。
  * 附加用例：鉴权失败丢弃、上报失败本地缓存补报。
  */
@@ -12,15 +12,15 @@ import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import { createRuntime, createRequest } from '@aipack/agent';
-import type { StreamFn, StreamEvent, Message, AssistantMessage, Tool } from '@aipack/agent';
-import { createObservability, HttpReporter, ObservabilityTelemetry } from '@aipack/observability';
-import type { EventBatch } from '@aipack/observability';
+import { createRuntime, createRequest } from '@aipack-ai/agent';
+import type { StreamFn, StreamEvent, Message, AssistantMessage, Tool } from '@aipack-ai/agent';
+import { createObservability, HttpReporter, ObservabilityTelemetry } from '@aipack-ai/observability';
+import type { EventBatch } from '@aipack-ai/observability';
 import Database from 'better-sqlite3';
 import { createCollector, createCollectorServer, SQLiteStore } from '../src/index';
 import { Aggregator } from '../src/aggregator';
 import type { CollectorOptions } from '../src/index';
-import type { RunRecord, SpanRecord, ToolCallRecord } from '@aipack/observability';
+import type { RunRecord, SpanRecord, ToolCallRecord } from '@aipack-ai/observability';
 
 // ─── mock streamFn（与 telemetry.test.ts 同手法）──────────────────
 

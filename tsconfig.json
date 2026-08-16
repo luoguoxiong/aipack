@@ -17,13 +17,13 @@
     "lib": ["ES2022"],
     "types": ["node"],
     "paths": {
-      "@aipack/agent": ["./packages/agent/index.ts"],
-      "@aipack/agent/*": ["./packages/agent/*"],
-      "@aipack/memory": ["./packages/memory/index.ts"],
-      "@aipack/coding": ["./packages/coding/index.ts"],
-      "@aipack/compression": ["./packages/compression/index.ts"],
-      "@aipack/observability": ["./packages/observability/src/index.ts"],
-      "@aipack/observability-server": ["./packages/observability-server/src/index.ts"]
+      "@aipack-ai/agent": ["./packages/agent/index.ts"],
+      "@aipack-ai/agent/*": ["./packages/agent/*"],
+      "@aipack-ai/memory": ["./packages/memory/index.ts"],
+      "@aipack-ai/coding": ["./packages/coding/index.ts"],
+      "@aipack-ai/compression": ["./packages/compression/index.ts"],
+      "@aipack-ai/observability": ["./packages/observability/src/index.ts"],
+      "@aipack-ai/observability-server": ["./packages/observability-server/src/index.ts"]
     }
   },
   "include": ["packages/**/*", "examples/**/*"],

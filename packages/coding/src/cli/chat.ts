@@ -8,8 +8,8 @@
 
 import readline from 'readline';
 import path from 'path';
-import { createRequest } from '@aipack/agent';
-import type { AssistantMessage } from '@aipack/agent';
+import { createRequest } from '@aipack-ai/agent';
+import type { AssistantMessage } from '@aipack-ai/agent';
 import { createCodingAgent } from '../factory';
 import type { CodingAgent } from '../types';
 import type { ConfirmContext, ConfirmResult } from '../permission';

@@ -7,8 +7,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import { createTextContent } from '@aipack/agent';
-import type { Tool, ToolResult } from '@aipack/agent';
+import { createTextContent } from '@aipack-ai/agent';
+import type { Tool, ToolResult } from '@aipack-ai/agent';
 import type { CodingToolContext } from '../types';
 import { resolveWithin } from '../utils/path';
 import { walkDir, globToRegex, DEFAULT_IGNORE_DIRS, truncateWithHint } from '../utils/text';

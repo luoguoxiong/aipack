@@ -5,7 +5,7 @@
  * 装配 7 个 coding 工具 + PermissionManager，供 aipack.config.js 展开。
  *
  * 用法（aipack.config.js）：
- *   import { createCodingPlugin } from '@aipack/coding';
+ *   import { createCodingPlugin } from '@aipack-ai/coding';
  *   const coding = createCodingPlugin({ workspace: process.cwd() });
  *   const r = coding.install();
  *   export default {
@@ -15,7 +15,7 @@
  *   };
  */
 
-import type { Tool, ContextTransformer } from '@aipack/agent';
+import type { Tool, ContextTransformer } from '@aipack-ai/agent';
 import { createCodingTools } from './tools';
 import { PermissionManager } from './permission';
 import { DEFAULT_CODING_SYSTEM_PROMPT } from './prompt';

@@ -12,7 +12,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { ContextResource, Model, StreamFn, StreamResult, SessionStorage, StoredSession } from '@aipack/agent';
+import type { ContextResource, Model, StreamFn, StreamResult, SessionStorage, StoredSession } from '@aipack-ai/agent';
 import { ToolOutputTrim } from '../src/l1-tool-output-trim';
 import { MessageSummarize } from '../src/l2-message-summarize';
 import { TaskStateExtraction } from '../src/l3-task-state-extraction';

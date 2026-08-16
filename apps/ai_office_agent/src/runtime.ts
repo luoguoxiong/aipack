@@ -16,7 +16,7 @@ import {
   type Model,
   type StreamFn,
   type Runtime,
-} from '@aipack/agent';
+} from '@aipack-ai/agent';
 import { createOfficeTools } from './tools/office-tools.js';
 import { createFileTools } from './tools/file-tools.js';
 import { createWorkspace, type Workspace } from './tools/workspace.js';

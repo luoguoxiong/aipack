@@ -4,8 +4,8 @@
  * 一次性提问：流式输出回复，返回最终文本。
  */
 
-import { createRequest } from '@aipack/agent';
-import type { AssistantMessage, AiModel } from '@aipack/agent';
+import { createRequest } from '@aipack-ai/agent';
+import type { AssistantMessage, AiModel } from '@aipack-ai/agent';
 import type { AipackConfig } from './config';
 import { createAipackRuntime } from './runtime';
 

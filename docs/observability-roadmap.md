@@ -204,7 +204,7 @@
 >
 > 设计细节与验收标准见下表。
 
-### P2-1 采集覆盖（SDK @aipack/observability）
+### P2-1 采集覆盖（SDK @aipack-ai/observability）
 
 | 项 | 设计 |
 | --- | --- |

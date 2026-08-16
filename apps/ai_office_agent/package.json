@@ -27,7 +27,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@aipack/agent": "workspace:*"
+    "@aipack-ai/agent": "workspace:*"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

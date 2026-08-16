@@ -5,8 +5,8 @@
  */
 
 import fs from 'fs';
-import { createTextContent } from '@aipack/agent';
-import type { Tool, ToolResult } from '@aipack/agent';
+import { createTextContent } from '@aipack-ai/agent';
+import type { Tool, ToolResult } from '@aipack-ai/agent';
 import type { CodingToolContext } from '../types';
 import { resolveWithin } from '../utils/path';
 import { formatLineNumbers, isBinary, truncateWithHint } from '../utils/text';

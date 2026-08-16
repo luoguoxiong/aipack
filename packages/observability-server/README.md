@@ -1,20 +1,20 @@
-# @aipack/observability-server — aipack 可观测性收集服务（S2）
+# @aipack-ai/observability-server — aipack 可观测性收集服务（S2）
 
-接收各应用 SDK（`@aipack/observability`）的埋点上报，统一完成 **SQLite 落盘 + 内存聚合 + REST 查询**。
+接收各应用 SDK（`@aipack-ai/observability`）的埋点上报，统一完成 **SQLite 落盘 + 内存聚合 + REST 查询**。
 
 ## 启动
 
 ```bash
 cp .env.example .env   # 修改 OBS_APPS 为你的 appId:appSecret 白名单
-pnpm --filter @aipack/observability-server dev
+pnpm --filter @aipack-ai/observability-server dev
 ```
 
-或构建后全局安装使用 bin：`pnpm --filter @aipack/observability-server build && pnpm --global add .`
+或构建后全局安装使用 bin：`pnpm --filter @aipack-ai/observability-server build && pnpm --global add .`
 
 ## 客户端接入（一行注入）
 
 ```ts
-import { createObservability } from '@aipack/observability';
+import { createObservability } from '@aipack-ai/observability';
 
 const obs = createObservability({
   appId: 'travel-app',

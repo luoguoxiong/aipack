@@ -5,7 +5,7 @@
  * 基于 aipack 的 FileSessionStorage，目录按配置 sessions.baseDir 解析。
  */
 
-import { createFileSessionStorage } from '@aipack/agent';
+import { createFileSessionStorage } from '@aipack-ai/agent';
 import type { AipackConfig } from './config';
 
 export async function listSessions(

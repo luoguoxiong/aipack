@@ -14,7 +14,7 @@
  *   adaptAiModel,
  *   createStreamFnFromAi,
  *   getBuiltinModel,
- * } from '@aipack/agent';
+ * } from '@aipack-ai/agent';
  *
  * const aiModel = getBuiltinModel('openai', 'gpt-4o-mini');
  * const runtime = await createRuntime({

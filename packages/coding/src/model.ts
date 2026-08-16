@@ -8,8 +8,8 @@
  * 全部未命中返回 undefined（由调用方决定抛错或退出）。
  */
 
-import { getBuiltinModel, getBuiltinModels, getEnvApiKey } from '@aipack/agent';
-import type { AiModel } from '@aipack/agent';
+import { getBuiltinModel, getBuiltinModels, getEnvApiKey } from '@aipack-ai/agent';
+import type { AiModel } from '@aipack-ai/agent';
 
 export function resolveModel(provider?: string, model?: string): AiModel | undefined {
   if (provider && model) {

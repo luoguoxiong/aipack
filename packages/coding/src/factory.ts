@@ -17,8 +17,8 @@ import {
   createFileSessionStorage,
   adaptAiModel,
   createStreamFnFromAi,
-} from '@aipack/agent';
-import type { Runtime, Tool, Extension, ContextTransformer, StreamFn, AiModel } from '@aipack/agent';
+} from '@aipack-ai/agent';
+import type { Runtime, Tool, Extension, ContextTransformer, StreamFn, AiModel } from '@aipack-ai/agent';
 import { createCodingTools } from './tools';
 import { PermissionManager } from './permission';
 import { resolveModel } from './model';
@@ -70,7 +70,7 @@ export async function createCodingAgent(
   // 5. 可选 memory 集成（动态 import，避免硬依赖）
   if (options.memory) {
     try {
-      const memMod = await import('@aipack/memory');
+      const memMod = await import('@aipack-ai/memory');
       const memOpts = typeof options.memory === 'object' ? options.memory : {};
       const mem = memMod.createMemoryPlugin({
         baseDir: memOpts.baseDir ?? '~/.aipack/memory',

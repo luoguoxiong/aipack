@@ -20,7 +20,7 @@ import {
   createStreamFnFromAi,
   getBuiltinModel,
   hasProviderConfigured,
-} from '@aipack/agent';
+} from '@aipack-ai/agent';
 
 async function main() {
   // ── 1. 从 aipack/ai 内置目录获取 DeepSeek 模型 ──────────────

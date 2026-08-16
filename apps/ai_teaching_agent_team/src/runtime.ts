@@ -20,7 +20,7 @@ import {
   type Model,
   type StreamFn,
   type Runtime,
-} from '@aipack/agent';
+} from '@aipack-ai/agent';
 import { createSearchTool } from './tools/search.js';
 import { buildModel } from './config.js';
 import { buildCourseMarkdown } from './markdown.js';

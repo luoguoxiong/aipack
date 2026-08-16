@@ -19,7 +19,7 @@ import type {
   ModelTelemetryInfo,
   RetryTelemetryInfo,
   PermissionDeniedTelemetryInfo,
-} from '@aipack/agent';
+} from '@aipack-ai/agent';
 import type { RunRecord, SpanRecord, ToolCallRecord, PermissionRecord, EventBatch } from './types';
 
 export interface FlushQueueOptions {
