@@ -1,6 +1,6 @@
 {
   "name": "@aipack-ai/cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "aipack 命令行工具：交互式聊天、一次性提问、会话管理与回放",
   "type": "module",
   "main": "./dist/index.js",
