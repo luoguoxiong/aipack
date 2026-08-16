@@ -293,7 +293,7 @@ export default function HomePage() {
                   <div className="arch-box arch-box-adapter">
                     <ExperimentOutlined style={{ fontSize: 24 }} />
                     <div style={{ fontWeight: 700, marginTop: 6 }}>CLI</div>
-                    <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>aipack chat/run</div>
+                    <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>aipack / aipack -p</div>
                   </div>
                   <div className="arch-box arch-box-adapter">
                     <RobotOutlined style={{ fontSize: 24 }} />
@@ -432,7 +432,7 @@ export default function HomePage() {
                         bordered
                       >
                         <p style={{ color: '#475569', lineHeight: 1.8 }}>
-                          交互式聊天、会话管理、历史回放、一次性提问、配置向导。支持 aipack.config.js。
+                          交互 REPL、非交互管道、JSON 事件流三种模式；内置文件与 shell 工具，智能权限策略零打断。
                         </p>
                         <Button type="link" icon={<ArrowRightOutlined />} onClick={() => navigate('/packages#cli')}>
                           查看详情
