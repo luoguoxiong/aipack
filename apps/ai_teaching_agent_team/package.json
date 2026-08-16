@@ -1,6 +1,6 @@
 {
   "name": "ai-teaching-agent-team",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "基于 aipack 的 AI 教学代理团队 Web 应用(4-Agent 协作:Professor + Advisor + Librarian + TA + SSE 流式 + Markdown 导出)",
   "type": "module",

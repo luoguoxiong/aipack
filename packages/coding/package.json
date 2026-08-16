@@ -1,6 +1,6 @@
 {
   "name": "@aipack-ai/coding",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "aipack coding 工具集 + coding agent 工厂 + CLI：文件读写、命令执行、代码搜索",
   "type": "module",
   "main": "./dist/index.js",
