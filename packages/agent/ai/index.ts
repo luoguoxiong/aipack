@@ -81,7 +81,10 @@ export {
   createEnvCredentialStore,
 } from './credentials';
 
-// ─── 统一错误分类 ─────────────────────────────────────────────
+// ─── 上下文溢出检测 ────────────────────────────────────────────
+export { isContextOverflow } from './overflow';
+
+// ─── 统一错误分类 ──────────────────────────────────────────────
 export {
   AgentError,
   AgentErrorCategory,

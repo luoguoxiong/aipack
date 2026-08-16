@@ -31,6 +31,8 @@ export interface AipackRuntimeConfig {
   extensions?: RuntimeOptions['extensions'];
   /** 上下文转换器列表（按数组顺序链式执行） */
   transformers?: RuntimeOptions['transformers'];
+  /** 内置摘要压缩配置（阈值触发 LLM 摘要，失败降级硬截断；未配置保持旧行为） */
+  compaction?: RuntimeOptions['compaction'];
   /** 会话存储适配器（配置后优先于 sessions.baseDir） */
   sessionStorage?: RuntimeOptions['sessionStorage'];
 }
@@ -229,6 +231,7 @@ export async function loadConfig(cli: CliOptions = {}): Promise<AipackConfig> {
     'tools',
     'extensions',
     'transformers',
+    'compaction',
     'sessionStorage',
   ];
   const runtime: Partial<RuntimeOptions> = {};

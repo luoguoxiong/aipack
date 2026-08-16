@@ -47,7 +47,7 @@ export {
 export type { Tap, TapType } from './tapable';
 
 // ─── Runtime: 运行时接口 ──────────────────────────────────────────
-export type { Runtime, Compilation, RuntimeOptions } from './runtime';
+export type { Runtime, Compilation, RuntimeOptions, CompactionOptions } from './runtime';
 
 // ─── Request: 请求入口 ────────────────────────────────────────────
 export { RequestBuilder, createRequest } from './request';

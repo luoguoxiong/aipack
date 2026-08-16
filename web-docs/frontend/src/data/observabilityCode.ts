@@ -56,6 +56,15 @@ export const obsTelemetryCode = [
   '    onPermissionDenied(info) {',
   '      log.warn("权限拒绝", info.toolName, info.reason, info.traceId);',
   '    },',
+  '',
+  '    // 7. 内置摘要压缩完成（compaction 配置后启用）',
+  '    onCompaction(info) {',
+  '      // mode: "summary"（摘要成功）| "truncate"（降级硬截断）',
+  '      // trigger: "threshold"（阈值触发）| "overflow"（溢出恢复）',
+  '      log("上下文压缩", info.mode, info.trigger,',
+  '          `${info.tokensBefore} -> ${info.tokensAfter} tokens,`,',
+  '          `压缩 ${info.droppedMessages} 条消息`);',
+  '    },',
   '  },',
   '});',
   '',
@@ -96,6 +105,7 @@ export const obsMetricsCode = [
   '// token 消耗量      onRunEnd.tokens        input+output+cacheRead+cacheWrite（模型 span 累计）',
   '// 重试次数          onModelCall.attempts-1  分布；重试率 = 有重试调用 / 总调用',
   '// 工具成功率        onToolCall.status       ok / (ok + error)；blocked/skipped 不计入',
+  '// 上下文压缩        onCompaction            次数、mode 分布（summary/truncate 比）、tokensBefore/After 压缩率',
   '// 首 token 延迟     onRunEnd.ttftMs         流式体验关键指标',
 ].join('\n');
 

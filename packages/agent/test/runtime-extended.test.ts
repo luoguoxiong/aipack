@@ -14,9 +14,10 @@ import type {
   AssistantMessage,
   Tool,
   ResultChunk,
+  Model,
 } from '../core/index.ts';
 import { Type } from '../ai/index.ts';
-import { createRequest } from '../core/index.ts';
+import { createRequest, createEmptyUsage, SESSION_VERSION } from '../core/index.ts';
 import { createMemorySessionStorage, createFileSessionStorage } from '../session/index.ts';
 
 // ─── mock 工厂 ─────────────────────────────────────────────────────
@@ -867,5 +868,263 @@ describe('media URL 附件', () => {
     const userMsg = capturedCtx.messages[0];
     const imgBlocks = (userMsg.content as any[]).filter((c: any) => c.type === 'image');
     assert.equal(imgBlocks.length, 2);
+  });
+});
+
+// ─── 上下文溢出自动恢复 ────────────────────────────────────────────
+
+/** 小 contextWindow 的测试模型 */
+function overflowTestModel(contextWindow: number): Model {
+  return {
+    id: 'test-model',
+    name: 'Test Model',
+    provider: 'test',
+    contextWindow,
+    maxTokens: 4096,
+    reasoning: false,
+  };
+}
+
+/** 显式溢出错误事件（带框架分类前缀 + provider 错误文案） */
+function overflowErrorEvent(): StreamEvent {
+  return {
+    type: 'error',
+    message: {
+      role: 'assistant',
+      content: [],
+      stopReason: 'error',
+      errorMessage: '[context-overflow] API error 400: prompt is too long',
+      usage: { input: 0, output: 0, total: 0 },
+      timestamp: Date.now(),
+    } as AssistantMessage,
+  };
+}
+
+/** 正常完成的文本回复事件 */
+function doneTextEvent(
+  text: string,
+  usage = { input: 1, output: 1, total: 2 },
+): StreamEvent {
+  return {
+    type: 'done',
+    message: {
+      role: 'assistant',
+      content: [{ type: 'text', text }],
+      stopReason: 'stop',
+      usage,
+      timestamp: Date.now(),
+    } as AssistantMessage,
+  };
+}
+
+/** 预置较长的历史会话到内存存储（每条约 30 token 估算）。
+ *  返回长度快照副本：存储侧按引用共享，运行时截断会原地 splice 原数组。 */
+async function seedHistory(
+  storage: ReturnType<typeof createMemorySessionStorage>,
+  sessionKey: string,
+  count: number,
+): Promise<Message[]> {
+  const messages: Message[] = [];
+  for (let i = 0; i < count; i++) {
+    messages.push({
+      role: 'user',
+      content: `历史消息 ${i} `.repeat(20),
+      timestamp: Date.now() - (count - i) * 1000,
+    });
+  }
+  await storage.save(sessionKey, {
+    key: sessionKey,
+    version: SESSION_VERSION,
+    messages,
+    model: null,
+    usage: createEmptyUsage(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  return [...messages];
+}
+
+describe('上下文溢出自动恢复', () => {
+  it('显式溢出错误：截断历史后同回合重试成功', async () => {
+    let calls = 0;
+    const streamFn: StreamFn = async function* () {
+      calls += 1;
+      yield calls === 1 ? overflowErrorEvent() : doneTextEvent('recovered');
+    };
+
+    const storage = createMemorySessionStorage();
+    const history = await seedHistory(storage, 's1', 20);
+
+    const runtime = createRuntime({
+      streamFn,
+      model: overflowTestModel(1000),
+      sessionStorage: storage,
+    });
+
+    const result = await runtime.run(createRequest('hi', { sessionKey: 's1' }));
+
+    assert.equal(result.success, true);
+    assert.equal(result.content, 'recovered');
+    assert.equal(calls, 2, '首次溢出后应重试一次');
+
+    const msgs = runtime.getMessages('s1');
+    assert.ok(
+      !msgs.some(m => m.role === 'assistant' && (m as AssistantMessage).errorMessage),
+      '溢出错误消息不应落库',
+    );
+    assert.ok(
+      msgs.length < history.length,
+      `历史应被截断: ${msgs.length} vs ${history.length}`,
+    );
+  });
+
+  it('恢复重试耗尽：维持旧行为（错误落库、返回失败）', async () => {
+    let calls = 0;
+    const streamFn: StreamFn = async function* () {
+      calls += 1;
+      yield overflowErrorEvent();
+    };
+
+    const storage = createMemorySessionStorage();
+    await seedHistory(storage, 's2', 40);
+
+    const runtime = createRuntime({
+      streamFn,
+      model: overflowTestModel(500),
+      sessionStorage: storage,
+    });
+
+    const result = await runtime.run(createRequest('hi', { sessionKey: 's2' }));
+
+    assert.equal(calls, 3, '首次 + 2 次恢复重试');
+    assert.equal(result.success, false);
+    assert.ok(result.error?.includes('prompt is too long'));
+
+    const msgs = runtime.getMessages('s2');
+    const last = msgs[msgs.length - 1] as AssistantMessage;
+    assert.equal(last.role, 'assistant');
+    assert.ok(last.errorMessage, '错误消息应落库（旧行为）');
+  });
+
+  it('无可丢弃历史（单请求超窗）：不重试，错误原样返回', async () => {
+    let calls = 0;
+    const streamFn: StreamFn = async function* () {
+      calls += 1;
+      yield overflowErrorEvent();
+    };
+
+    const runtime = createRuntime({ streamFn, model: overflowTestModel(1000) });
+    const result = await runtime.run(createRequest('hi'));
+
+    assert.equal(calls, 1, '无可截断时不应重试');
+    assert.equal(result.success, false);
+  });
+
+  it('静默溢出（stop + usage 超窗 + 有产出）：回复保留，历史被压缩', async () => {
+    const streamFn: StreamFn = async function* () {
+      yield doneTextEvent('answer', { input: 2000, output: 10, total: 2010 });
+    };
+
+    const storage = createMemorySessionStorage();
+    const history = await seedHistory(storage, 's4', 40);
+
+    const runtime = createRuntime({
+      streamFn,
+      model: overflowTestModel(1000),
+      sessionStorage: storage,
+    });
+
+    const result = await runtime.run(createRequest('hi', { sessionKey: 's4' }));
+
+    assert.equal(result.success, true);
+    assert.equal(result.content, 'answer');
+
+    const msgs = runtime.getMessages('s4');
+    const last = msgs[msgs.length - 1] as AssistantMessage;
+    assert.equal(last.role, 'assistant', '静默溢出的回复应保留');
+    assert.ok(msgs.length < history.length, `历史应被压缩: ${msgs.length}`);
+  });
+
+  it('流式恢复：可恢复的溢出错误不产出 error chunk', async () => {
+    let calls = 0;
+    const streamFn: StreamFn = async function* () {
+      calls += 1;
+      if (calls === 1) {
+        yield overflowErrorEvent();
+      } else {
+        yield { type: 'text_delta', delta: 're' };
+        yield { type: 'text_delta', delta: 'covered' };
+        yield doneTextEvent('recovered');
+      }
+    };
+
+    const storage = createMemorySessionStorage();
+    await seedHistory(storage, 's5', 20);
+
+    const runtime = createRuntime({
+      streamFn,
+      model: overflowTestModel(1000),
+      sessionStorage: storage,
+    });
+
+    const chunks: ResultChunk[] = [];
+    for await (const chunk of runtime.stream(createRequest('hi', { sessionKey: 's5' }))) {
+      chunks.push(chunk);
+    }
+
+    assert.equal(calls, 2);
+    assert.ok(!chunks.some(c => c.type === 'error'), '恢复成功时不应产出 error chunk');
+    const text = chunks
+      .filter(c => c.type === 'text')
+      .map(c => c.content)
+      .join('');
+    assert.equal(text, 'recovered');
+    assert.ok(chunks.some(c => c.type === 'done'));
+  });
+
+  it('流式不可恢复（单请求超窗）：error chunk 正常产出', async () => {
+    let calls = 0;
+    const streamFn: StreamFn = async function* () {
+      calls += 1;
+      yield overflowErrorEvent();
+    };
+
+    const runtime = createRuntime({ streamFn, model: overflowTestModel(1000) });
+    const chunks: ResultChunk[] = [];
+    for await (const chunk of runtime.stream(createRequest('hi'))) {
+      chunks.push(chunk);
+    }
+
+    assert.equal(calls, 1);
+    assert.ok(chunks.some(c => c.type === 'error'), '不可恢复时应产出 error chunk');
+    assert.ok(chunks.some(c => c.type === 'done'));
+  });
+
+  it('溢出恢复上报 onRetry 遥测（errorClass=context-overflow）', async () => {
+    let calls = 0;
+    const retries: any[] = [];
+    const streamFn: StreamFn = async function* () {
+      calls += 1;
+      yield calls === 1 ? overflowErrorEvent() : doneTextEvent('recovered');
+    };
+
+    const storage = createMemorySessionStorage();
+    await seedHistory(storage, 's7', 20);
+
+    const runtime = createRuntime({
+      streamFn,
+      model: overflowTestModel(1000),
+      sessionStorage: storage,
+      telemetry: {
+        onRetry: (info) => { retries.push(info); },
+      },
+    });
+
+    await runtime.run(createRequest('hi', { sessionKey: 's7' }));
+
+    assert.equal(retries.length, 1);
+    assert.equal(retries[0].errorClass, 'context-overflow');
+    assert.equal(retries[0].attempt, 1);
+    assert.equal(retries[0].willRetry, true);
   });
 });

@@ -231,6 +231,37 @@ export const extCustomTransformerCode = [
   '});',
 ].join('\n');
 
+export const extCompactionCode = [
+  '// 内置摘要压缩：长会话自动"旧历史 → LLM 摘要"，无需写 Transformer',
+  '//',
+  '// 三级降级链：自定义压缩 transformer → 内置摘要压缩 → 硬截断',
+  'import { createRuntime, createRequest } from "@aipack-ai/agent";',
+  '',
+  'const runtime = createRuntime({',
+  '  // ... model/streamFn',
+  '  compaction: {',
+  '    triggerRatio: 0.8, // 估算 token 超 80% 窗口时触发（默认即 0.8）',
+  '    targetRatio: 0.5,  // 压到 50%：最新消息保留一半，其余摘要替换',
+  '  },',
+  '  telemetry: {',
+  '    onCompaction(info) {',
+  '      // mode: "summary"（摘要成功）| "truncate"（降级硬截断）',
+  '      console.log("上下文压缩:", info.mode, info.trigger,',
+  '        `${info.tokensBefore} -> ${info.tokensAfter} tokens`);',
+  '    },',
+  '  },',
+  '});',
+  '',
+  '// 压缩产出：单条 compactionSummary 消息（资源层 pinned，',
+  '// 截断类转换器不会误删；发出前自动转为带标注的 user 消息，兼容所有 provider）',
+  '// 再压缩时旧摘要会融入新摘要，不会丢失早期信息。',
+  '',
+  '// 与自定义压缩 transformer 的关系：',
+  '// - 内置版：一行配置开箱即用，阈值触发 + 溢出恢复联动，失败降级截断',
+  '// - 自定义版：需要控制摘要策略（分批/检索式/结构化）时继承 BaseTransformer 自行实现，',
+  '//   通过构造函数注入自己的 LLM client',
+].join('\n');
+
 export const extToolHooksCode = [
   'import {',
   '  createToolHookExtension,',
