@@ -8,11 +8,12 @@
  * 3. 截断溢出：provider 截断输入并返回 stopReason="length" + output=0
  */
 
-import type { AssistantMessage } from './types';
-
 // ─── 溢出模式 ──────────────────────────────────────────────────────
 
 const OVERFLOW_PATTERNS: RegExp[] = [
+  // 本框架 formatCategoryError 产出的分类前缀（errors.ts），
+  // 覆盖消息体不含已知关键词但已带分类前缀的场景
+  /^\[context-overflow\]/i,
   // Anthropic
   /prompt is too long/i,
   /request_too_large/i,
@@ -70,13 +71,27 @@ const NON_OVERFLOW_PATTERNS: RegExp[] = [
 // ─── 导出函数 ──────────────────────────────────────────────────────
 
 /**
+ * 溢出检测所需的消息最小形状。
+ * 兼容 core（stopReason/usage 可缺省）与 ai（必填）两套 AssistantMessage 定义。
+ */
+export interface OverflowProbeMessage {
+  stopReason?: string;
+  errorMessage?: string;
+  usage?: {
+    input: number;
+    output: number;
+    cacheRead?: number;
+  };
+}
+
+/**
  * 判断一条 assistant message 是否为上下文溢出错误。
  *
  * @param message - 要检查的 assistant message
  * @param contextWindow - 可选的上下文窗口大小，用于检测静默溢出（如 z.ai）
  */
 export function isContextOverflow(
-  message: Pick<AssistantMessage, 'stopReason' | 'errorMessage' | 'usage'>,
+  message: OverflowProbeMessage,
   contextWindow?: number,
 ): boolean {
   // 情况 1：检查错误消息模式（显式溢出）
@@ -89,7 +104,7 @@ export function isContextOverflow(
   }
 
   // 情况 2：静默溢出（z.ai 风格）— 成功但 usage 超出上下文
-  if (contextWindow && message.stopReason === 'stop') {
+  if (contextWindow && message.stopReason === 'stop' && message.usage) {
     const inputTokens = message.usage.input + (message.usage.cacheRead ?? 0);
     if (inputTokens > contextWindow) {
       return true;
@@ -100,6 +115,7 @@ export function isContextOverflow(
   if (
     contextWindow &&
     message.stopReason === 'length' &&
+    message.usage &&
     message.usage.output === 0
   ) {
     const inputTokens = message.usage.input + (message.usage.cacheRead ?? 0);

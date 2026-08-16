@@ -202,6 +202,8 @@ function buildJsConfigContent(config: RawFileConfig): string {
   lines.push('  // tools: [],');
   lines.push('  // extensions: [],');
   lines.push('  // transformers: [],');
+  lines.push('  // 内置摘要压缩：长会话 token 超窗口 80% 时 LLM 摘要旧历史（失败降级硬截断）');
+  lines.push('  // compaction: { triggerRatio: 0.8, targetRatio: 0.5 },');
   lines.push('  // sessionStorage: undefined,');
 
   lines.push('};');

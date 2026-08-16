@@ -128,6 +128,24 @@ export interface RetryTelemetryInfo {
   willRetry: boolean;
 }
 
+/** 内置摘要压缩事件载荷 */
+export interface CompactionTelemetryInfo {
+  traceId: string;
+  sessionKey: string;
+  /** summary = 摘要成功；truncate = 摘要失败/超预算降级硬截断 */
+  mode: 'summary' | 'truncate';
+  /** 触发来源：threshold = 阈值触发；overflow = 溢出恢复 */
+  trigger: 'threshold' | 'overflow';
+  /** 压缩前估算 token */
+  tokensBefore: number;
+  /** 压缩后估算 token（摘要消息 + 保留消息） */
+  tokensAfter: number;
+  /** 被压缩（丢弃或并入摘要）的消息条数 */
+  droppedMessages: number;
+  /** 摘要文本（mode = summary 时） */
+  summary?: string;
+}
+
 export interface Telemetry {
   /** 一次 run()/stream() 入队开始 */
   onRunStart?(info: RunStartTelemetryInfo): void | Promise<void>;
@@ -139,6 +157,8 @@ export interface Telemetry {
   onModelCall?(info: ModelTelemetryInfo): void | Promise<void>;
   /** 单次重试（provider 内退避重试时触发） */
   onRetry?(info: RetryTelemetryInfo): void | Promise<void>;
+  /** 内置摘要压缩完成（摘要成功或降级硬截断均触发） */
+  onCompaction?(info: CompactionTelemetryInfo): void | Promise<void>;
   /** 工具调用被 PermissionPolicy 拒绝（confirm 拒绝 / deny 决策均触发） */
   onPermissionDenied?(info: PermissionDeniedTelemetryInfo): void | Promise<void>;
 }

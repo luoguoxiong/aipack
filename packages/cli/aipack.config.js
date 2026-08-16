@@ -20,5 +20,7 @@ export default {
   // tools: [],
   // extensions: [],
   // transformers: [],
+  // 内置摘要压缩：长会话 token 超窗口 80% 时 LLM 摘要旧历史（失败降级硬截断）
+  // compaction: { triggerRatio: 0.8, targetRatio: 0.5 },
   // sessionStorage: undefined,
 };

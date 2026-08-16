@@ -123,6 +123,32 @@ export interface Runtime {
   close(): Promise<void>;
 }
 
+// ─── 内置摘要压缩选项 ─────────────────────────────────────────────
+
+/**
+ * 内置上下文摘要压缩配置（RuntimeOptions.compaction）。
+ *
+ * 三级降级链：用户自定义压缩 transformer → 内置摘要压缩 → 硬截断。
+ * 未配置 compaction 时保持旧行为（仅硬截断，向后兼容）。
+ * 摘要在 runtime 层实现（可直接复用模型通道），产出 compactionSummary
+ * 消息（资源层映射为 pinned 的 compaction_summary，不会被后续截断误删）。
+ */
+export interface CompactionOptions {
+  /** 是否启用（默认 true；显式 false 关闭摘要压缩，恢复仅硬截断行为） */
+  enabled?: boolean;
+  /**
+   * 阈值触发：估算 token 占 contextWindow 比例超过该值时，在下一回合
+   * 模型调用前压缩（默认取 contextBudgetRatio，即 0.8）。
+   */
+  triggerRatio?: number;
+  /** 压缩后目标：token 占 contextWindow 比例（默认 0.5，最新消息保留量为其一半） */
+  targetRatio?: number;
+  /** 溢出恢复时是否也尝试摘要（默认 true；false 则溢出仅硬截断快速重试） */
+  onOverflow?: boolean;
+  /** 摘要指令（默认内置中文指令；可自定义摘要侧重） */
+  prompt?: string;
+}
+
 // ─── Runtime 选项 ─────────────────────────────────────────────────
 
 export interface RuntimeOptions {
@@ -161,6 +187,8 @@ export interface RuntimeOptions {
   maxResources?: number;
   /** token 预算占 contextWindow 的比例（默认 0.8），超出则按 token 截断 */
   contextBudgetRatio?: number;
+  /** 内置摘要压缩配置（可选）。未配置时保持旧行为（仅硬截断，向后兼容） */
+  compaction?: CompactionOptions;
   /** 框架级工具权限策略（可选）。未配置时工具全部放行（向后兼容）；
    *  生产环境建议配置 createPermissionPolicy / createAllowListPolicy / createDenyAllPolicy。 */
   permissionPolicy?: import('./permission').PermissionPolicy;

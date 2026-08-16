@@ -92,13 +92,17 @@ export function messageToResource(msg: Message, index: number): ContextResource 
         : roleStr === 'stateSnapshot' ? 'state_snapshot'
         : 'custom';
 
-      return new ContextResourceBuilder()
+      const builder = new ContextResourceBuilder()
         .id(id)
         .type(customType)
         .role(roleStr as ResourceRole)
         .content(customMsg)
-        .timestamp(timestamp)
-        .build();
+        .timestamp(timestamp);
+      // 摘要与状态快照为关键资源：截断类转换器不可移除（pinned）
+      if (customType === 'compaction_summary' || customType === 'state_snapshot') {
+        builder.pinned();
+      }
+      return builder.build();
     }
   }
 }

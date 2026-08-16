@@ -111,6 +111,8 @@ export default {
   // tools: [{ name: 'ping', description: '测试', execute: async () => 'pong' }],
   // extensions: [],
   // transformers: [],
+  // 内置摘要压缩：长会话 token 超窗口 80% 时 LLM 摘要旧历史（失败降级硬截断）
+  // compaction: { triggerRatio: 0.8, targetRatio: 0.5 },
   // sessionStorage: undefined,
 };
 ```
@@ -135,6 +137,7 @@ export default {
 | `tools`            | Tool[]               | -               | 自定义工具列表                              |
 | `extensions`       | Extension[]          | -               | 扩展插件（如 `LoggingExtension`）           |
 | `transformers`     | ContextTransformer[] | -               | 上下文转换器（按数组顺序链式执行）        |
+| `compaction`       | CompactionOptions    | -（不启用）     | 内置摘要压缩：token 超阈值时 LLM 摘要旧历史，失败降级硬截断（`{ triggerRatio?, targetRatio?, onOverflow?, prompt? }`） |
 | `sessionStorage`   | SessionStorage       | 文件存储        | 自定义会话存储（优先于 `sessions.baseDir`） |
 
 ### 会话 Key 说明

@@ -10,6 +10,7 @@ import type {
   Runtime,
   Compilation,
   RuntimeOptions,
+  CompactionOptions,
   Request,
   Result,
   ResultChunk,
@@ -60,13 +61,14 @@ import type {
   StoredSession,
   SessionModel,
 } from '../core';
-import type { Telemetry, ErrorClass } from '../telemetry';
+import type { Telemetry, ErrorClass, CompactionTelemetryInfo } from '../telemetry';
 import { validateRequest, normalizeRequest } from '../request';
 import {
   messagesToResources,
   resourcesToMessages,
 } from '../context-resource';
-import { classifyError, isAgentError } from '../ai';
+import { classifyError, isAgentError, isContextOverflow } from '../ai';
+import { ensureToolPairing } from '../transformer';
 import { randomUUID } from 'node:crypto';
 
 // ─── traceId / spanId 生成（零新依赖）────────────────────────────
@@ -171,6 +173,98 @@ function buildImageContent(media: string): ImageContent {
   return { type: 'image', mimeType: 'image/url', data: media };
 }
 
+// ─── 上下文溢出自动恢复 ────────────────────────────────────────────
+
+/** 单回合内溢出恢复重试上限（截断后仍溢出最多再试 2 次，防止死循环） */
+const OVERFLOW_RECOVERY_LIMIT = 2;
+
+/** 粗略 token 估算（与 transformer 层同口径：约 4 字符/token） */
+function estimateMessageTokens(message: Message): number {
+  const content = message.content;
+  if (typeof content === 'string') return Math.ceil(content.length / 4);
+  try {
+    return Math.ceil(JSON.stringify(content ?? []).length / 4);
+  } catch {
+    return 0;
+  }
+}
+
+/** 估算文本 token（与 estimateMessageTokens 同口径） */
+function estimateTextTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+// ─── 内置摘要压缩 ─────────────────────────────────────────────────
+
+/**
+ * 摘要请求输入预算：占 contextWindow 的比例。
+ * 被压缩段序列化后超过该预算时不再发起摘要请求（请求本身必然超窗），
+ * 直接降级硬截断，避免 doomed 调用。
+ */
+const COMPACTION_SUMMARY_BUDGET_RATIO = 0.6;
+
+/** 摘要请求单条消息的序列化字符上限（防单条巨型 toolResult 撑爆摘要请求） */
+const COMPACTION_LINE_CLAMP = 4000;
+
+/** 默认摘要指令 */
+const DEFAULT_COMPACTION_PROMPT = [
+  '你是对话历史压缩器。请将以下对话历史压缩为一份信息密度高的摘要，供后续对话作为上下文参考。',
+  '要求：',
+  '1. 保留关键事实、决策、结论与未完成事项；',
+  '2. 保留用户明确的偏好与约束；',
+  '3. 保留重要工具调用的目的与结果要点（细节可省略）；',
+  '4. 丢弃寒暄、重复与无关细节；',
+  '5. 直接输出摘要正文，不要任何前后缀说明。',
+].join('\n');
+
+/** compactionSummary 消息发给 provider 时转换后的 user 消息前缀 */
+const COMPACTION_USER_PREFIX = '[以下为此前对话历史的压缩摘要，作为上下文参考]';
+
+/** 序列化单条消息为摘要输入行；system 等无关角色返回空串 */
+function messageToSummaryLine(msg: Message): string {
+  const clamp = (text: string): string =>
+    text.length > COMPACTION_LINE_CLAMP
+      ? `${text.slice(0, COMPACTION_LINE_CLAMP)}…(已截断)`
+      : text;
+
+  switch (msg.role) {
+    case 'user': {
+      const text = typeof msg.content === 'string' ? msg.content : extractText(msg.content);
+      return `[用户] ${clamp(text)}`;
+    }
+    case 'assistant': {
+      const parts: string[] = [];
+      const content = msg.content;
+      if (typeof content === 'string') {
+        parts.push(content);
+      } else {
+        for (const block of content) {
+          if (block.type === 'text') parts.push(block.text);
+          else if (block.type === 'toolCall') {
+            parts.push(`调用工具 ${block.name}(${JSON.stringify(block.arguments)})`);
+          }
+        }
+      }
+      return `[助手] ${clamp(parts.join('；'))}`;
+    }
+    case 'toolResult': {
+      const m = msg as ToolResultMessage;
+      const text = typeof m.content === 'string' ? m.content : extractText(m.content);
+      return `[工具结果 ${m.toolName}] ${clamp(text)}`;
+    }
+    default: {
+      // Message union 之外的扩展 role（compactionSummary / stateSnapshot 等）
+      const role = (msg as { role: string }).role;
+      // 已有的旧摘要/状态快照融入新摘要，避免反复压缩丢失早期信息
+      if (role === 'compactionSummary' || role === 'stateSnapshot') {
+        const text = typeof msg.content === 'string' ? msg.content : extractText(msg.content);
+        return `[${role === 'compactionSummary' ? '历史摘要' : '状态快照'}] ${clamp(text)}`;
+      }
+      return '';
+    }
+  }
+}
+
 // ─── 工具执行结果（含 terminate 信号） ─────────────────────────────
 
 /**
@@ -222,6 +316,8 @@ export class AgentRuntime implements Runtime {
   private _toolTimeoutMs: number;
   private _parallelToolCalls: boolean;
   private _contextBudgetRatio: number;
+  /** 内置摘要压缩配置（未配置 = 保持旧行为，仅硬截断兜底） */
+  private _compaction: CompactionOptions | undefined;
   private _telemetry: Telemetry | undefined;
   /** 框架级工具权限策略（未配置 → 放行，向后兼容） */
   private _permissionPolicy: PermissionPolicy | undefined;
@@ -256,6 +352,7 @@ export class AgentRuntime implements Runtime {
     this._toolTimeoutMs = options.toolTimeoutMs ?? 120_000;
     this._parallelToolCalls = options.parallelToolCalls ?? true;
     this._contextBudgetRatio = options.contextBudgetRatio ?? 0.8;
+    this._compaction = options.compaction;
     this._telemetry = options.telemetry;
     this._permissionPolicy = options.permissionPolicy;
     this._traceIdGenerator = options.traceIdGenerator;
@@ -712,7 +809,13 @@ export class AgentRuntime implements Runtime {
         // 1. 链式转换上下文（原地替换，保持 session 引用）
         await this.transformMessages(compilation, sessionKey);
 
-        // 2. 调用模型（streamModel 内部走统一埋点 streamModelEvents）
+        // 1.5 阈值触发内置摘要压缩（估算 token 超窗口比例时，先摘要后截断兜底）
+        await this.maybeCompactByThreshold(
+          compilation, sessionKey, session.abortController!.signal,
+        );
+
+        // 2. 调用模型（streamModel 内部走统一埋点 streamModelEvents，
+        //    含溢出自动恢复：检测 → 截断历史 → 同回合重试）
         const assistantMessage = await this.streamModel(
           compilation,
           session.abortController!.signal,
@@ -776,23 +879,25 @@ export class AgentRuntime implements Runtime {
         // 1. 链式转换上下文（原地替换，保持 session 引用）
         await this.transformMessages(compilation, sessionKey);
 
-        // 2. 流式调用模型（streamModelEvents 统一埋 onModelCall + 重试计数）
-        let assistantMessage: AssistantMessage | null = null;
+        // 1.5 阈值触发内置摘要压缩（估算 token 超窗口比例时，先摘要后截断兜底）
+        await this.maybeCompactByThreshold(
+          compilation, sessionKey, session.abortController!.signal,
+        );
 
-        for await (const event of this.streamModelEvents(
+        // 2. 流式调用模型（统一埋点 + 溢出自动恢复：可恢复的溢出错误
+        //    吞掉 error chunk，截断历史后同回合重试）
+        const turn = this.modelTurnWithRecovery(
           compilation,
           session.abortController!.signal,
+          sessionKey,
           true, // stream 模式：同时统计首 token 延迟
-        )) {
-          const chunk = this.streamEventToChunk(event);
-          if (chunk) yield chunk;
-
-          if (event.type === 'done') {
-            assistantMessage = event.message;
-          } else if (event.type === 'error') {
-            assistantMessage = event.message;
-          }
+        );
+        let turnResult = await turn.next();
+        while (!turnResult.done) {
+          yield turnResult.value;
+          turnResult = await turn.next();
         }
+        const assistantMessage = turnResult.value;
 
         if (!assistantMessage) break;
         compilation.messages.push(assistantMessage);
@@ -1292,9 +1397,25 @@ export class AgentRuntime implements Runtime {
     const tools = Array.from(this._globalTools.values());
     return {
       systemPrompt: this._systemPrompt,
-      messages: messages.filter(m => m.role !== 'system'),
+      // compactionSummary 为内部扩展 role，provider 适配层仅支持
+      // user/assistant/toolResult，发出前统一转为带标注的 user 消息
+      messages: messages
+        .filter(m => m.role !== 'system')
+        .map(m => ((m as { role: string }).role === 'compactionSummary'
+          ? this.compactionSummaryToUser(m)
+          : m)),
       tools: tools.length > 0 ? tools : undefined,
     };
+  }
+
+  /** compactionSummary 消息 → user 消息（所有 provider 均兼容 user role） */
+  private compactionSummaryToUser(msg: Message): Message {
+    const text = typeof msg.content === 'string' ? msg.content : extractText(msg.content);
+    return {
+      role: 'user',
+      content: `${COMPACTION_USER_PREFIX}\n${text}`,
+      timestamp: msg.timestamp,
+    } as Message;
   }
 
   private async streamModel(
@@ -1302,7 +1423,16 @@ export class AgentRuntime implements Runtime {
     signal: AbortSignal,
     sessionKey: string,
   ): Promise<AssistantMessage> {
-    let assistantMessage: AssistantMessage = {
+    // 含溢出自动恢复（modelTurnWithRecovery）；非流式路径丢弃事件 chunk
+    const turn = this.modelTurnWithRecovery(compilation, signal, sessionKey, false);
+    let r = await turn.next();
+    while (!r.done) r = await turn.next();
+    return r.value ?? this.emptyAssistantMessage();
+  }
+
+  /** 空的 assistant 消息（流异常中断无 done/error 事件时的兜底，与旧 streamModel 行为一致） */
+  private emptyAssistantMessage(): AssistantMessage {
+    return {
       role: 'assistant',
       content: [],
       stopReason: 'stop',
@@ -1311,18 +1441,347 @@ export class AgentRuntime implements Runtime {
       provider: this._model.provider,
       timestamp: Date.now(),
     };
+  }
 
-    for await (const event of this.streamModelEvents(compilation, signal, false)) {
-      if (event.type === 'start') {
-        assistantMessage.content = event.partial.content;
-      } else if (event.type === 'done') {
-        assistantMessage = event.message;
-      } else if (event.type === 'error') {
-        assistantMessage = event.message;
+  /**
+   * 单回合模型调用 + 上下文溢出自动恢复闭环。
+   *
+   * 检测（isContextOverflow，统一传入 model.contextWindow，覆盖显式错误 /
+   * 静默溢出 / 截断溢出三模式）→ 丢弃失败的 assistant 消息 → 截断会话历史
+   * → 同回合重试（不消耗回合数，上限 OVERFLOW_RECOVERY_LIMIT）：
+   *
+   * - 显式错误 / 零产出截断溢出：丢弃错误消息后重试；流式路径吞掉可恢复的
+   *   error chunk（消费者看不到瞬态错误），不可恢复时补发。
+   * - 静默溢出（stop + 有完整产出）：保留回复，仅压缩旧上下文供后续轮次。
+   * - 恢复耗尽或单请求超窗（无可丢弃）：返回最后一次错误消息，维持旧行为。
+   *
+   * 流式路径 yield 模型事件 chunk；非流式路径由 streamModel 消费（chunk 丢弃）。
+   * 返回最终 assistant 消息；无 done/error 事件时返回 null。
+   */
+  private async *modelTurnWithRecovery(
+    compilation: Compilation,
+    signal: AbortSignal,
+    sessionKey: string,
+    stream: boolean,
+  ): AsyncGenerator<ResultChunk, AssistantMessage | null> {
+    const contextWindow = this._model.contextWindow;
+    let recoveries = 0;
+
+    while (true) {
+      let assistant: AssistantMessage | null = null;
+      /** 被吞掉的可恢复溢出错误消息（等待恢复决策：重试则丢弃，不可恢复则补发 chunk） */
+      let suppressed: AssistantMessage | null = null;
+
+      for await (const event of this.streamModelEvents(compilation, signal, stream)) {
+        if (event.type === 'error') {
+          const msg = event.message;
+          if (
+            recoveries < OVERFLOW_RECOVERY_LIMIT &&
+            isContextOverflow(msg, contextWindow)
+          ) {
+            suppressed = msg; // 吞掉 error chunk，稍后恢复重试
+            continue;
+          }
+          const chunk = this.streamEventToChunk(event);
+          if (chunk) yield chunk;
+          assistant = msg;
+        } else {
+          const chunk = this.streamEventToChunk(event);
+          if (chunk) yield chunk;
+          if (event.type === 'done') assistant = event.message;
+        }
+      }
+
+      const final = assistant ?? suppressed;
+      if (!final) return null; // 流异常中断（无 done/error 事件）
+
+      if (isContextOverflow(final, contextWindow)) {
+        const failed = final.stopReason === 'error' || (final.usage?.output ?? 0) === 0;
+        if (failed && recoveries < OVERFLOW_RECOVERY_LIMIT) {
+          recoveries += 1;
+          if (await this.recoverFromOverflow(compilation, recoveries, sessionKey, signal)) {
+            console.warn(
+              `[Runtime] 上下文溢出，已压缩历史（摘要或截断）并同回合重试（${recoveries}/${OVERFLOW_RECOVERY_LIMIT}）`,
+            );
+            await this.emitTelemetry('onRetry', {
+              traceId: compilation.traceId,
+              provider: this._model.provider,
+              modelId: this._model.id,
+              attempt: recoveries,
+              errorClass: 'context-overflow',
+              delayMs: 0,
+              willRetry: true,
+            });
+            continue; // 同回合重试（不消耗回合数）
+          }
+          // 无可丢弃（单条请求即超窗）：补发被吞的 error chunk 后原样返回
+          if (suppressed) {
+            yield { type: 'error', content: final.errorMessage || '模型调用出错' };
+          }
+          return final;
+        }
+        if (failed) return final; // 恢复次数耗尽，维持旧行为（错误消息落库）
+        // 静默溢出（stop + 有完整产出）：保留回复，仅压缩旧上下文供后续轮次
+        await this.recoverFromOverflow(compilation, 1, sessionKey, signal);
+        console.warn('[Runtime] 检测到静默上下文溢出（usage 超窗），已压缩历史消息');
+      }
+
+      return final;
+    }
+  }
+
+  /**
+   * 计算溢出恢复的截断点：按 token 预算从最旧消息开始丢弃。
+   *
+   * 预算随恢复次数指数收紧（contextWindow × ratio × 0.5^recovery），且每次
+   * 至少丢弃可丢弃部分的一半，保证重试规模必然小于上次溢出（token 估算
+   * 偏小时也成立）。最后一条消息（当前请求/最新产出）始终保留。
+   * 返回被压缩段的结束下标（messages[0..split) 为被压缩段）；0 = 已到
+   * 最小集，单条请求即超窗，无法恢复。
+   */
+  private computeOverflowSplit(messages: Message[], recovery: number): number {
+    const contextWindow = this._model.contextWindow;
+    if (!contextWindow || contextWindow <= 0) return 0;
+    const target = Math.max(
+      Math.floor(contextWindow * this._contextBudgetRatio * 0.5 ** recovery),
+      1,
+    );
+
+    let total = 0;
+    for (const m of messages) total += estimateMessageTokens(m);
+
+    const droppable = messages.length - 1; // 最后一条必保
+    if (droppable <= 0) return 0;
+    // 至少丢弃一半可丢弃消息，保证恢复必然缩小规模（估算偏小时的兜底）
+    const mustDrop = Math.max(Math.floor(droppable / 2), 1);
+
+    let dropUntil = 0;
+    while (dropUntil < droppable && (dropUntil < mustDrop || total > target)) {
+      total -= estimateMessageTokens(messages[dropUntil]);
+      dropUntil += 1;
+    }
+    return dropUntil;
+  }
+
+  /**
+   * 溢出恢复：摘要优先、硬截断兜底（原地修改会话消息）。
+   *
+   * 开启 compaction（默认）时，被压缩段先尝试 LLM 摘要替换（compactionSummary
+   * 消息），摘要失败或序列化超摘要预算（请求本身会超窗）则降级纯丢弃；
+   * 关闭 compaction 时维持旧行为纯截断。截断/摘要后均经 ensureToolPairing
+   * 修复保留段的工具配对。返回是否执行了恢复动作（false = 无可压缩，单条
+   * 请求即超窗）。
+   */
+  private async recoverFromOverflow(
+    compilation: Compilation,
+    recovery: number,
+    sessionKey: string,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    const messages = compilation.messages;
+    const split = this.computeOverflowSplit(messages, recovery);
+    if (split <= 0) return false;
+
+    const useCompaction =
+      !!this._compaction &&
+      this._compaction.enabled !== false &&
+      this._compaction.onOverflow !== false;
+    if (useCompaction) {
+      await this.compactOrTruncate(
+        messages, split, sessionKey, compilation.traceId, signal, 'overflow',
+      );
+      return true;
+    }
+
+    const kept = ensureToolPairing(messages.slice(split));
+    messages.splice(0, messages.length, ...kept);
+    return true;
+  }
+
+  /**
+   * 阈值触发内置摘要压缩（runLoop 每轮模型调用前检查，低频）：
+   * 估算 token 超过 contextWindow × triggerRatio（默认 contextBudgetRatio）
+   * 时，将历史压缩到 targetRatio（默认 0.5）——最新消息保留目标的一半，
+   * 其余部分摘要替换；摘要失败降级硬截断。
+   */
+  private async maybeCompactByThreshold(
+    compilation: Compilation,
+    sessionKey: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    // 未配置 compaction = 保持旧行为（不压缩，溢出时硬截断兜底）
+    if (!this._compaction || this._compaction.enabled === false) return;
+    const contextWindow = this._model.contextWindow;
+    if (!contextWindow || contextWindow <= 0) return;
+
+    const messages = compilation.messages;
+    const triggerTokens = Math.floor(
+      contextWindow * (this._compaction?.triggerRatio ?? this._contextBudgetRatio),
+    );
+
+    let total = 0;
+    for (const m of messages) total += estimateMessageTokens(m);
+    if (total <= triggerTokens) return;
+
+    // 从尾部累计保留最新消息，保留量为压缩目标的一半
+    const targetTokens = Math.floor(
+      contextWindow * (this._compaction?.targetRatio ?? 0.5),
+    );
+    const keepTokens = Math.max(Math.floor(targetTokens / 2), 1);
+
+    let kept = 0;
+    let split = messages.length;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (kept >= keepTokens) {
+        split = i + 1;
+        break;
+      }
+      kept += estimateMessageTokens(messages[i]);
+      split = i;
+    }
+    // 无可压缩段（最新消息已占满保留预算）：等待下一轮
+    if (split <= 0 || split >= messages.length) return;
+
+    const mode = await this.compactOrTruncate(
+      messages, split, sessionKey, compilation.traceId, signal, 'threshold',
+    );
+    console.warn(
+      `[Runtime] 上下文达阈值（约 ${total} token > ${triggerTokens}），已${mode === 'summary' ? '摘要压缩' : '截断'}历史`,
+    );
+  }
+
+  /**
+   * 执行压缩：messages[0..split) 为被压缩段，原地替换。
+   *
+   * 摘要成功 → 被压缩段替换为单条 compactionSummary 消息（资源层 pinned）；
+   * 序列化超摘要预算或摘要调用失败 → 降级纯丢弃（旧行为）。两种路径均对
+   * 保留段执行 ensureToolPairing（被压缩段边界可能截断工具配对）。上报
+   * onCompaction 遥测。
+   */
+  private async compactOrTruncate(
+    messages: Message[],
+    split: number,
+    sessionKey: string,
+    traceId: string,
+    signal: AbortSignal,
+    trigger: 'threshold' | 'overflow',
+  ): Promise<'summary' | 'truncate'> {
+    const compacted = messages.slice(0, split);
+    const tokensBefore = messages.reduce((sum, m) => sum + estimateMessageTokens(m), 0);
+
+    let mode: 'summary' | 'truncate' = 'truncate';
+    let summaryText = '';
+
+    const summaryEnabled = !!this._compaction && this._compaction.enabled !== false;
+    if (summaryEnabled && compacted.length > 0) {
+      const summaryBudget = Math.floor(
+        this._model.contextWindow * COMPACTION_SUMMARY_BUDGET_RATIO,
+      );
+      const inputText = compacted
+        .map(m => messageToSummaryLine(m))
+        .filter(line => line.length > 0)
+        .join('\n');
+      // 预算判断：被压缩段超预算时摘要请求自身必然超窗，不发 doomed 请求
+      if (inputText && estimateTextTokens(inputText) <= summaryBudget) {
+        const summary = await this.summarizeMessages(
+          inputText, sessionKey, traceId, signal,
+        );
+        if (summary && summary.trim()) {
+          summaryText = summary.trim();
+          mode = 'summary';
+        }
       }
     }
 
-    return assistantMessage;
+    let tokensAfter: number;
+    if (mode === 'summary') {
+      const summaryMsg = this.createCompactionSummaryMessage(summaryText);
+      const kept = ensureToolPairing(messages.slice(split));
+      messages.splice(0, messages.length, summaryMsg, ...kept);
+      tokensAfter = estimateMessageTokens(summaryMsg)
+        + kept.reduce((sum, m) => sum + estimateMessageTokens(m), 0);
+    } else {
+      const kept = ensureToolPairing(messages.slice(split));
+      messages.splice(0, messages.length, ...kept);
+      tokensAfter = kept.reduce((sum, m) => sum + estimateMessageTokens(m), 0);
+    }
+
+    await this.emitTelemetry('onCompaction', {
+      traceId,
+      sessionKey,
+      mode,
+      trigger,
+      tokensBefore,
+      tokensAfter,
+      droppedMessages: split,
+      summary: mode === 'summary' ? summaryText : undefined,
+    } satisfies CompactionTelemetryInfo);
+    return mode;
+  }
+
+  /**
+   * 调用模型生成摘要文本。失败（模型错误/中止/空产出）返回 null，
+   * 由调用方降级硬截断——摘要失败不影响主流程。
+   */
+  private async summarizeMessages(
+    inputText: string,
+    sessionKey: string,
+    traceId: string,
+    signal: AbortSignal,
+  ): Promise<string | null> {
+    const prompt = this._compaction?.prompt ?? DEFAULT_COMPACTION_PROMPT;
+    const context: Context = {
+      systemPrompt: prompt,
+      messages: [{ role: 'user', content: inputText, timestamp: Date.now() }],
+    };
+
+    const startedAt = Date.now();
+    let text = '';
+    let usage: Usage | undefined;
+    let failed = false;
+    try {
+      for await (const event of this._streamFn(this._model, context, { signal })) {
+        if (event.type === 'text_delta') {
+          text += event.delta;
+        } else if (event.type === 'error') {
+          failed = true;
+          usage = event.message.usage;
+          break;
+        } else if (event.type === 'done') {
+          usage = event.message.usage;
+          if (event.message.stopReason === 'error') failed = true;
+          // 非流式式产出兜底：done 前无 text_delta 时从消息体取文本
+          if (!text) text = extractText(event.message.content);
+          break;
+        }
+      }
+    } catch {
+      return null; // 摘要异常（网络/中止等）：降级截断
+    }
+    if (failed || !text.trim()) return null;
+
+    // 摘要调用也计入 onModelCall（成本对账）：独立 span，stream=false
+    await this.emitTelemetry('onModelCall', {
+      traceId,
+      spanId: newSpanId(),
+      sessionKey,
+      modelId: this._model.id,
+      attempts: 1,
+      inputTokens: usage?.input ?? estimateTextTokens(inputText),
+      outputTokens: usage?.output ?? estimateTextTokens(text),
+      durationMs: Date.now() - startedAt,
+      stream: false,
+    });
+    return text;
+  }
+
+  /** 构造 compactionSummary 消息（内部扩展 role，发出前经 buildContext 转 user） */
+  private createCompactionSummaryMessage(text: string): Message {
+    return {
+      role: 'compactionSummary',
+      content: text,
+      timestamp: Date.now(),
+    } as unknown as Message;
   }
 
   /**

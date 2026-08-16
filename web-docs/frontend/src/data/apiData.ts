@@ -38,13 +38,14 @@ export const apiList: ApiItem[] = [
       { name: 'options.sessionStorage', type: 'SessionStorage', description: '会话存储适配器，启用后会话自动持久化' },
       { name: 'options.maxSessions', type: 'number', description: '内存会话上限，超限按 LRU 淘汰最久未用会话（默认 256）。仅影响内存态，持久化会话不受影响' },
       { name: 'options.permissionPolicy', type: 'PermissionPolicy', description: '框架级工具权限策略（可选）。未配置时全部放行（向后兼容），生产环境建议配置；deny 产出 details.blocked 结果、不终止 run，模型可换策略' },
-      { name: 'options.telemetry', type: 'Telemetry', description: '轻量可观测：onRunEnd / onToolCall / onModelCall / onPermissionDenied，全可选、上报失败不影响主流程' },
+      { name: 'options.telemetry', type: 'Telemetry', description: '轻量可观测：onRunEnd / onToolCall / onModelCall / onRetry / onCompaction 等，全可选、上报失败不影响主流程' },
       { name: 'options.maxTurns', type: 'number', description: '单次请求最大对话回合数，默认 50，防止失控循环' },
       { name: 'options.toolTimeoutMs', type: 'number', description: '单个工具执行超时（毫秒），默认 120000' },
       { name: 'options.parallelToolCalls', type: 'boolean', description: '是否并行执行同一轮的多个工具调用，默认 true' },
       { name: 'options.thinkingLevel', type: 'ThinkingLevel', description: '思考/推理级别，默认 off，仅对 reasoning 模型生效' },
       { name: 'options.maxResources', type: 'number', description: '上下文资源条数上限，默认 200（TruncationTransformer）' },
       { name: 'options.contextBudgetRatio', type: 'number', description: 'token 预算占 contextWindow 的比例，默认 0.8' },
+      { name: 'options.compaction', type: 'CompactionOptions', description: '内置摘要压缩（可选）：token 超阈值时 LLM 摘要旧历史替换为 compactionSummary 消息，失败降级硬截断；未配置保持旧行为。详见 CompactionOptions 条目' },
     ],
     returns: 'Runtime 实例，可调用 run/stream/registerTool 等方法',
     example: `import {
@@ -755,6 +756,41 @@ const runtime = createRuntime({
     new ToolPairingTransformer(),             // 工具配对（必要，放最后兜底修复）
   ],
 });`,
+  },
+  {
+    id: 'CompactionOptions',
+    name: 'CompactionOptions 内置摘要压缩',
+    kind: 'interface',
+    signature: 'compaction: { enabled?, triggerRatio?, targetRatio?, onOverflow?, prompt? }',
+    description: '内置上下文摘要压缩（RuntimeOptions.compaction，配置后启用）。三级降级链：用户自定义压缩 transformer → 内置摘要压缩 → 硬截断。阈值触发（主路径）：runLoop 每轮模型调用前检查，估算 token 超 contextWindow × triggerRatio 时压缩到 targetRatio——最新消息保留目标的一半，其余经模型通道生成摘要，替换为单条 compactionSummary 消息（资源层 pinned，不会被截断转换器误删；发出前转为带标注的 user 消息，兼容所有 provider）。溢出恢复联动：摘要优先、截断兜底，序列化超窗口 60% 时不发 doomed 请求直接截断。摘要失败（错误/中止/空产出）降级纯丢弃（旧行为），不影响主流程。onCompaction 遥测可观测压缩效果。',
+    category: 'Runtime 核心',
+    params: [
+      { name: 'enabled', type: 'boolean', description: '是否启用，默认 true（显式 false 关闭，恢复仅硬截断行为）' },
+      { name: 'triggerRatio', type: 'number', description: '触发阈值：估算 token 占 contextWindow 比例（默认取 contextBudgetRatio，即 0.8）' },
+      { name: 'targetRatio', type: 'number', description: '压缩后目标：token 占 contextWindow 比例（默认 0.5，最新消息保留量为其一半）' },
+      { name: 'onOverflow', type: 'boolean', description: '溢出恢复时是否也尝试摘要，默认 true；false 则溢出仅硬截断快速重试' },
+      { name: 'prompt', type: 'string', description: '摘要指令（默认内置中文指令，可自定义摘要侧重）' },
+    ],
+    example: `import { createRuntime, createRequest } from '@aipack-ai/agent';
+
+const runtime = createRuntime({
+  // ...model / streamFn
+  compaction: {
+    triggerRatio: 0.8,   // token 超 80% 窗口时触发
+    targetRatio: 0.5,    // 压到 50%（最新消息保留一半，其余摘要替换）
+    // onOverflow: false, // 溢出时仅快速截断重试（不发起摘要调用）
+    // prompt: '...',     // 自定义摘要指令
+  },
+  telemetry: {
+    onCompaction(info) {
+      // mode: 'summary' | 'truncate'  trigger: 'threshold' | 'overflow'
+      console.log('上下文压缩', info.mode, info.tokensBefore, '->', info.tokensAfter);
+    },
+  },
+});
+
+// 长会话自动压缩：旧历史 → 单条 compactionSummary 消息（pinned，截断不丢）
+const result = await runtime.run(createRequest('继续刚才的话题'));`,
   },
 
   // ========== Result 结果 ==========

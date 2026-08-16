@@ -12,6 +12,7 @@ import {
   extCustomToolCode,
   extCustomExtensionCode,
   extCustomTransformerCode,
+  extCompactionCode,
   extToolHooksCode,
 } from '../data/extendCode';
 
@@ -183,6 +184,19 @@ export default function ExtendPage() {
         <CodeBlock code={extCustomTransformerCode} language="typescript" />
       </div>
 
+      {/* 内置摘要压缩 */}
+      <div id="compaction" style={{ scrollMarginTop: 100 }}>
+        <h2 className="subsection-title">
+          <ThunderboltOutlined /> 3.5 内置摘要压缩（长会话开箱即用）
+        </h2>
+        <p style={{ lineHeight: 1.8, color: '#475569' }}>
+          长会话上下文膨胀不需要自己写 Transformer：<code>RuntimeOptions.compaction</code> 一行配置启用内置摘要压缩，
+          token 超窗口阈值时自动把旧历史替换为一条 <code>compactionSummary</code> 消息（pinned，截断不丢）。
+          摘要失败自动降级硬截断，最坏情况不差于旧行为；溢出恢复闭环同样摘要优先。
+        </p>
+        <CodeBlock code={extCompactionCode} language="typescript" />
+      </div>
+
       {/* Tool Hooks */}
       <div id="hooks" style={{ scrollMarginTop: 100 }}>
         <h2 className="subsection-title">
@@ -213,6 +227,7 @@ export default function ExtendPage() {
         <ul style={{ color: '#14532d', lineHeight: 2 }}>
           <li>想让 Agent 多一种"本事" → <b>自定义 Tool</b></li>
           <li>在每次模型调用前加工消息（加知识库/裁剪） → <b>Transformer</b></li>
+          <li>长会话上下文压缩，不想写代码 → <b>内置摘要压缩</b>（compaction 一行配置）</li>
           <li>要在 run 开始/结束做指标、日志、错误上报 → <b>Extension</b></li>
           <li>要观测生产指标与 Trace（成本/成功率/耗时/重试） → <b>Telemetry</b>，见<a href="/observability" style={{ color: '#166534', fontWeight: 700 }}>可观测性</a></li>
           <li>需要审查/拦截每个工具的执行与结果（安全/审计） → <b>createToolHookExtension</b></li>
