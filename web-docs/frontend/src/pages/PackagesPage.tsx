@@ -16,12 +16,10 @@ const { Title, Paragraph } = Typography;
 
 const tagColorMap: Record<string, string> = {
   核心框架: 'blue',
-  编码工具集: 'geekblue',
   持久化记忆: 'green',
   上下文压缩: 'orange',
   可观测性: 'cyan',
   命令行工具: 'purple',
-  'VSCode 扩展': 'magenta',
 };
 
 function PackageCard({ pkg }: { pkg: PackageInfo }) {
@@ -117,7 +115,7 @@ export default function PackagesPage() {
         </Title>
         <Paragraph style={{ fontSize: 16, lineHeight: 1.8, color: '#475569' }}>
           aipack 采用「核心 + 扩展包」的模块化设计。核心包（aipack）提供 Runtime、Extension、Transformer
-          三层架构；配套包按需组合，覆盖编码工具集、持久化记忆、上下文压缩、CLI、VSCode 扩展等完整场景。
+          三层架构；配套包按需组合，覆盖持久化记忆、上下文压缩、CLI、可观测性等完整场景。
         </Paragraph>
 
         <div
@@ -142,9 +140,9 @@ export default function PackagesPage() {
             </Col>
             <Col xs={24} md={8}>
               <Card size="small" style={{ border: 'none', background: 'rgba(255,255,255,0.85)' }}>
-                <Tag color="geekblue">编码助手</Tag>
+                <Tag color="green">记忆增强</Tag>
                 <div style={{ fontSize: 13, color: '#475569', marginTop: 6 }}>
-                  + coding + memory
+                  + memory
                 </div>
               </Card>
             </Col>
@@ -152,7 +150,7 @@ export default function PackagesPage() {
               <Card size="small" style={{ border: 'none', background: 'rgba(255,255,255,0.85)' }}>
                 <Tag color="purple">完整 CLI</Tag>
                 <div style={{ fontSize: 13, color: '#475569', marginTop: 6 }}>
-                  + cli + coding + memory + compression
+                  + cli + memory + compression
                 </div>
               </Card>
             </Col>
