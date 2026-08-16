@@ -6,16 +6,14 @@
   # 构建基目录: web-docs 是独立的 pnpm 项目 (有自己的 pnpm-lock.yaml)
   # Netlify 会切换到此目录运行 install 和 build,避免误装根 workspaces
   base = "web-docs"
-  # 构建命令: 安装依赖并构建生产产物
-  command = "pnpm install --frozen-lockfile && pnpm build"
+  # 构建命令: Netlify 自动检测 pnpm-lock.yaml 并执行 pnpm install,这里只需构建
+  command = "pnpm build"
   # 发布目录 (相对 base,vite.config.ts 中 outDir: '../dist')
   publish = "dist"
 
 [build.environment]
   # 锁定 Node 版本以匹配本地开发环境
   NODE_VERSION = "18"
-  # 启用 pnpm (Netlify 通过 corepack 自动识别)
-  NPM_FLAGS = "--version"
 
 # SPA 路由支持: 所有路径回退到 index.html
 [[redirects]]
