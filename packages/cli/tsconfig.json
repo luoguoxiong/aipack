@@ -1,14 +1,10 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "paths": {}
   },
-  "include": [
-    "index.ts",
-    "src/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist"
-  ]
+  "include": ["index.ts", "src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }

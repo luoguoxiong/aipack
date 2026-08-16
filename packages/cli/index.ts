@@ -1,59 +1,31 @@
 /**
- * packages/cli - 编程式 API 入口
+ * @aipack-ai/cli - 公共导出
  *
- * 提供配置、环境、Runtime 工厂、聊天、一次性提问、回放、会话管理、重置等能力。
+ * CLI 本体经 bin（aipack）使用；此处导出可编程复用的组件
+ * （参数解析、工具集、Runtime 构建、运行模式）。
  */
+export { parseArgs, printHelp, isValidThinkingLevel } from './src/args.js';
+export type { Args, Mode } from './src/args.js';
+
+export { BUILTIN_TOOLS, selectTools, readTool, writeTool, editTool, bashTool } from './src/tools.js';
 
 export {
   loadConfig,
-  getConfigDir,
-  getConfigPath,
-  generateSessionKey,
-  resolveHome,
-} from './src/config';
-export type {
-  AipackConfig,
-  AipackConfigFile,
-  AipackRuntimeConfig,
-  CliOptions,
-  SessionsConfig,
-} from './src/config';
-export type { RuntimeOptions } from '@aipack-ai/agent';
+  buildRuntime,
+  resolveModel,
+  resolveSessionKey,
+  listSessionsByRecency,
+} from './src/builder.js';
+export type { AipackCliConfig, ResolvedModel, SessionChoice, BuiltRuntime } from './src/builder.js';
 
-export { loadEnvFile, saveEnvFile } from './src/env';
+export { buildInitialMessage } from './src/initial-message.js';
 
-export {
-  hasAnyApiKey,
-  runSetupWizard,
-} from './src/setup-wizard';
-export type { SetupResult } from './src/setup-wizard';
+export { select, isDangerousCommand, createToolConfirmHandler } from './src/confirm.js';
+export type { SelectOption, ToolConfirmChoice, ToolConfirmHandlerOptions } from './src/confirm.js';
 
-export {
-  createAipackRuntime,
-  resolveAiModel,
-  resolveModelForCli,
-} from './src/runtime';
-export type { Model, Runtime } from './src/runtime';
+export { runInteractiveMode, pickSessionInteractively } from './src/modes/interactive.js';
+export { runPrintMode } from './src/modes/print.js';
+export { runJsonMode } from './src/modes/json.js';
 
-export { startChat } from './src/chat';
-
-export { runOnce } from './src/run';
-export type { RunResult } from './src/run';
-
-export { replaySession } from './src/replay';
-export type { ReplayResult, ReplayTurnResult } from './src/replay';
-
-export { listSessions, clearSessions, deleteSession } from './src/sessions';
-
-export { listModels, listConfiguredProviders } from './src/models';
-export type { ModelEntry } from './src/models';
-
-export {
-  confirmAction,
-  resetAll,
-  resetConfig,
-  resetLogs,
-  resetSessions,
-  resetMemory,
-} from './src/reset';
-export type { ResolvedPaths } from './src/reset';
+export { main } from './src/cli.js';
+export { APP_NAME, VERSION, defaultConfigDir, defaultSessionDir } from './src/version.js';
