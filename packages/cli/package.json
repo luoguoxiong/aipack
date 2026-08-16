@@ -1,6 +1,6 @@
 {
   "name": "@aipack-ai/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "aipack CLI - 基于 @aipack-ai/agent 的终端 AI 助手",
   "type": "module",
   "main": "./dist/index.js",
