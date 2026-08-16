@@ -1,6 +1,6 @@
 {
   "name": "@aipack-ai/compression",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "aipack 多级上下文压缩：L1 工具输出裁剪 -> L2 旧消息摘要 -> L3 任务状态提取 -> L4 会话检查点 -> L5 新会话交接",
   "type": "module",
   "main": "./dist/index.js",
