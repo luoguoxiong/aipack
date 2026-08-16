@@ -256,7 +256,7 @@
     "@vscode/vsce": "^2.32.0",
     "@aipack-ai/agent": "workspace:*",
     "@aipack-ai/memory": "workspace:*",
-    "esbuild": "^0.23.0",
+    "esbuild": "^0.28.1",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0"
   }
