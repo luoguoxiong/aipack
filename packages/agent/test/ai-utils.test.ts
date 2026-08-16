@@ -11,6 +11,7 @@ import {
   retry,
   ok,
   matchesRetryablePattern,
+  extractRetryAfterMs,
 } from '../ai/retry.ts';
 import {
   repairJson,
@@ -168,6 +169,66 @@ describe('retry', () => {
       /fetch failed/,
     );
     assert.equal(attempts, 3); // attempt 0,1,2
+  });
+
+  it('429 带 Retry-After 时延迟取 max(退避, Retry-After) 封顶 maxDelayMs', async () => {
+    // 模拟 fetch Response：429 + Retry-After: 1（秒）
+    const rateLimited = new Response('too many requests', {
+      status: 429,
+      headers: { 'retry-after': '1' },
+    });
+
+    const delays: number[] = [];
+    let attempts = 0;
+    const started = Date.now();
+    await assert.rejects(
+      async () =>
+        retry(
+          async () => {
+            attempts++;
+            throw rateLimited;
+          },
+          {
+            maxRetries: 1,
+            baseDelayMs: 1,
+            maxDelayMs: 50, // 封顶，避免测试真的等 1s
+            onRetryAttempt: ({ delayMs }) => delays.push(delayMs),
+          },
+        ),
+    );
+    assert.equal(attempts, 2);
+    assert.equal(delays.length, 1);
+    // backoff(≈1ms) 与 Retry-After(1000ms) 取较大值后封顶 maxDelayMs(50)
+    assert.equal(delays[0], 50);
+    assert.ok(Date.now() - started >= 40, '应至少等待封顶后的延迟');
+  });
+});
+
+describe('extractRetryAfterMs', () => {
+  it('秒数格式解析为毫秒', () => {
+    const res = new Response('', { status: 429, headers: { 'retry-after': '30' } });
+    assert.equal(extractRetryAfterMs(res), 30_000);
+  });
+
+  it('HTTP-date 格式解析为剩余毫秒', () => {
+    const date = new Date(Date.now() + 60_000).toUTCString();
+    const res = new Response('', { status: 429, headers: { 'retry-after': date } });
+    const ms = extractRetryAfterMs(res)!;
+    assert.ok(ms > 55_000 && ms <= 60_000, `应约为 60s，实际 ${ms}`);
+  });
+
+  it('过去的 HTTP-date 解析为 0', () => {
+    const date = new Date(Date.now() - 60_000).toUTCString();
+    const res = new Response('', { status: 429, headers: { 'retry-after': date } });
+    assert.equal(extractRetryAfterMs(res), 0);
+  });
+
+  it('无 header 或普通错误返回 undefined', () => {
+    assert.equal(extractRetryAfterMs(new Error('fetch failed')), undefined);
+    assert.equal(
+      extractRetryAfterMs(new Response('', { status: 500 })),
+      undefined,
+    );
   });
 });
 

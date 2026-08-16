@@ -44,6 +44,12 @@ export interface Compilation {
    * runLoop 检测到后停止循环，buildResult 据此将 stopReason 标为 'terminated'。
    */
   terminateReason?: string;
+  /**
+   * 回合上限耗尽标记。runLoop/runLoopStream 因 maxTurns 用尽而退出循环
+   * （非 break / 非模型自然停止）时设置，此时模型通常仍请求工具调用。
+   * buildResult 据此将 stopReason 标为 'max_turns'，供调用方区分截断与正常完成。
+   */
+  maxTurnsExhausted?: boolean;
 }
 
 // ─── Runtime 接口 ─────────────────────────────────────────────────
@@ -98,8 +104,8 @@ export interface Runtime {
   /** 检查指定会话是否正在运行（默认会话） */
   isBusy(sessionKey?: string): boolean;
 
-  /** 等待指定会话空闲（默认会话） */
-  waitForIdle(sessionKey?: string): Promise<void>;
+  /** 等待指定会话空闲（默认会话）。timeoutMs 可选，超时 reject 防无限等待 */
+  waitForIdle(sessionKey?: string, timeoutMs?: number): Promise<void>;
 
   /** 清除指定会话消息（仅内存,不影响已持久化数据） */
   clearSession(sessionKey?: string): void;

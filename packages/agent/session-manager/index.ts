@@ -98,9 +98,9 @@ export class SessionManager {
     return this._runtime.isBusy(sessionKey);
   }
 
-  /** 等待指定会话空闲 */
-  waitForIdle(sessionKey?: string): Promise<void> {
-    return this._runtime.waitForIdle(sessionKey);
+  /** 等待指定会话空闲（timeoutMs 可选，超时 reject） */
+  waitForIdle(sessionKey?: string, timeoutMs?: number): Promise<void> {
+    return this._runtime.waitForIdle(sessionKey, timeoutMs);
   }
 
   /** 清除指定会话消息（仅内存） */

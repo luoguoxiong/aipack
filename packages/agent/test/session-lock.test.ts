@@ -1,6 +1,7 @@
 /**
  * 存储级锁（多进程安全）测试：
- * - FileSessionStorage 文件锁：并发互斥 / 陈旧锁回收 / 超时 / release 幂等
+ * - FileSessionStorage 文件锁：并发互斥 / 陈旧锁回收（持有进程死亡探测）/
+ *   活跃锁不回收 / 超时 / release 幂等 / release 归属校验
  * - MemorySessionStorage 进程内锁：并发互斥
  * - Runtime 集成：两个 Runtime（模拟两个进程）共享同一 baseDir 并发写同一会话，
  *   存储锁保证读-改-写原子，不丢消息
@@ -10,6 +11,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { FileSessionStorage } from '../session/file.ts';
 import { MemorySessionStorage } from '../session/memory.ts';
 import { AgentRuntime } from '../runtime/index.ts';
@@ -18,6 +20,20 @@ import type {
   StreamEvent,
   AssistantMessage,
 } from '../core/index.ts';
+
+/** 启动一个真实子进程并等待其退出，返回确定已死亡的 pid */
+function deadPid(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', 'process.exit(0)']);
+    const pid = child.pid;
+    if (!pid) {
+      reject(new Error('无法启动子进程'));
+      return;
+    }
+    child.on('exit', () => resolve(pid));
+    child.on('error', reject);
+  });
+}
 
 function assistantReply(text: string): AssistantMessage {
   return {
@@ -81,18 +97,61 @@ describe('FileSessionStorage 文件锁', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('陈旧锁回收：崩溃遗留的锁文件可被接管', async () => {
+  it('陈旧锁回收：持有进程已死亡的锁文件可被接管', async () => {
     const dir = await tmpBaseDir();
     const a = new FileSessionStorage({ baseDir: dir, lockStaleMs: 5 });
 
-    // 模拟进程崩溃：手动创建过期的锁文件
+    // 模拟进程崩溃：启动真实子进程并等待退出，用其（确定已死的）pid 写入过期锁文件
+    const pid = await deadPid();
     const lockFile = path.join(dir, '.locks', 'stale.lock');
     await fs.mkdir(path.dirname(lockFile), { recursive: true });
-    await fs.writeFile(lockFile, '99999\n0\n');
+    await fs.writeFile(lockFile, `${pid}\n0\n`);
 
     // 等待锁文件超过 stale 阈值后应能获取
     await new Promise(r => setTimeout(r, 20));
     await a.withLock('stale', async () => { /* 临界区 */ });
+
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it('陈旧锁不回收：持有进程仍存活时等待而非接管', async () => {
+    const dir = await tmpBaseDir();
+    const a = new FileSessionStorage({
+      baseDir: dir,
+      lockStaleMs: 5,  // mtime 很快视为"陈旧"
+      lockWaitMs: 60,  // 但持有进程存活 → 不回收 → 走超时
+      lockRetryMs: 5,
+    });
+
+    // 活跃进程（本测试进程）持有的锁，mtime 已被回拨到 60s 前
+    const lockFile = path.join(dir, '.locks', 'alive.lock');
+    await fs.mkdir(path.dirname(lockFile), { recursive: true });
+    await fs.writeFile(lockFile, `${process.pid}\n0\n`);
+    const old = new Date(Date.now() - 60_000);
+    await fs.utimes(lockFile, old, old);
+
+    await assert.rejects(
+      a.withLock('alive', async () => {}),
+      /获取会话锁超时/,
+    );
+    // 活跃锁未被回收，文件仍存在
+    await fs.access(lockFile);
+
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it('release 归属校验：锁被他人接管后不误删', async () => {
+    const dir = await tmpBaseDir();
+    const a = new FileSessionStorage({ baseDir: dir });
+
+    const lock = await a.acquireLock('k');
+    // 模拟自己的锁被陈旧回收后他人接管（内容已替换为他人 token）
+    const lockFile = path.join(dir, '.locks', 'k.lock');
+    await fs.writeFile(lockFile, `${process.pid}\n0\nother-token\n`);
+
+    await lock.release();
+    // 他人持有的锁不应被自己 release 误删
+    await fs.access(lockFile);
 
     await fs.rm(dir, { recursive: true, force: true });
   });

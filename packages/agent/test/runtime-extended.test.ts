@@ -280,6 +280,53 @@ describe('abort / isBusy / waitForIdle', () => {
     await runtime.waitForIdle();
     // 不阻塞即通过
   });
+
+  it('waitForIdle 带超时：运行超时 reject，结束后等待队列无残留', async () => {
+    const streamFn: StreamFn = async function* () {
+      await new Promise(r => setTimeout(r, 60));
+      yield {
+        type: 'done',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'ok' }],
+          stopReason: 'stop',
+          usage: { input: 1, output: 1, total: 2 },
+          timestamp: Date.now(),
+        } as AssistantMessage,
+      };
+    };
+    const runtime = createRuntime({ streamFn });
+    const runPromise = runtime.run(createRequest('hi'));
+    await new Promise(r => setTimeout(r, 5));
+
+    // 20ms 超时 < 60ms 运行时长 → reject
+    await assert.rejects(runtime.waitForIdle(undefined, 20), /waitForIdle 超时/);
+
+    await runPromise;
+    // 超时的等待者不应残留在队列（无泄漏），空闲查询仍正常
+    await runtime.waitForIdle(undefined, 50);
+  });
+
+  it('waitForIdle 带超时：运行先于超时结束则正常 resolve', async () => {
+    const streamFn: StreamFn = async function* () {
+      await new Promise(r => setTimeout(r, 20));
+      yield {
+        type: 'done',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'ok' }],
+          stopReason: 'stop',
+          usage: { input: 1, output: 1, total: 2 },
+          timestamp: Date.now(),
+        } as AssistantMessage,
+      };
+    };
+    const runtime = createRuntime({ streamFn });
+    const runPromise = runtime.run(createRequest('hi'));
+    await new Promise(r => setTimeout(r, 5));
+    await runtime.waitForIdle(undefined, 500); // 不应 reject
+    await runPromise;
+  });
 });
 
 // ─── clearSession / listSessions / deleteSession ───────────────────

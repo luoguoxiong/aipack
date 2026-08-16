@@ -75,6 +75,57 @@ describe('FileSessionStorage maxStoredMessages', () => {
   });
 });
 
+// ─── FileSessionStorage: 损坏会话保护 ─────────────────────────────
+
+describe('FileSessionStorage 损坏会话保护', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = `/tmp/aipack-test-corrupt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  });
+
+  afterEach(async () => {
+    try { await fs.rm(tmpDir, { recursive: true, force: true }); } catch {}
+  });
+
+  it('损坏的会话文件 load 返回 null 并改名 .corrupt 保留', async () => {
+    const store = new FileSessionStorage({ baseDir: tmpDir });
+    // 手动写入损坏的 JSON
+    await fs.mkdir(tmpDir, { recursive: true });
+    const target = path.join(tmpDir, 'broken.json');
+    await fs.writeFile(target, '{ 这不是合法 JSON', 'utf-8');
+
+    const loaded = await store.load('broken');
+    assert.equal(loaded, null);
+    // 原文件已改名保留，可人工抢救
+    await fs.access(`${target}.corrupt`);
+    await assert.rejects(fs.access(target), { code: 'ENOENT' });
+    // .corrupt 不出现在 list 中
+    const keys = await store.list();
+    assert.equal(keys.includes('broken'), false);
+  });
+
+  it('list 顺带清理残留的过期 .tmp 文件，保留新写入的', async () => {
+    const store = new FileSessionStorage({ baseDir: tmpDir, lockStaleMs: 100 });
+    await store.save('k', makeSession('k'));
+
+    // 模拟 save 中断残留的 tmp：一个过期、一个新鲜
+    await fs.writeFile(path.join(tmpDir, 'stale.json.999.tmp'), '{}');
+    const staleTime = new Date(Date.now() - 10_000);
+    await fs.utimes(path.join(tmpDir, 'stale.json.999.tmp'), staleTime, staleTime);
+    await fs.writeFile(path.join(tmpDir, 'fresh.json.999.tmp'), '{}');
+
+    await store.list();
+
+    await assert.rejects(
+      fs.access(path.join(tmpDir, 'stale.json.999.tmp')),
+      { code: 'ENOENT' },
+      '过期 tmp 应被清理',
+    );
+    await fs.access(path.join(tmpDir, 'fresh.json.999.tmp')); // 新鲜 tmp 保留
+  });
+});
+
 // ─── FileSessionStorage: list 过滤 ─────────────────────────────────
 
 describe('FileSessionStorage list', () => {
