@@ -5,8 +5,8 @@
  * 对齐 src/cli.ts 的 replay 语义，基于 aipack 的 StoredSession 格式。
  */
 
-import { createFileSessionStorage, createRequest } from '@aipack/agent';
-import type { Message, AiModel } from '@aipack/agent';
+import { createFileSessionStorage, createRequest } from '@aipack-ai/agent';
+import type { Message, AiModel } from '@aipack-ai/agent';
 import type { AipackConfig } from './config';
 import { createAipackRuntime } from './runtime';
 

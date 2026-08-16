@@ -9,7 +9,7 @@
  */
 
 import path from 'path';
-import { createRequest } from '@aipack/agent';
+import { createRequest } from '@aipack-ai/agent';
 import { createCodingAgent } from '../src/factory';
 
 async function main(): Promise<void> {

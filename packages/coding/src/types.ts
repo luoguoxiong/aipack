@@ -5,7 +5,7 @@
  * 各工厂函数的 options 与返回类型也在此声明。
  */
 
-import type { Tool, Extension, ContextTransformer } from '@aipack/agent';
+import type { Tool, Extension, ContextTransformer } from '@aipack-ai/agent';
 import type { PermissionManager, PermissionOptions } from './permission';
 
 /** 工具共享上下文：所有 coding 工具通过它获取 workspace 与权限 */
@@ -53,9 +53,9 @@ export interface CodingAgentOptions {
   /** 模型 ID（如 deepseek-chat），缺省按提供商取推荐 */
   model?: string;
   /** 已解析的 ai 模型（优先级高于 provider/model） */
-  aiModel?: import('@aipack/agent').AiModel;
+  aiModel?: import('@aipack-ai/agent').AiModel;
   /** 自定义 streamFn（优先级高于 aiModel） */
-  streamFn?: import('@aipack/agent').StreamFn;
+  streamFn?: import('@aipack-ai/agent').StreamFn;
   /** system prompt（默认用 DEFAULT_CODING_SYSTEM_PROMPT） */
   systemPrompt?: string;
   /** workspace 根目录（默认 process.cwd()） */
@@ -81,13 +81,13 @@ export interface CodingAgentOptions {
 /** createCodingAgent 返回的 agent 对象 */
 export interface CodingAgent {
   /** 装配好的 runtime */
-  runtime: import('@aipack/agent').Runtime;
+  runtime: import('@aipack-ai/agent').Runtime;
   /** 权限管理器（编程式调用） */
   permission: PermissionManager;
   /** 工具列表（已注册到 runtime） */
   tools: Tool[];
   /** 实际解析到的模型（供 /model 等展示用） */
-  model: import('@aipack/agent').AiModel;
+  model: import('@aipack-ai/agent').AiModel;
   /** 会话标识（由 options.sessionKey 决定，默认 'default'）；调用方据此在 createRequest / getMessages / clearSession 中显式传递 */
   sessionKey: string;
   /** 关闭 runtime 释放资源 */

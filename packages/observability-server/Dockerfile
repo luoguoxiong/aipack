@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # aipack Observability Server 容器镜像（P2-3 部署运维）。
 #
-# 构建上下文为仓库根目录（需要 pnpm workspace + @aipack/observability 源码）：
+# 构建上下文为仓库根目录（需要 pnpm workspace + @aipack-ai/observability 源码）：
 #   docker build -f packages/observability-server/Dockerfile -t aipack/observability-server .
 #
 # 运行示例（数据落卷 /data，SESSION_SECRET 保证面板 token 重启不失效）：
@@ -27,8 +27,8 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages ./packages
 RUN pnpm install --frozen-lockfile
 # 先构建 SDK（observability-server 类型依赖其 dist/），再构建 server（含面板）
-RUN pnpm --filter @aipack/observability build \
- && pnpm --filter @aipack/observability-server build
+RUN pnpm --filter @aipack-ai/observability build \
+ && pnpm --filter @aipack-ai/observability-server build
 
 # ── 运行阶段：仅保留产物 + 编译好的原生依赖 ─────────────────────────
 FROM node:20-slim AS runtime

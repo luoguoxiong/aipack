@@ -17,9 +17,9 @@ const options = {
   minify: false, // 调试期不压缩
   external: ['vscode'], // 仅 vscode 不打进 bundle
   logLevel: 'info',
-  // aipack-coding 内部动态 import('@aipack/memory')，esbuild 会静态化 bundle
+  // aipack-coding 内部动态 import('@aipack-ai/memory')，esbuild 会静态化 bundle
   banner: {
-    js: '/* @aipack/vscode-coding bundle (CJS) */',
+    js: '/* @aipack-ai/vscode-coding bundle (CJS) */',
   },
 };
 

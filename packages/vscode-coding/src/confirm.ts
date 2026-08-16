@@ -10,7 +10,7 @@
  */
 
 import * as vscode from 'vscode';
-import type { ConfirmContext, ConfirmResult } from '@aipack/coding';
+import type { ConfirmContext, ConfirmResult } from '@aipack-ai/coding';
 
 interface ConfirmPickItem extends vscode.QuickPickItem {
   action: 'once' | 'always' | 'deny';

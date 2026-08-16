@@ -2,7 +2,7 @@
  * 安全守卫 - 配对验证、递归保护、断路器、AbortController 管理
  */
 
-import type { ContextResource } from '@aipack/agent';
+import type { ContextResource } from '@aipack-ai/agent';
 import type { CompressionTelemetry } from './telemetry';
 
 // ─── 安全状态 ─────────────────────────────────────────────────────

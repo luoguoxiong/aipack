@@ -16,7 +16,7 @@ import {
   getBuiltinProviders,
   getEnvApiKey,
   type AiModel,
-} from '@aipack/agent';
+} from '@aipack-ai/agent';
 import { saveEnvFile } from './env';
 
 /** 向导结果：选择的提供商与模型 */

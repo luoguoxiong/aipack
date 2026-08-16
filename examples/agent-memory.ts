@@ -21,7 +21,7 @@ import {
   extractText,
   createEmptyUsage,
   createFileSessionStorage,
-} from '@aipack/agent';
+} from '@aipack-ai/agent';
 import type {
   StreamFn,
   Context,
@@ -30,8 +30,8 @@ import type {
   ContentBlock,
   TextContent,
   Tool,
-} from '@aipack/agent';
-import { createMemoryPlugin, MEMORY_BLOCK_START } from '@aipack/memory';
+} from '@aipack-ai/agent';
+import { createMemoryPlugin, MEMORY_BLOCK_START } from '@aipack-ai/memory';
 
 // ─── 假 streamFn：无 API Key 时降级使用，返回固定中文回复 ─────────────
 
@@ -65,7 +65,7 @@ async function maybeCreateRealStreamFn(): Promise<{ model: Model; streamFn: Stre
   const useReal = process.env.USE_REAL_LLM === '1' || process.env.DEEPSEEK_API_KEY;
   if (!useReal) return null;
   try {
-    const { getBuiltinModel, hasProviderConfigured, adaptAiModel, createStreamFnFromAi } = await import('@aipack/agent');
+    const { getBuiltinModel, hasProviderConfigured, adaptAiModel, createStreamFnFromAi } = await import('@aipack-ai/agent');
     const aiModel = getBuiltinModel('deepseek', 'deepseek-chat');
     if (!aiModel || !hasProviderConfigured('deepseek')) return null;
     console.log('✅ 检测到 DEEPSEEK_API_KEY，使用真实 DeepSeek 模型\n');

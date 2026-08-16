@@ -5,8 +5,8 @@
  * WebviewOutbound：扩展 → 前端（agent 流式事件 + 状态变更）
  */
 
-import { extractText } from '@aipack/agent';
-import type { Message } from '@aipack/agent';
+import { extractText } from '@aipack-ai/agent';
+import type { Message } from '@aipack-ai/agent';
 
 // ─── 前端 → 扩展 ────────────────────────────────────────────────────
 

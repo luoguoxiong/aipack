@@ -5,7 +5,7 @@
  * + Consolidator + memory tools 装配成一个开箱即用的插件。
  *
  * 用法（aipack.config.js）：
- *   import { createMemoryPlugin } from '@aipack/memory';
+ *   import { createMemoryPlugin } from '@aipack-ai/memory';
  *   const mem = createMemoryPlugin({ baseDir: '~/.aipack/memory' });
  *   const r = mem.install();
  *   export default {
@@ -19,7 +19,7 @@
  * 提供 embedder 后自动升级为 BM25 + 向量混合检索（双路独立召回）；提供 summarizeFn 后 capture 走 LLM 摘要。
  */
 
-import type { Extension, ContextTransformer, Tool } from '@aipack/agent';
+import type { Extension, ContextTransformer, Tool } from '@aipack-ai/agent';
 import { FileMemoryStore } from './store/file-memory-store';
 import { HybridRetriever } from './retrieval/hybrid-retriever';
 import type { RetrieverLike, VectorSearchLike } from './retrieval/hybrid-retriever';

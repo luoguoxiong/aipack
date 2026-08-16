@@ -27,7 +27,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@aipack/agent": "workspace:*",
+    "@aipack-ai/agent": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

@@ -6,7 +6,7 @@
  * `forkModel` 为空表示复用主模型；`forkMaxTokens` 限制 fork 输出长度。
  */
 
-import type { ResourceType } from '@aipack/agent';
+import type { ResourceType } from '@aipack-ai/agent';
 import type { RetryConfig } from './retry';
 
 // ─── 配置接口 ─────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 /**
- * 收集服务聚合类型（@aipack/observability-server）。
+ * 收集服务聚合类型（@aipack-ai/observability-server）。
  * 记录类型（RunRecord/SpanRecord/ToolCallRecord/PermissionRecord/EventBatch）
- * 定义在 @aipack/observability（上报 SDK），本包依赖其做落盘与聚合。
+ * 定义在 @aipack-ai/observability（上报 SDK），本包依赖其做落盘与聚合。
  */
 
 /** 聚合查询的时间过滤（epoch ms）；version 精确匹配发布版本（缺省不过滤） */

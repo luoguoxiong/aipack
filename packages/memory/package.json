@@ -1,5 +1,5 @@
 {
-  "name": "@aipack/memory",
+  "name": "@aipack-ai/memory",
   "version": "0.1.0",
   "description": "aipack 持久化记忆插件：capture → compress → index → recall/inject → consolidate",
   "type": "module",
@@ -18,7 +18,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
-    "prebuild": "pnpm --filter @aipack/agent build",
+    "prebuild": "pnpm --filter @aipack-ai/agent build",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "example": "node --import tsx examples/round-trip.ts"
@@ -36,10 +36,10 @@
     "node": ">=18.0.0"
   },
   "peerDependencies": {
-    "@aipack/agent": "workspace:*"
+    "@aipack-ai/agent": "workspace:*"
   },
   "devDependencies": {
-    "@aipack/agent": "workspace:*",
+    "@aipack-ai/agent": "workspace:*",
     "@types/node": "^20.12.0",
     "tsup": "^8.5.1",
     "typescript": "^5.5.0",

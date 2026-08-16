@@ -26,7 +26,7 @@ import { createWorkspace } from './tools/workspace.js';
 import { listWorkspaceFiles } from './tools/file-tools.js';
 import { officecliAvailable } from './tools/officecli.js';
 import { ensureWatch, stopAllWatch } from './preview.js';
-import type { Runtime } from '@aipack/agent';
+import type { Runtime } from '@aipack-ai/agent';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.resolve(__dirname, '../public');

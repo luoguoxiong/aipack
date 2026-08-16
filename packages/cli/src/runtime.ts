@@ -14,8 +14,8 @@ import {
   getEnvApiKey,
   adaptAiModel,
   createStreamFnFromAi,
-} from '@aipack/agent';
-import type { Model, Runtime, AiModel } from '@aipack/agent';
+} from '@aipack-ai/agent';
+import type { Model, Runtime, AiModel } from '@aipack-ai/agent';
 import type { AipackConfig } from './config';
 
 /**

@@ -1,13 +1,13 @@
 /**
- * @aipack/observability-server — aipack 可观测性收集服务。
+ * @aipack-ai/observability-server — aipack 可观测性收集服务。
  *
- * 接收各应用 SDK（@aipack/observability）的埋点上报，统一完成：
+ * 接收各应用 SDK（@aipack-ai/observability）的埋点上报，统一完成：
  *   - SQLite 落盘（runs / spans / tool_calls，事务批量）
  *   - 内存聚合（滑动窗口 + 在线直方图，p50/p95/p99）
  *   - REST 查询 API（/metrics/*、/traces/*）
  * 上报鉴权：appId + appSecret（OBS_APPS 白名单）。
  *
- * 部署：pnpm --filter @aipack/observability-server dev
+ * 部署：pnpm --filter @aipack-ai/observability-server dev
  * 或：bin `observability-server`（需先 build）。
  */
 

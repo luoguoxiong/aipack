@@ -26,12 +26,12 @@ import {
   createStreamFnFromAi,
   getBuiltinModel,
   hasProviderConfigured,
-} from '@aipack/agent';
-import type { Model, ContentBlock, Tool } from '@aipack/agent';
+} from '@aipack-ai/agent';
+import type { Model, ContentBlock, Tool } from '@aipack-ai/agent';
 import {
   createCompressionTransformer,
   loadCompressionConfig,
-} from '@aipack/compression';
+} from '@aipack-ai/compression';
 
 async function main() {
   // ── 1. 从 aipack/ai 内置目录获取 DeepSeek 模型 ──────────────

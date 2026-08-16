@@ -16,7 +16,7 @@ import {
   createRequest,
   extractText,
   createEmptyUsage,
-} from '@aipack/agent';
+} from '@aipack-ai/agent';
 import type {
   StreamFn,
   Context,
@@ -24,7 +24,7 @@ import type {
   AssistantMessage,
   ContentBlock,
   TextContent,
-} from '@aipack/agent';
+} from '@aipack-ai/agent';
 
 import { createMemoryPlugin } from '../src/plugin';
 import { InMemoryStore } from '../src/store/in-memory-store';
@@ -32,7 +32,7 @@ import { createMemoryTools } from '../src/tools/memory-tools';
 import {
   MEMORY_BLOCK_START,
 } from '../src/injection/sentinels';
-import type { ToolResult } from '@aipack/agent';
+import type { ToolResult } from '@aipack-ai/agent';
 
 // ─── 断言工具 ────────────────────────────────────────────────────────
 

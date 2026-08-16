@@ -1,7 +1,7 @@
 /**
  * aipack 配置文件（字段均可选，可直接写 JS 逻辑）
  * 取消注释并按需修改下面的示例字段；保存后运行 "aipack chat" 生效。
- * @type {import('@aipack/cli').AipackConfigFile}
+ * @type {import('@aipack-ai/cli').AipackConfigFile}
  */
 export default {
   provider: 'deepseek',

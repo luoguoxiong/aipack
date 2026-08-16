@@ -15,7 +15,7 @@ import {
   type Model,
   type StreamFn,
   type Runtime,
-} from '@aipack/agent';
+} from '@aipack-ai/agent';
 import { createScrapeTool } from './tools/scrape.js';
 import { buildModel } from './config.js';
 import { createHash } from 'node:crypto';

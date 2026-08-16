@@ -6,7 +6,7 @@
  */
 
 import * as vscode from 'vscode';
-import { BUILTIN_PROVIDERS } from '@aipack/agent';
+import { BUILTIN_PROVIDERS } from '@aipack-ai/agent';
 import { expandHome, syncApiKeysToEnv } from './config-env';
 
 export interface AgentConfig {

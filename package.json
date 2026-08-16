@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "pnpm -r --filter \"./packages/*\" build",
-    "build:agent": "pnpm --filter @aipack/agent build",
+    "build:agent": "pnpm --filter @aipack-ai/agent build",
     "example:deepseek": "tsx examples/deepseek.ts",
     "example:agent-memory": "tsx examples/agent-memory.ts",
     "example:compression": "tsx examples/compression-demo.ts",
@@ -15,7 +15,10 @@
     "docs:dev": "pnpm --dir web-docs dev",
     "docs:build": "pnpm --dir web-docs build",
     "docs:preview": "pnpm --dir web-docs preview",
-    "docs:typecheck": "pnpm --dir web-docs typecheck"
+    "docs:typecheck": "pnpm --dir web-docs typecheck",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish"
   },
   "keywords": [
     "ai",
@@ -26,14 +29,17 @@
   "engines": {
     "node": ">=18.0.0"
   },
+  "private": true,
   "dependencies": {
-    "@aipack/agent": "workspace:*"
+    "@aipack-ai/agent": "workspace:*"
   },
   "devDependencies": {
+    "@aipack-ai/cli": "workspace:*",
+    "@aipack-ai/coding": "workspace:*",
+    "@aipack-ai/compression": "workspace:*",
+    "@changesets/changelog-github": "^0.5.2",
+    "@changesets/cli": "^2.31.1",
     "@types/node": "^20.12.0",
-    "@aipack/coding": "workspace:*",
-    "@aipack/compression": "workspace:*",
-    "@aipack/cli": "workspace:*",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0"
   }

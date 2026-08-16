@@ -1,5 +1,5 @@
 /**
- * @aipack/observability — aipack 可观测性上报 SDK。
+ * @aipack-ai/observability — aipack 可观测性上报 SDK。
  *
  * 埋点上报模式：客户端只需 appId + appSecret，6 类 Telemetry 事件自动批量
  * POST 到收集服务（默认 http://localhost:8787），失败本地缓存补报。
@@ -7,7 +7,7 @@
  *   const obs = createObservability({ appId: 'my-app', appSecret: 'xxx' });
  *   createRuntime({ ..., telemetry: obs.telemetry });
  *
- * 收集服务见 @aipack/observability-server（独立包，SQLite 落盘 + 内存聚合 + REST API）。
+ * 收集服务见 @aipack-ai/observability-server（独立包，SQLite 落盘 + 内存聚合 + REST API）。
  */
 
 import { HttpReporter } from './reporter';

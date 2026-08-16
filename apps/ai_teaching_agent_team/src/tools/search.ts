@@ -10,7 +10,7 @@
  * 容错细节:每层 try/catch + fetch 超时(8s,避免阻断层卡死)+ 1 次重试 + User-Agent。
  * 模式对齐 apps/ai_travel_agent/src/tools/search.ts(搜索后端通用,兜底知识库改为教育主题)。
  */
-import type { Tool } from '@aipack/agent';
+import type { Tool } from '@aipack-ai/agent';
 
 export interface SearchResult {
   title: string;

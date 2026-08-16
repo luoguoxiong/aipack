@@ -12,5 +12,5 @@ export default defineConfig({
   clean: true,
   outDir: 'dist',
   skipNodeModulesBundle: true,
-  external: ['@aipack/memory'],
+  external: ['@aipack-ai/memory'],
 });

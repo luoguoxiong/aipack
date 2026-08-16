@@ -14,8 +14,8 @@
 
 import type {
   ContextResource, Message, SessionStorage, StoredSession, Usage,
-} from '@aipack/agent';
-import { resourcesToMessages, createEmptyUsage } from '@aipack/agent';
+} from '@aipack-ai/agent';
+import { resourcesToMessages, createEmptyUsage } from '@aipack-ai/agent';
 import { randomUUID } from 'node:crypto';
 import type { TokenEstimator } from './token-estimator';
 import type { CompressionTelemetry } from './telemetry';

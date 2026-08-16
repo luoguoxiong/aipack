@@ -14,7 +14,7 @@ import {
   type Model,
   type StreamFn,
   type Runtime,
-} from '@aipack/agent';
+} from '@aipack-ai/agent';
 import { buildModel } from './config.js';
 import { createHash } from 'node:crypto';
 
