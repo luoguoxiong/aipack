@@ -5,7 +5,16 @@
     { "repo": "luoguoxiong/aipack" }
   ],
   "commit": false,
-  "fixed": [],
+  "fixed": [
+    [
+      "@aipack-ai/agent",
+      "@aipack-ai/cli",
+      "@aipack-ai/compression",
+      "@aipack-ai/memory",
+      "@aipack-ai/observability",
+      "@aipack-ai/observability-server"
+    ]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "master",
