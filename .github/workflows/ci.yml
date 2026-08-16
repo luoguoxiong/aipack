@@ -7,7 +7,7 @@ on:
 
 jobs:
   test:
-    name: typecheck / test / build
+    name: typecheck / build / test
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -30,8 +30,8 @@ jobs:
       - name: Typecheck
         run: pnpm -r --if-present typecheck
 
-      - name: Run tests
-        run: pnpm -r --if-present test
-
       - name: Build packages
         run: pnpm -r --if-present build
+
+      - name: Run tests
+        run: pnpm -r --if-present test
