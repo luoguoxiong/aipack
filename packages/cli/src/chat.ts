@@ -10,11 +10,13 @@ import { createRequest } from '@aipack-ai/agent';
 import type { AssistantMessage, Runtime } from '@aipack-ai/agent';
 import type { AipackConfig } from './config';
 import { listSessions } from './sessions';
+import { attachApprovalPrompt, type ApprovalSetup } from './approvals';
 
 export async function startChat(
   runtime: Runtime,
   config: AipackConfig,
   modelLabel?: string,
+  approvalSetup?: ApprovalSetup,
 ): Promise<void> {
   const isTTY = !!process.stdin.isTTY;
   const rl = readline.createInterface({
@@ -33,6 +35,22 @@ export async function startChat(
     console.log('输入 /help 查看命令，/exit 退出');
     console.log('---');
     rl.prompt();
+  }
+
+  // 审批提示：先附加（含 restore 触发的孤儿审批单也进入询问队列），再恢复存储遗留
+  if (approvalSetup) {
+    attachApprovalPrompt(approvalSetup.approvals, {
+      // 询问期间暂停主 readline，防 y/N 被当作聊天输入
+      onPauseInput: () => rl.pause(),
+      onResumeInput: () => {
+        rl.resume();
+        if (isTTY) rl.prompt();
+      },
+    });
+    const restored = await approvalSetup.approvals.restore();
+    if (restored > 0) {
+      console.log(`↩️  已恢复 ${restored} 条待审批审批单（见上方提示）`);
+    }
   }
 
   // 串行处理每一行：readline 的 'line' 事件会在上一行异步处理未完成时
@@ -95,6 +113,11 @@ export async function startChat(
     }
     if (trimmed === '/model') {
       console.log(`当前模型: ${model}`);
+      prompt();
+      return;
+    }
+    if (trimmed === '/approvals') {
+      await showApprovals(config);
       prompt();
       return;
     }
@@ -223,11 +246,29 @@ async function showSessions(config: AipackConfig): Promise<void> {
   console.log('');
 }
 
+async function showApprovals(config: AipackConfig): Promise<void> {
+  const { listPendingApprovals } = await import('./approvals');
+  const pendingApprovals = await listPendingApprovals(config);
+  console.log('\n未决审批单：');
+  if (pendingApprovals.length === 0) {
+    console.log('  （无）');
+  } else {
+    for (const a of pendingApprovals) {
+      const age = Math.round((Date.now() - a.createdAt) / 1000);
+      console.log(`  - ${a.id}  ${a.toolName}  等待 ${age}s`);
+      console.log(`    参数: ${a.args}`);
+    }
+    console.log('\n  可运行 "aipack approvals approve <id>" / "deny <id>" 处理');
+  }
+  console.log('');
+}
+
 function showHelp(): void {
   console.log('\n可用命令：');
   console.log('  /help        - 显示此帮助信息');
   console.log('  /clear       - 清空当前会话上下文');
   console.log('  /sessions    - 列出已持久化的会话');
+  console.log('  /approvals   - 列出未决审批单');
   console.log('  /model       - 显示当前模型');
   console.log('  /exit        - 退出（也可输入 exit / quit）');
   console.log('  其他输入     - 发送给 AI');

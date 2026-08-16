@@ -155,7 +155,7 @@
 
 - **子代理 / 嵌套 Runtime**：目前单层循环，无 spawn 子 agent 能力
 - ~~**自动上下文压缩**：`compaction_summary` 资源类型已定义（`core/context-resource.ts:17`）但无内建压缩 transformer，长会话只能硬截断~~ ✅ 已完成（2026-08-16，见下方"内置摘要压缩"）
-- **Human-in-the-loop 深化**：permission 模块已有，可加异步审批（挂起等待外部批准后继续）
+- ~~**Human-in-the-loop 深化**：permission 模块已有，可加异步审批（挂起等待外部批准后继续）~~ ✅ Phase 1 已完成（2026-08-16，见下方"异步审批"）
 - **工具生态**：`registerTools` 之外支持从 npm 包自动发现工具
 
 ### 存储层
@@ -178,6 +178,59 @@
 **配置**：`compaction: { enabled?, triggerRatio?, targetRatio?, onOverflow?, prompt? }`
 
 **验证**：`compaction.test.ts` 新增 8 个测试（阈值摘要 / 摘要失败降级 / enabled false / 未配置旧行为 / 溢出恢复摘要 / 资源 pinned × 3），agent 包 465 测试、monorepo 6 包 669 测试全部通过。
+
+### 异步审批（Human-in-the-loop Phase 1）— ✅ 已完成（2026-08-16）
+
+**位置**：`core/permission.ts`（pending 决策 + createApprovalManager）、`runtime/index.ts` executeTool（挂起/恢复）、`core/runtime.ts`（approvals / approvalTimeoutMs 选项）、`telemetry/index.ts`（onApprovalPending / onApprovalResolved）
+
+决策语义从 `allow / deny / confirm` 扩展出 `pending`：Runtime 挂起工具调用并注册审批单，外部任意时机经 `ApprovalManager.resolve(id, approved)` 批准/驳回后继续。发起 run 的调用栈与批准人以审批单 id 通信，无需共享调用栈（区别于 confirm 的内联等待，后者适合 CLI 终端 y/n 场景）。
+
+- **审批单生命周期**：create（登记 + onPending 事件）→ wait（挂起）→ settle（approved / denied / timeout / cancelled，幂等：首个结算生效）→ list 移除
+- **超时**：`approvalTimeoutMs`（默认 5 分钟）超时视为拒绝（保守）
+- **abort 传导**：run 的 AbortSignal 触发 → 审批单以 cancelled 结算收尾，不留悬挂
+- **计时边界**：工具执行超时（toolTimeoutMs）在权限裁决（含审批挂起）完成后才起表，审批等待不占用执行超时
+- **降级**：policy 返回 pending 但未配置 approvals → 视为 deny（与 confirm 未提供回调一致，向后兼容）
+- **可观测**：onApprovalPending（可做"等待审批"告警）/ onApprovalResolved（含 outcome 与 waitedMs）；未批准仍走 onPermissionDenied
+- **Phase 1 限制**：内存版，审批单不持久化，进程重启即丢失；Phase 2 计划接入 session store 支持重启恢复
+
+**配置**：`approvals: createApprovalManager()` + `approvalTimeoutMs?: number`
+
+**验证**：`permission.test.ts` 新增 13 个测试（审批单单元 7：批准/驳回/超时/重复结算/取消与 abort/迟到 wait/事件订阅；Runtime 集成 6：批准执行/驳回 blocked/超时拒绝/未配置降级/abort 收尾/遥测事件），agent 包 478 测试全部通过。
+
+### 审批持久化（Human-in-the-loop Phase 2）— ✅ 已完成（2026-08-16）
+
+**位置**：`core/permission.ts`（ApprovalStore 契约 + StoredApproval DTO + restore/close）、`approval/file.ts`（FileApprovalStore）、`approval/memory.ts`（MemoryApprovalStore）
+
+审批单落盘，进程重启后经 `restore()` 恢复未决列表。恢复的是"孤儿"审批单——原 run 已丢失（挂起的 wait 无法跨进程迁移），但可批准/驳回且结果持久化供审计，UI 重启后仍能看到待审批卡片。
+
+- **存储契约**：`ApprovalStore { load / save / settle }`，与 SessionStorage 同风格（契约在 core、实现在独立目录）
+- **序列化**：`StoredApproval` DTO 只存可序列化字段（toolName / permissions / args / sessionKey / createdAt / expiresAt），不含 PermissionRequest 中的运行时对象（request / shared Map）；`toStoredApproval` / `fromStoredApproval` 互转
+- **文件布局**（默认 `~/.aipack/approvals/`，与 sessions 平级）：`<id>.json` 未决单（temp + rename 原子写）、`history.jsonl` 结算审计（追加写）、`.corrupt` 损坏隔离
+- **生命周期挂钩**：create 落盘、settle 删未决 + 追加审计（均 fire-and-forget，持久化失败仅警告不影响审批主流程）
+- **restore 语义**：按 createdAt 升序恢复、`restored: true` 标记、逐条触发 onPending（UI 启动感知）；已过期的立即以 timeout 结算（waitedMs 按真实等待时长）；重复 restore 幂等
+- **close 语义**：优雅关闭只清计时器与信号监听，不结算不写审计——未决审批单留在存储中供下次 restore（挂起审批跨进程存活的语义）
+- **兼容**：`createApprovalManager()` 无参调用行为不变（restore 返回 0）
+
+**配置**：`createApprovalManager({ store: new FileApprovalStore({ baseDir }) })`；重启后 `await mgr.restore()`
+
+**验证**：`approval.test.ts` 新增 11 个测试（FileApprovalStore 单元 3：往返/损坏隔离/排序；MemoryApprovalStore 1；manager 集成 3：落盘字段/超时审计/无 store 兼容；重启恢复 4：孤儿恢复+批准/已过期结算/文件端到端/幂等），agent 包 489 测试全部通过。
+
+**待办（Phase 3）**：审批面板（observability-server web 界面待审批卡片 + 批准/驳回；跨进程通道：RemoteApprovalManager 轮询方案）。
+
+### CLI 审批集成（Human-in-the-loop 落地端）— ✅ 已完成（2026-08-16）
+
+**位置**：`packages/cli/src/approvals.ts`（setup + 交互提示 + 子命令操作）、`config.ts`（approvals 配置解析）、`chat.ts` / `run.ts`（挂载点）、`cli.ts`（approvals 命令组）
+
+CLI 成为审批能力首个落地端：配置 `approvals.enabled` 后，危险工具调用挂起，终端打印审批卡片人工 y/N 批准；审批单文件持久化，进程重启后自动恢复并重新询问。
+
+- **配置**（aipack.config.js / config.json）：`approvals: { enabled, tools?, baseDir?, timeoutMs? }`；默认关闭（保守），默认审批工具 shell / fs:write / fs:delete / net，默认目录 `<cwd>/.aipack/approvals`
+- **setupApprovals**：构建 `createApprovalManager({ store: FileApprovalStore })` + 便捷 policy（工具名精确 / 能力声明粒度互换命中 → pending）；用户已显式配置 permissionPolicy 时仅提供 manager 不覆盖
+- **交互提示**：onPending → 审批卡片（工具/能力/参数/会话/等待时长/单号）→ y/N 询问；串行队列防并发交错；chat 模式询问期间暂停主 readline（防 y/N 被当作聊天输入）；非 TTY 自动驳回（管道任务保守处理）；onSettled 打印结算结果
+- **重启恢复**：chat / run 启动时先附加提示再 restore()，遗留孤儿审批单直接进入询问队列
+- **命令**：`aipack approvals list / approve <id> / deny <id>`（子命令走 manager restore + resolve 完整链路，结算写审计；适用于孤儿审批单）；chat 内 `/approvals` 快捷查看
+- **边界**：跨进程局限——子命令对"活进程挂起的审批单"结算只写审计，无法唤醒对端 wait（Phase 3 远程通道解决）
+
+**验证**：CLI 新增 6 个测试（config 解析 2 + approvals.test 4：未启用/setup 命中规则含粒度互换/显式 policy 不覆盖/子命令端到端含审计与幂等），CLI 包 15 测试全通过 + typecheck；smoke 验证 list → 写入模拟单 → list 展示 → approve → 清空 → history.jsonl 审计记录正确。
 
 ---
 

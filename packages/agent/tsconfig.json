@@ -11,6 +11,7 @@
     "core/**/*",
     "runtime/**/*",
     "session/**/*",
+    "approval/**/*",
     "context-resource/**/*",
     "task-graph/**/*",
     "transformer/**/*",

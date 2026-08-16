@@ -142,4 +142,32 @@ describe('loadConfig', () => {
     const cfg = await loadIn('workspace-default');
     assert.equal(cfg.workspace, process.cwd());
   });
+
+  it('approvals 默认关闭，目录与超时取默认值', async () => {
+    const cfg = await loadIn('approvals-default');
+    assert.equal(cfg.approvals.enabled, false);
+    assert.deepEqual(cfg.approvals.tools, ['shell', 'fs:write', 'fs:delete', 'net']);
+    assert.equal(cfg.approvals.baseDir, path.join(process.cwd(), '.aipack', 'approvals'));
+    assert.equal(cfg.approvals.timeoutMs, 300_000);
+  });
+
+  it('approvals 配置文件字段生效（enabled/tools/baseDir/timeoutMs）', async () => {
+    await loadIn('approvals-custom');
+    await fs.promises.writeFile(
+      path.join(process.cwd(), 'aipack.config.json'),
+      JSON.stringify({
+        approvals: {
+          enabled: true,
+          tools: ['shell', 'fs:delete'],
+          baseDir: '~/my-approvals',
+          timeoutMs: 60_000,
+        },
+      }),
+    );
+    const loaded = await loadConfig({});
+    assert.equal(loaded.approvals.enabled, true);
+    assert.deepEqual(loaded.approvals.tools, ['shell', 'fs:delete']);
+    assert.equal(loaded.approvals.baseDir, path.join(os.homedir(), 'my-approvals'));
+    assert.equal(loaded.approvals.timeoutMs, 60_000);
+  });
 });

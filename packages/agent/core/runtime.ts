@@ -192,6 +192,12 @@ export interface RuntimeOptions {
   /** 框架级工具权限策略（可选）。未配置时工具全部放行（向后兼容）；
    *  生产环境建议配置 createPermissionPolicy / createAllowListPolicy / createDenyAllPolicy。 */
   permissionPolicy?: import('./permission').PermissionPolicy;
+  /** 审批管理器（可选）。policy.check() 返回 'pending' 时挂起工具调用，
+   *  等待外部通过 ApprovalManager.resolve() 批准 / 驳回后继续（异步 Human-in-the-loop）。
+   *  未配置时 'pending' 决策视为 deny（保守，向后兼容）。 */
+  approvals?: import('./permission').ApprovalManager;
+  /** 审批等待超时（毫秒，默认 300000 = 5 分钟）。超时审批单以 timeout 结算，视为拒绝 */
+  approvalTimeoutMs?: number;
   /** traceId 生成器（可选，默认 Date+UUID；测试可注入确定性 id） */
   traceIdGenerator?: () => string;
 }

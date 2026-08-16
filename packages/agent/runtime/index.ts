@@ -24,6 +24,7 @@ import type {
   AfterToolCallDecision,
   PermissionRequest,
   PermissionPolicy,
+  ApprovalManager,
 } from '../core';
 import {
   ExtensionManager,
@@ -321,6 +322,10 @@ export class AgentRuntime implements Runtime {
   private _telemetry: Telemetry | undefined;
   /** 框架级工具权限策略（未配置 → 放行，向后兼容） */
   private _permissionPolicy: PermissionPolicy | undefined;
+  /** 审批管理器（pending 决策挂起等待外部批准；未配置 → pending 视为 deny） */
+  private _approvals: ApprovalManager | undefined;
+  /** 审批等待超时（毫秒） */
+  private _approvalTimeoutMs: number;
   /** traceId 生成器（测试可注入确定性 id） */
   private _traceIdGenerator: (() => string) | undefined;
 
@@ -355,6 +360,8 @@ export class AgentRuntime implements Runtime {
     this._compaction = options.compaction;
     this._telemetry = options.telemetry;
     this._permissionPolicy = options.permissionPolicy;
+    this._approvals = options.approvals;
+    this._approvalTimeoutMs = options.approvalTimeoutMs ?? 300_000;
     this._traceIdGenerator = options.traceIdGenerator;
 
     // 注册初始工具
@@ -1047,48 +1054,83 @@ export class AgentRuntime implements Runtime {
       };
     }
 
-    const { signal: timedSignal, clear } = withTimeoutSignal(signal, this._toolTimeoutMs);
-    try {
-      let args: unknown = toolCall.arguments;
-      if (tool.prepareArguments) {
-        args = tool.prepareArguments(toolCall.arguments);
-      }
+    // ─── 参数预处理（权限裁决与执行钩子均基于处理后的 args）───
+    let args: unknown = toolCall.arguments;
+    if (tool.prepareArguments) {
+      args = tool.prepareArguments(toolCall.arguments);
+    }
 
-      // ─── PermissionPolicy：框架级安全底线，先于扩展钩子裁决 ───
-      // 未配置策略 → 放行（向后兼容）；deny / confirm 未批准 → blocked 结果
-      if (this._permissionPolicy) {
-        const permissionReq: PermissionRequest = {
-          toolName: toolCall.name,
-          permissions: tool.permissions ?? [],
-          args,
-          sessionKey: request.sessionKey ?? this._sessionKey,
-          request,
-          shared: this._extensionContext?.shared ?? new Map(),
-        };
-        const decision = await this._permissionPolicy.check(permissionReq);
-        let allowed = decision === 'allow';
-        if (decision === 'confirm') {
-          allowed = this._permissionPolicy.confirm
-            ? await this._permissionPolicy.confirm(permissionReq)
-            : false;
-        }
-        if (!allowed) {
-          const reason = `permission denied by policy for tool "${toolCall.name}"`;
-          await this.emitTelemetry('onPermissionDenied', {
+    // ─── PermissionPolicy：框架级安全底线，先于扩展钩子裁决 ───
+    // 未配置策略 → 放行（向后兼容）；deny / confirm 未批准 → blocked 结果；
+    // pending → 挂起等待外部审批（超时 / run abort 均视为拒绝）
+    if (this._permissionPolicy) {
+      const permissionReq: PermissionRequest = {
+        toolName: toolCall.name,
+        permissions: tool.permissions ?? [],
+        args,
+        sessionKey: request.sessionKey ?? this._sessionKey,
+        request,
+        shared: this._extensionContext?.shared ?? new Map(),
+      };
+      const decision = await this._permissionPolicy.check(permissionReq);
+      let allowed = decision === 'allow';
+      if (decision === 'confirm') {
+        allowed = this._permissionPolicy.confirm
+          ? await this._permissionPolicy.confirm(permissionReq)
+          : false;
+      }
+      if (decision === 'pending') {
+        // 挂起等待外部审批（异步 Human-in-the-loop）；
+        // 未配置审批管理器 → 保守拒绝（与 confirm 未提供回调的行为一致）
+        if (this._approvals) {
+          const approval = this._approvals.create(permissionReq, {
+            timeoutMs: this._approvalTimeoutMs,
+            signal,
+          });
+          await this.emitTelemetry('onApprovalPending', {
             traceId,
             sessionKey: permissionReq.sessionKey,
+            approvalId: approval.id,
             toolName: toolCall.name,
             permissions: permissionReq.permissions,
             args,
-            reason,
+            expiresAt: approval.expiresAt,
           });
-          return {
-            result: this.makeBlockedResult(reason),
-            terminate: false,
-          };
+          const outcome = await this._approvals.wait(approval);
+          allowed = outcome.status === 'approved';
+          await this.emitTelemetry('onApprovalResolved', {
+            traceId,
+            sessionKey: permissionReq.sessionKey,
+            approvalId: approval.id,
+            toolName: toolCall.name,
+            outcome: outcome.status,
+            waitedMs: outcome.waitedMs,
+          });
+        } else {
+          allowed = false;
         }
       }
+      if (!allowed) {
+        const reason = `permission denied by policy for tool "${toolCall.name}"`;
+        await this.emitTelemetry('onPermissionDenied', {
+          traceId,
+          sessionKey: permissionReq.sessionKey,
+          toolName: toolCall.name,
+          permissions: permissionReq.permissions,
+          args,
+          reason,
+        });
+        return {
+          result: this.makeBlockedResult(reason),
+          terminate: false,
+        };
+      }
+    }
 
+    // ─── 工具超时信号：权限裁决（含审批挂起）完成后起表，
+    // 审批等待不占用工具执行超时 ───
+    const { signal: timedSignal, clear } = withTimeoutSignal(signal, this._toolTimeoutMs);
+    try {
       // ─── beforeToolCall：参数校验后、执行前（可 block / terminate / 改写 args）───
       const beforeCtx = this.buildToolCallContext(toolCall, tool, args, request, timedSignal);
       const before: BeforeToolCallDecision = await this._hooks.beforeToolCall.promise(
