@@ -46,7 +46,7 @@ const features = [
   {
     icon: '🧩',
     title: '丰富的内置包',
-    desc: 'coding 工具集、持久化记忆、五级上下文压缩、CLI、VSCode 扩展，按需组合，零配置开箱。',
+    desc: '持久化记忆、五级上下文压缩、CLI、可观测性，按需组合，零配置开箱。',
     color: 'linear-gradient(135deg, #e0e7ff, #c7d2fe)',
   },
   {
@@ -143,7 +143,7 @@ export default function HomePage() {
             一款轻量、可扩展、零魔法的 TypeScript Agent 框架。<br />
             Runtime + Extension + Transformer 三层架构，自研核心调度，不依赖外部 Agent 库。
             <br />
-            内置 coding 工具集、持久化记忆、上下文压缩、CLI、VSCode 扩展。
+            内置持久化记忆、上下文压缩、CLI、可观测性。
           </p>
           <div className="hero-buttons">
             <Button
@@ -302,8 +302,8 @@ export default function HomePage() {
                   </div>
                   <div className="arch-box arch-box-adapter">
                     <AppstoreOutlined style={{ fontSize: 24 }} />
-                    <div style={{ fontWeight: 700, marginTop: 6 }}>VSCode 扩展</div>
-                    <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>WebView 面板</div>
+                    <div style={{ fontWeight: 700, marginTop: 6 }}>自定义应用</div>
+                    <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>任意宿主集成</div>
                   </div>
                 </div>
               </div>
@@ -389,10 +389,10 @@ export default function HomePage() {
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 32 }}>
             <h2 style={{ fontSize: '2.25rem', fontWeight: 800, margin: 0, color: '#0f172a' }}>
-              6 个配套包，按需组合
+              4 个配套包，按需组合
             </h2>
             <p style={{ fontSize: '1.1rem', color: '#64748b', marginTop: 16 }}>
-              从核心框架到完整 CLI + VSCode 扩展，覆盖 Agent 开发的完整场景
+              从核心框架到完整 CLI，覆盖 Agent 开发的完整场景
             </p>
           </div>
 
@@ -447,23 +447,6 @@ export default function HomePage() {
                 label: '能力增强',
                 children: (
                   <Row gutter={[24, 24]}>
-                    <Col xs={24} md={8}>
-                      <Card
-                        title={
-                          <span>
-                            💻 coding <Tag color="geekblue" style={{ marginLeft: 8 }}>编码工具</Tag>
-                          </span>
-                        }
-                        bordered
-                      >
-                        <p style={{ color: '#475569', lineHeight: 1.8, fontSize: 14 }}>
-                          7 个零依赖 coding 工具：文件读写、命令执行、代码搜索。权限策略 + workspace 沙箱。
-                        </p>
-                        <Button type="link" icon={<ArrowRightOutlined />} onClick={() => navigate('/packages#coding')}>
-                          查看
-                        </Button>
-                      </Card>
-                    </Col>
                     <Col xs={24} md={8}>
                       <Card
                         title={
@@ -529,32 +512,6 @@ export default function HomePage() {
                         </p>
                         <Button type="link" icon={<ArrowRightOutlined />} onClick={() => navigate('/packages#aipack-observability-server')}>
                           查看
-                        </Button>
-                      </Card>
-                    </Col>
-                  </Row>
-                ),
-              },
-              {
-                key: '3',
-                label: 'IDE 集成',
-                children: (
-                  <Row justify="center">
-                    <Col xs={24} md={14}>
-                      <Card
-                        title={
-                          <span>
-                            🎯 vscode-aipack-coding <Tag color="magenta" style={{ marginLeft: 8 }}>VSCode</Tag>
-                          </span>
-                        }
-                        bordered
-                      >
-                        <p style={{ color: '#475569', lineHeight: 1.8 }}>
-                          VSCode 扩展：侧边栏 WebView 聊天面板，内置 coding 工具集，深度集成工作区。
-                          在编辑器里直接对话、读写文件、执行命令。
-                        </p>
-                        <Button type="link" icon={<ArrowRightOutlined />} onClick={() => navigate('/packages#vscode')}>
-                          查看详情
                         </Button>
                       </Card>
                     </Col>

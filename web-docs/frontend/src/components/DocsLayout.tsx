@@ -69,7 +69,6 @@ const observabilityMenu: MenuItem[] = [
 
 const examplesMenu: MenuItem[] = [
   { key: '/examples', label: '最小示例', icon: <CodeOutlined /> },
-  { key: '/examples#coding', label: 'Coding Agent', icon: <ExperimentOutlined /> },
   { key: '/examples#memory', label: '记忆集成', icon: <DatabaseOutlined /> },
   { key: '/examples#compression', label: '上下文压缩', icon: <AimOutlined /> },
   { key: '/examples#cli', label: 'CLI 配置', icon: <SettingOutlined /> },
@@ -78,13 +77,11 @@ const examplesMenu: MenuItem[] = [
 const packagesMenu: MenuItem[] = [
   { key: '/packages', label: '包概览', icon: <AppstoreOutlined /> },
   { key: '/packages#aipack', label: 'aipack（核心）', icon: <RocketOutlined /> },
-  { key: '/packages#coding', label: 'aipack-coding', icon: <CodeOutlined /> },
   { key: '/packages#memory', label: 'aipack-memory', icon: <DatabaseOutlined /> },
   { key: '/packages#compression', label: 'aipack-compression', icon: <AimOutlined /> },
   { key: '/packages#aipack-observability', label: 'aipack-observability', icon: <LineChartOutlined /> },
   { key: '/packages#aipack-observability-server', label: 'aipack-observability-server', icon: <CloudServerOutlined /> },
   { key: '/packages#cli', label: 'aipack-cli', icon: <SettingOutlined /> },
-  { key: '/packages#vscode', label: 'vscode-aipack-coding', icon: <ExperimentOutlined /> },
 ];
 
 export default function DocsLayout({ children }: DocsLayoutProps) {

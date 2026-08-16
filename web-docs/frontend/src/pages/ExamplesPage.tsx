@@ -1,4 +1,4 @@
-import { Tabs, Alert, Divider } from 'antd';
+import { Tabs, Alert } from 'antd';
 import {
   CodeOutlined,
   DatabaseOutlined,
@@ -9,7 +9,6 @@ import {
 import CodeBlock from '../components/CodeBlock';
 import {
   exMinimalCode,
-  exCodingCode,
   exMemoryCode,
   exCompressionCode,
   exCliConfigCode,
@@ -22,7 +21,7 @@ export default function ExamplesPage() {
         <CodeOutlined style={{ color: '#6366f1' }} /> 示例代码
       </h1>
       <p className="section-subtitle">
-        精选 5 个最常用的场景示例：最小应用、Coding Agent、记忆集成、上下文压缩、CLI 配置文件。
+        精选 4 个最常用的场景示例：最小应用、记忆集成、上下文压缩、CLI 配置文件。
         直接复制即可运行（仅需配置 <code>{'<PROVIDER>_API_KEY'}</code> 环境变量）。
       </p>
 
@@ -33,7 +32,6 @@ export default function ExamplesPage() {
         description={
           <span>
             除 <code>aipack</code> 核心外：
-            coding 示例需 <code>pnpm add aipack-coding</code>，
             memory 示例需 <code>pnpm add aipack-memory</code>，
             compression 示例需 <code>pnpm add aipack-compression</code>，
             CLI 需 <code>pnpm add -g aipack-cli</code>。
@@ -65,35 +63,6 @@ export default function ExamplesPage() {
           },
           {
             key: '2',
-            label: <span><CodeOutlined /> Coding Agent</span>,
-            children: (
-              <div>
-                <h2 className="subsection-title" id="coding" style={{ marginTop: 0 }}>
-                  <CodeOutlined /> Coding Agent（读/写文件 + 执行命令）
-                </h2>
-                <p style={{ lineHeight: 1.8, color: '#475569' }}>
-                  使用 <code>createCodingAgent</code> 工厂一键组装具备 7 个编码工具的 Agent。
-                  内置 workspace 沙箱校验和命令权限策略，是搭建 AI 编程助手的最快路径。
-                </p>
-                <CodeBlock code={exCodingCode} />
-                <Divider orientation="left" plain>内置 7 个编码工具</Divider>
-                <table className="params-table">
-                  <thead><tr><th>工具</th><th>说明</th><th>典型场景</th></tr></thead>
-                  <tbody>
-                    <tr><td className="param-name">read_file</td><td>读取文件（带行号、分页、二进制检测）</td><td>让 AI 阅读代码</td></tr>
-                    <tr><td className="param-name">write_file</td><td>整体覆盖写入（自动创建目录、原子写）</td><td>生成文件</td></tr>
-                    <tr><td className="param-name">edit_file</td><td>old_string → new_string 精确替换</td><td>局部修改代码</td></tr>
-                    <tr><td className="param-name">list_directory</td><td>列目录（非递归、默认隐藏 dotfiles）</td><td>浏览项目结构</td></tr>
-                    <tr><td className="param-name">run_command</td><td>执行 shell（权限策略 + 超时 + 截断）</td><td>跑测试、构建、lint</td></tr>
-                    <tr><td className="param-name">grep</td><td>正则内容搜索</td><td>查函数定义、引用</td></tr>
-                    <tr><td className="param-name">glob</td><td>通配符找文件</td><td>按扩展名批量查</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            ),
-          },
-          {
-            key: '3',
             label: <span><DatabaseOutlined /> 记忆集成</span>,
             children: (
               <div>
@@ -109,7 +78,7 @@ export default function ExamplesPage() {
             ),
           },
           {
-            key: '4',
+            key: '3',
             label: <span><AimOutlined /> 上下文压缩</span>,
             children: (
               <div>
@@ -126,7 +95,7 @@ export default function ExamplesPage() {
             ),
           },
           {
-            key: '5',
+            key: '4',
             label: <span><SettingOutlined /> CLI 配置</span>,
             children: (
               <div>
@@ -135,7 +104,7 @@ export default function ExamplesPage() {
                 </h2>
                 <p style={{ lineHeight: 1.8, color: '#475569' }}>
                   用 aipack-cli 而非写代码时，通过 <code>aipack.config.js</code>
-                  即可组合 coding 工具、memory 记忆、自定义扩展/工具。
+                  即可组合 memory 记忆、自定义扩展/工具。
                   配置优先级：默认值 &lt; 配置文件 &lt; 环境变量 &lt; CLI 选项。
                 </p>
                 <CodeBlock code={exCliConfigCode} />

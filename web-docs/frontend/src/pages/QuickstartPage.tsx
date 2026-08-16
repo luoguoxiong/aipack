@@ -163,7 +163,7 @@ export default function QuickstartPage() {
           继续探索：
           <a href="/extend"> 扩展指南（自定义 Extension/Transformer）</a> ·
           <a href="/api"> 完整 API 文档</a> ·
-          <a href="/examples"> 更多示例代码（Coding Agent、记忆、压缩）</a>
+          <a href="/examples"> 更多示例代码（记忆、压缩）</a>
         </p>
       </div>
     </div>

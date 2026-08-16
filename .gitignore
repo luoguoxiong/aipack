@@ -22,3 +22,6 @@ apps/ai_teaching_agent_team/.deploy/
 
 # VSCode 扩展构建产物
 *.vsix
+
+# Local Netlify folder
+.netlify

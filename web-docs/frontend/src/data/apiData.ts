@@ -471,7 +471,7 @@ hasPermission(tool.permissions, 'fs:read');  // false`,
     name: 'Tool.permissions 能力声明',
     kind: 'type',
     signature: 'Tool { permissions?: string[] }',
-    description: '工具声明自身需要的权限能力（如 shell:exec / fs:write / fs:read / memory:write / network:fetch），供框架级 PermissionPolicy 裁决。未声明视为安全工具（permissions: []）。coding 包 7 个工具已按此约定声明。',
+    description: '工具声明自身需要的权限能力（如 shell:exec / fs:write / fs:read / memory:write / network:fetch），供框架级 PermissionPolicy 裁决。未声明视为安全工具（permissions: []）。',
     category: '权限安全',
     example: `import { Type } from '@aipack-ai/agent/ai';
 import type { Tool } from '@aipack-ai/agent';
