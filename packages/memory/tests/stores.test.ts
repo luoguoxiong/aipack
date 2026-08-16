@@ -135,10 +135,10 @@ describe('FileMemoryStore', () => {
     const dir = await tmpDir();
     const s0 = new FileMemoryStore({ baseDir: dir });
     await s0.save(base({ content: '即将过期' }));
-    await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 100));
     await s0.save(base({ content: '保留' }));
-    // maxAge=5ms：第一条必然过期，第二条（新写入）保留
-    const s = new FileMemoryStore({ baseDir: dir, maxAge: 5 });
+    // maxAge=50ms：第一条（≥100ms 前）必然过期，第二条（刚写入）保留
+    const s = new FileMemoryStore({ baseDir: dir, maxAge: 50 });
     assert.equal(await s.count(), 1);
     assert.equal((await s.search('保留', 5)).length, 1);
   });
