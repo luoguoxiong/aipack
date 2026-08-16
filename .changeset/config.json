@@ -10,7 +10,5 @@
   "access": "public",
   "baseBranch": "master",
   "updateInternalDependencies": "patch",
-  "ignore": [
-    "@aipack-ai/vscode-coding"
-  ]
+  "ignore": []
 }
