@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Button,
   Card,
@@ -56,6 +57,7 @@ const ERROR_CLASS_LABEL: Record<string, string> = {
 };
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [appId, setAppId] = useState<string | undefined>(undefined);
   const [version, setVersion] = useState<string | undefined>(undefined);
@@ -66,6 +68,8 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [byModel, setByModel] = useState<Record<string, Summary> | null>(null);
   const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([]);
+  /** Phase 6 成本趋势时序（独立于主时序的 metric） */
+  const [costTs, setCostTs] = useState<TimeseriesPoint[]>([]);
   const [tools, setTools] = useState<ToolStat[]>([]);
   /** 版本聚合（DB 直查，按 lastSeenAt 倒序）；供版本筛选与对比卡片 */
   const [versions, setVersions] = useState<VersionMetrics[]>([]);
@@ -81,10 +85,12 @@ export default function DashboardPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [sum, model, ts, toolList, versionList] = await Promise.all([
+      const [sum, model, ts, cost, toolList, versionList] = await Promise.all([
         api.summary(params),
         api.summary<Record<string, Summary>>({ ...params, groupBy: 'model' }),
         api.timeseries({ ...params, step: RANGE_STEP[range], metric }),
+        // Phase 6 成本趋势时序（与主时序并行拉取）
+        api.timeseries({ ...params, step: RANGE_STEP[range], metric: 'cost' }),
         api.tools(params),
         // 版本列表不随筛选变化（供切换/对比），仅按当前 appId + 时间范围
         api.versions({ appId: params.appId, since: params.since, until: params.until }),
@@ -92,6 +98,7 @@ export default function DashboardPage() {
       setSummary(sum);
       setByModel(model);
       setTimeseries(ts);
+      setCostTs(cost);
       setTools(toolList);
       setVersions(versionList.items);
     } catch (err) {
@@ -217,7 +224,7 @@ export default function DashboardPage() {
     };
   }, [modelRows]);
 
-  // 错误分析饼图
+  // 错误分析饼图（每个扇区携带原始错误类标识，用于点击下钻）
   const errorOption: EChartsOption = useMemo(() => {
     const entries = Object.entries(summary?.errorClasses ?? {});
     return {
@@ -228,12 +235,62 @@ export default function DashboardPage() {
           type: 'pie',
           radius: ['40%', '68%'],
           center: ['50%', '45%'],
-          data: entries.map(([cls, count]) => ({ name: ERROR_CLASS_LABEL[cls] ?? cls, value: count })),
+          data: entries.map(([cls, count]) => ({
+            name: ERROR_CLASS_LABEL[cls] ?? cls,
+            value: count,
+            errorClass: cls,
+          })),
           label: { show: false },
+          emphasis: { scale: true, scaleSize: 6 },
+          cursor: 'pointer',
         },
       ],
     };
   }, [summary]);
+
+  // Phase 6 成本趋势图（按 cost 时序）
+  const costOption: EChartsOption = useMemo(() => {
+    const labels = costTs.map((p) => formatTime(p.t, range));
+    const values = costTs.map((p) => p.v);
+    return {
+      tooltip: {
+        trigger: 'axis',
+        valueFormatter: (v: any) => `$${Number(v).toFixed(2)}`,
+      },
+      grid: { left: 56, right: 24, top: 16, bottom: 40 },
+      xAxis: {
+        type: 'category',
+        data: labels,
+        axisLabel: { rotate: labels.length > 30 ? 40 : 0 },
+      },
+      yAxis: { type: 'value', axisLabel: { formatter: (v: number) => `$${v}` } },
+      series: [
+        {
+          name: '成本',
+          type: 'line',
+          smooth: true,
+          areaStyle: { opacity: 0.12 },
+          data: values,
+          itemStyle: { color: '#0ea5e9' },
+        },
+      ],
+    };
+  }, [costTs, range]);
+
+  // Phase 6 总成本（向后兼容：缺失字段显示 $0.00）
+  const costTotalStr = useMemo(() => {
+    const v = Number(summary?.costTotal ?? 0);
+    return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }, [summary]);
+
+  // 错误类扇区点击 → 下钻
+  const onErrorClassClick = useCallback(
+    (params: { data?: { errorClass?: string } }) => {
+      const cls = params?.data?.errorClass;
+      if (cls) navigate(`/error-classes/${encodeURIComponent(cls)}`);
+    },
+    [navigate],
+  );
 
   // 重试分布（P2-2）：per-attempt 按 HTTP 状态码分类
   const retryEntries = useMemo(
@@ -375,6 +432,22 @@ export default function DashboardPage() {
         </Col>
       </Row>
 
+      {/* Phase 6 成本核算：总成本 KPI + 成本趋势图 */}
+      <Row gutter={[12, 12]} align="stretch">
+        <Col span={6}>
+          <KpiCard title="总成本" value={costTotalStr} color="#0ea5e9" />
+        </Col>
+        <Col span={18}>
+          <Card size="small" title="成本趋势" style={{ height: '100%' }}>
+            {costTs.length ? (
+              <EChart option={costOption} height={120} />
+            ) : (
+              <Empty description="无成本数据" />
+            )}
+          </Card>
+        </Col>
+      </Row>
+
       {/* 版本对比（跨版本指标对比，DB 全量聚合） */}
       <Card size="small" title="版本对比">
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -444,9 +517,21 @@ export default function DashboardPage() {
           </Card>
         </Col>
         <Col span={10}>
-          <Card size="small" title="错误分析">
+          <Card
+            size="small"
+            title="错误分析"
+            extra={
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                点击扇区下钻
+              </Typography.Text>
+            }
+          >
             {hasError ? (
-              <EChart option={errorOption} height={280} />
+              <EChart
+                option={errorOption}
+                height={280}
+                onEvents={{ click: onErrorClassClick }}
+              />
             ) : (
               <Empty description="无错误记录" />
             )}

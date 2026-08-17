@@ -221,8 +221,8 @@ describe('S2 收集服务端到端', () => {
 
     // 落盘持久化：关闭收集端后重开 db，trace 仍在
     const store = new SQLiteStore(dbPath);
-    assert.ok(store.queryTrace(String(result.metadata.traceId)), 'trace 应已持久化');
-    store.close();
+    assert.ok(await store.queryTrace(String(result.metadata.traceId)), 'trace 应已持久化');
+    await store.close();
   });
 
   it('工具循环 2 轮：avgTurns=2，/metrics/tools 工具 successRate=1', async () => {
@@ -626,18 +626,18 @@ describe('版本维度聚合 /metrics/versions', () => {
     assert.equal(bySeed.body.items.length, 3, '种子应用只见自己的 3 个版本');
   });
 
-  it('queryVersionMetrics 精确聚合：tokens/分位/错误分类/工具成功率/重试率，version NULL 归 unknown', () => {
+  it('queryVersionMetrics 精确聚合：tokens/分位/错误分类/工具成功率/重试率，version NULL 归 unknown', async () => {
     const dbPath = tempDb();
     const store = new SQLiteStore(dbPath);
     const now = Date.now();
-    store.insertRun({ ...makeRun('r1', now), appVersion: '1.0.0', durationMs: 100, inputTokens: 10, outputTokens: 5, status: 'success' });
-    store.insertRun({ ...makeRun('r2', now + 1), appVersion: '1.0.0', durationMs: 300, inputTokens: 100, outputTokens: 50, status: 'error', errorClass: 'rate_limit' });
-    store.insertSpan({ ...makeSpan('r2', now + 1), attempts: 3 }); // 2 次重试
-    store.insertToolCall({ traceId: 'r1', spanId: 's1', toolName: 'echo', status: 'ok', durationMs: 100 });
-    store.insertToolCall({ traceId: 'r2', spanId: 's2', toolName: 'scrape', status: 'error', durationMs: 50, errorClass: 'network' });
-    store.insertRun({ ...makeRun('r3', now + 2), durationMs: 200, status: 'success' }); // 无版本 → unknown
+    await store.insertRun({ ...makeRun('r1', now), appVersion: '1.0.0', durationMs: 100, inputTokens: 10, outputTokens: 5, status: 'success' });
+    await store.insertRun({ ...makeRun('r2', now + 1), appVersion: '1.0.0', durationMs: 300, inputTokens: 100, outputTokens: 50, status: 'error', errorClass: 'rate_limit' });
+    await store.insertSpan({ ...makeSpan('r2', now + 1), attempts: 3 }); // 2 次重试
+    await store.insertToolCall({ traceId: 'r1', spanId: 's1', toolName: 'echo', status: 'ok', durationMs: 100 });
+    await store.insertToolCall({ traceId: 'r2', spanId: 's2', toolName: 'scrape', status: 'error', durationMs: 50, errorClass: 'network' });
+    await store.insertRun({ ...makeRun('r3', now + 2), durationMs: 200, status: 'success' }); // 无版本 → unknown
 
-    const items = store.queryVersionMetrics({});
+    const items = await store.queryVersionMetrics({});
     assert.equal(items.length, 2, '1.0.0 + unknown');
     const v1 = items.find((v) => v.version === '1.0.0')!;
     const unk = items.find((v) => v.version === 'unknown')!;
@@ -661,10 +661,10 @@ describe('版本维度聚合 /metrics/versions', () => {
     assert.equal(unk.requests, 1);
     assert.equal(unk.successRate, 1);
     assert.equal(unk.totalTokens, 15);
-    store.close();
+    await store.close();
   });
 
-  it('存量库迁移：旧 runs 表无 version 列 → 打开后自动 ALTER 补齐并可聚合', () => {
+  it('存量库迁移：旧 runs 表无 version 列 → 打开后自动 ALTER 补齐并可聚合', async () => {
     const dbPath = tempDb();
     const raw = new Database(dbPath);
     raw.exec(`CREATE TABLE runs (
@@ -677,14 +677,14 @@ describe('版本维度聚合 /metrics/versions', () => {
     raw.close();
 
     const store = new SQLiteStore(dbPath);
-    store.insertRun({ ...makeRun('mig', Date.now()), appVersion: '0.9.0' });
-    const items = store.queryVersionMetrics({});
+    await store.insertRun({ ...makeRun('mig', Date.now()), appVersion: '0.9.0' });
+    const items = await store.queryVersionMetrics({});
     assert.equal(items.length, 1);
     assert.equal(items[0].version, '0.9.0', 'ALTER 补齐后版本列可用');
-    store.close();
+    await store.close();
   });
 
-  it('聚合器 version 维度：run/model span/tool call 按 traceId 归入版本；缺版本归 unknown；不污染全局', () => {
+  it('聚合器 version 维度：run/model span/tool call 按 traceId 归入版本；缺版本归 unknown；不污染全局', async () => {
     const agg = new Aggregator({ windowMs: 10 * 60_000, bucketMs: 60_000 });
     const now = Date.now();
     // v1：1 run + 1 model span（attempts=2 → 1 次重试）+ 1 次工具调用
@@ -697,31 +697,31 @@ describe('版本维度聚合 /metrics/versions', () => {
     agg.ingestRun({ ...makeRun('t3', now + 2), durationMs: 300 });
 
     const filter = { since: now, until: now + 60_000 };
-    const all = agg.summary(filter) as any;
+    const all = (await agg.summary(filter)) as any;
     assert.equal(all.requests, 4, '全局 = 3 run + 1 tool');
 
-    const v1 = agg.summary({ ...filter, version: '1.0.0' }) as any;
+    const v1 = (await agg.summary({ ...filter, version: '1.0.0' })) as any;
     assert.equal(v1.requests, 2, 'v1 = 1 run + 1 tool（版本口径与全局一致，工具调用计入 requests）');
     assert.equal(v1.successRate, 0.5, 'success=1 / requests=2');
     assert.equal(v1.retryRate, 1, '1 次重试 / 1 次模型调用');
     assert.equal(v1.totalTokens, 15, 'model span tokens 10+5');
 
-    const v2 = agg.summary({ ...filter, version: '2.0.0' }) as any;
+    const v2 = (await agg.summary({ ...filter, version: '2.0.0' })) as any;
     assert.equal(v2.requests, 1);
     assert.equal(v2.totalTokens, 0, 'v2 无 model span → tokens 0');
 
-    const unk = agg.summary({ ...filter, version: 'unknown' }) as any;
+    const unk = (await agg.summary({ ...filter, version: 'unknown' })) as any;
     assert.equal(unk.requests, 1, '缺版本归 unknown');
 
     // timeseries / tools 同样支持版本过滤
-    const ts = agg.timeseries({ ...filter, version: '1.0.0' }, 60_000, 'requests');
+    const ts = await agg.timeseries({ ...filter, version: '1.0.0' }, 60_000, 'requests');
     assert.equal(ts[0].v, 2);
-    const tools = agg.tools({ ...filter, version: '1.0.0' });
+    const tools = await agg.tools({ ...filter, version: '1.0.0' });
     assert.equal(tools.length, 1);
     assert.equal(tools[0].tool, 'echo');
 
     // 不指定版本 = 全局，不因 version 维度受影响
-    assert.equal((agg.summary(filter) as any).requests, all.requests);
+    assert.equal(((await agg.summary(filter)) as any).requests, all.requests);
   });
 
   it('版本筛选 E2E：/metrics/summary?version= 与 /traces?version= 过滤，traces 带 appVersion', async () => {
@@ -750,20 +750,20 @@ describe('P0 retention 数据保留', () => {
     const dbPath = tempDb();
     const store = new SQLiteStore(dbPath);
     const now = Date.now();
-    store.insertRun(makeRun('old', now - 40 * 86400_000));
-    store.insertSpan(makeSpan('old', now - 40 * 86400_000));
-    store.insertToolCall(makeTool('old'));
-    store.insertRun(makeRun('new', now));
+    await store.insertRun(makeRun('old', now - 40 * 86400_000));
+    await store.insertSpan(makeSpan('old', now - 40 * 86400_000));
+    await store.insertToolCall(makeTool('old'));
+    await store.insertRun(makeRun('new', now));
 
     const backupDir = path.join(path.dirname(dbPath), 'backup');
-    const backupFile = store.backup(backupDir);
+    const backupFile = await store.backup(backupDir);
     assert.ok(fs.existsSync(backupFile), 'VACUUM INTO 备份文件应存在');
 
-    const cleared = store.prune(now - 10 * 86400_000); // 保留 10 天
+    const cleared = await store.prune(now - 10 * 86400_000); // 保留 10 天
     assert.equal(cleared, 3, '应删除 3 条过期记录');
-    assert.equal(store.queryTrace('old'), undefined, '过期 trace 应被删除');
-    assert.ok(store.queryTrace('new'), '新 trace 应保留');
-    store.close();
+    assert.equal(await store.queryTrace('old'), undefined, '过期 trace 应被删除');
+    assert.ok(await store.queryTrace('new'), '新 trace 应保留');
+    await store.close();
   });
 
   it('collector 定时清理：过期数据被 prune，startup 清理不误删', async () => {
@@ -773,8 +773,8 @@ describe('P0 retention 数据保留', () => {
       { retention: { days: 0.000001, intervalMs: 20 } },
     );
     const writer = new SQLiteStore(dbPath);
-    writer.insertRun(makeRun('old', Date.now() - 3600_000));
-    writer.close();
+    await writer.insertRun(makeRun('old', Date.now() - 3600_000));
+    await writer.close();
 
     await sleep(150);
     const list = await getJson(baseUrl, '/traces', token);
@@ -1388,11 +1388,11 @@ describe('P2-3 会话持久化（SESSION_SECRET 无状态签名 token）', () =>
 });
 
 describe('P2 retention 覆盖新表（events/retry_attempts）', () => {
-  it('prune 删除过期 events/retries，保留新明细', () => {
+  it('prune 删除过期 events/retries，保留新明细', async () => {
     const dbPath = tempDb();
     const store = new SQLiteStore(dbPath);
     const now = Date.now();
-    store.flush(
+    await store.flush(
       {
         runs: [makeRun('old', now - 40 * 86400_000), makeRun('new', now)],
         spans: [],
@@ -1410,16 +1410,16 @@ describe('P2 retention 覆盖新表（events/retry_attempts）', () => {
       APP_ID,
     );
 
-    const cleared = store.prune(now - 10 * 86400_000); // 保留 10 天
+    const cleared = await store.prune(now - 10 * 86400_000); // 保留 10 天
     assert.equal(cleared, 3, '应删除 1 run + 1 event + 1 retry');
-    assert.equal(store.queryTrace('old'), undefined, '过期 trace 应整体删除');
+    assert.equal(await store.queryTrace('old'), undefined, '过期 trace 应整体删除');
 
-    const kept = store.queryTrace('new');
+    const kept = await store.queryTrace('new');
     assert.ok(kept, '新 trace 应保留');
     assert.equal(kept.events.length, 1, '新 trace 的 events 应保留');
     assert.equal(kept.events[0].name, 'evt-new');
     assert.equal(kept.retries.length, 1, '新 trace 的 retries 应保留');
     assert.equal(kept.retries[0].status, 429);
-    store.close();
+    await store.close();
   });
 });

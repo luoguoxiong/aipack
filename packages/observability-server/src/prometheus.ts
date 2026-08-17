@@ -7,7 +7,7 @@
  *        严格 counter 需 OTLP/推送型，留待 P3）。gauge 类直接导出当前值。
  */
 
-import type { Aggregator } from './aggregator';
+import type { Aggregator } from './aggregator/interface';
 import type { AggregatedMetrics } from './types';
 
 export interface PrometheusDeps {
@@ -46,7 +46,7 @@ function metric(
 }
 
 /** 渲染 Prometheus 文本（每次调用快照当前聚合窗口） */
-export function renderPrometheusMetrics(deps: PrometheusDeps): string {
+export async function renderPrometheusMetrics(deps: PrometheusDeps): Promise<string> {
   const windowMs = deps.windowMs ?? DEFAULT_WINDOW_MS;
   const since = Date.now() - windowMs;
   const out: string[] = [];
@@ -70,7 +70,7 @@ export function renderPrometheusMetrics(deps: PrometheusDeps): string {
   for (const appId of appIds) {
     const agg = deps.aggregatorFor(appId || undefined);
     // summary 签名带 groupBy 重载返回联合类型，此处不分组 → 显式窄化为单应用聚合
-    const s = agg.summary({ since }) as AggregatedMetrics;
+    const s = (await agg.summary({ since })) as AggregatedMetrics;
     const lbl = label(appId || undefined);
     requests.push(`aipack_requests_total${lbl} ${fmt(s.requests)}`);
     successRatio.push(`aipack_success_ratio${lbl} ${fmt(s.successRate)}`);
@@ -86,7 +86,7 @@ export function renderPrometheusMetrics(deps: PrometheusDeps): string {
         `aipack_errors_total${appId ? `{app_id="${appId}",class="${escapeLabel(cls)}"}` : `{class="${escapeLabel(cls)}"}`} ${count}`,
       );
     }
-    for (const t of agg.tools({ since })) {
+    for (const t of await agg.tools({ since })) {
       const toolLbl = appId ? `{app_id="${appId}",tool="${escapeLabel(t.tool)}"}` : `{tool="${escapeLabel(t.tool)}"}`;
       toolCalls.push(`aipack_tool_calls_total${toolLbl} ${t.calls}`);
       toolSuccessRatio.push(`aipack_tool_success_ratio${toolLbl} ${fmt(t.successRate)}`);

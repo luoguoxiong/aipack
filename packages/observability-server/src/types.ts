@@ -36,11 +36,13 @@ export interface AggregatedMetrics {
   permissionDenied: number;
   /** 错误分类计数（errorClass -> 次数），供面板错误分析 */
   errorClasses: Record<string, number>;
+  /** Phase 6 — Cost：窗口内总成本（分）；memory 聚合器累计 model span 的 costCents */
+  costTotal?: number;
 }
 
 export type GroupBy = 'model' | 'tool' | 'session';
 
-export type TimeseriesMetric = 'requests' | 'successRate' | 'tokensTotal';
+export type TimeseriesMetric = 'requests' | 'successRate' | 'tokensTotal' | 'cost';
 
 export interface TimeseriesPoint {
   /** 桶起始时间（epoch ms） */

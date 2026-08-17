@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Button,
   Card,
@@ -16,6 +17,7 @@ import {
 import {
   CopyOutlined,
   DeleteOutlined,
+  DollarOutlined,
   EyeOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -25,6 +27,7 @@ import { api } from '../api';
 import type { AppInfo } from '../types';
 
 export default function AppsPage() {
+  const navigate = useNavigate();
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -178,6 +181,9 @@ export default function AppsPage() {
         }
         extra={
           <Space>
+            <Button icon={<DollarOutlined />} onClick={() => navigate('/model-prices')}>
+              模型价格管理
+            </Button>
             <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
               刷新
             </Button>

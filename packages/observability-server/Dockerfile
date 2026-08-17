@@ -48,4 +48,6 @@ VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
   CMD node -e "fetch('http://127.0.0.1:8787/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
-CMD ["node", "packages/observability-server/dist/cli.js"]
+# CLI 已移除：宿主应用通过 createCollector/createCollectorServer 自行组装启动入口
+# 示例 CMD（需宿主提供入口）：
+# CMD ["node", "your-app/dist/server.js"]

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   Badge,
   Button,
@@ -10,13 +11,15 @@ import {
   Select,
   Space,
   Table,
+  Tabs,
   Tag,
   Timeline,
   Typography,
 } from 'antd';
-import { LinkOutlined, ReloadOutlined } from '@ant-design/icons';
+import { CopyOutlined, LinkOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api';
 import type { AppInfo, RetryAttempt, Span, TraceDetail, TraceEvent, TraceItem } from '../types';
+import TraceGantt from '../components/TraceGantt';
 
 type StatusKey = '' | 'success' | 'error' | 'validation';
 
@@ -46,6 +49,9 @@ export default function TracesPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   /** 服务端配置的日志跳转模板（LOG_STREAM_URL_TEMPLATE），未配置则不显示"查看日志" */
   const [logStreamUrlTemplate, setLogStreamUrlTemplate] = useState<string | undefined>(undefined);
+  /** Phase 9：从路由 :traceId 深链接自动打开详情（支持错误下钻跳转） */
+  const { traceId: routeTraceId } = useParams<{ traceId?: string }>();
+  const navigate = useNavigate();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,6 +87,28 @@ export default function TracesPage() {
       .then((m) => setLogStreamUrlTemplate(m.logStreamUrlTemplate))
       .catch(() => {});
   }, []);
+
+  // 深链接：路由带 :traceId 时自动加载并打开详情抽屉
+  useEffect(() => {
+    if (!routeTraceId) return;
+    let cancelled = false;
+    setDetail(null);
+    setDetailLoading(true);
+    api
+      .traceDetail(routeTraceId)
+      .then((d) => {
+        if (!cancelled) setDetail(d);
+      })
+      .catch((err) => {
+        if (!cancelled) message.error((err as Error).message);
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [routeTraceId]);
 
   const onRowClick = async (traceId: string) => {
     setDetail(null);
@@ -162,6 +190,12 @@ export default function TracesPage() {
     },
   ];
 
+  // 瀑布图零点：trace 内最早 span 的起始时间
+  const traceStartedAt = useMemo(() => {
+    if (!detail || !detail.spans.length) return 0;
+    return Math.min(...detail.spans.map((s) => s.startedAt));
+  }, [detail]);
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Card size="small">
@@ -229,11 +263,51 @@ export default function TracesPage() {
         title={detail ? `Trace: ${detail.traceId}` : 'Trace 详情'}
         width={620}
         open={!!detail}
-        onClose={() => setDetail(null)}
+        onClose={() => {
+          setDetail(null);
+          // 深链接关闭时清理路由参数，避免重开抽屉
+          if (routeTraceId) navigate('/traces');
+        }}
         loading={detailLoading}
       >
         {detail ? (
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            {/* Phase 9 跨系统链路信息块：w3cTraceId 可复制，parentTraceId 为 URL 时渲染外链 */}
+            {detail.w3cTraceId || detail.parentTraceId ? (
+              <Card size="small" title="跨系统链路" style={{ background: '#f0f9ff' }}>
+                <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                  {detail.w3cTraceId ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Typography.Text type="secondary">w3cTraceId:</Typography.Text>
+                      <span className="mono" style={{ wordBreak: 'break-all' }}>
+                        {detail.w3cTraceId}
+                      </span>
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<CopyOutlined />}
+                        onClick={() => copyText(detail.w3cTraceId!)}
+                      />
+                    </div>
+                  ) : null}
+                  {detail.parentTraceId ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <Typography.Text type="secondary">parentTraceId:</Typography.Text>
+                      {isUrl(detail.parentTraceId) ? (
+                        <a href={detail.parentTraceId} target="_blank" rel="noreferrer">
+                          <LinkOutlined /> {detail.parentTraceId}
+                        </a>
+                      ) : (
+                        <span className="mono" style={{ wordBreak: 'break-all' }}>
+                          {detail.parentTraceId}
+                        </span>
+                      )}
+                    </div>
+                  ) : null}
+                </Space>
+              </Card>
+            ) : null}
+
             {/* 日志关联入口（P1-1）：LOG_STREAM_URL_TEMPLATE 把 %s 替换为 traceId 跳转日志系统 */}
             {logStreamUrlTemplate ? (
               <a
@@ -246,44 +320,64 @@ export default function TracesPage() {
                 </Button>
               </a>
             ) : null}
-            <Typography.Text type="secondary">Span 时间线（模型=蓝 / 工具=绿 / 错误=红）</Typography.Text>
-            {detail.spans.length ? (
-              detail.spans.map((s, i) => (
-                <div
-                  key={`${s.spanId}-${i}`}
-                  style={{
-                    display: 'flex',
-                    gap: 12,
-                    padding: '10px 12px',
-                    background: '#fafafa',
-                    borderRadius: 8,
-                    borderLeft: `4px solid ${s.status === 'error' ? '#dc2626' : KIND_COLOR(s.kind)}`,
-                  }}
-                >
-                  <Tag color={s.status === 'error' ? 'error' : KIND_META[s.kind].color}>
-                    {s.status === 'error' ? `${KIND_META[s.kind].label}!` : KIND_META[s.kind].label}
-                  </Tag>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, wordBreak: 'break-all' }} className="mono">
-                      {s.name}
-                    </div>
-                    <div style={{ color: '#6b7280', fontSize: 12 }}>
-                      {new Date(s.startedAt).toLocaleTimeString('zh-CN')} · {Math.round(s.durationMs)}ms
-                      {s.errorClass ? ` · errorClass: ${s.errorClass}` : ''}
-                    </div>
-                    <div style={{ color: '#6b7280', fontSize: 12 }}>
-                      tokens ↑{s.tokens.input} ↓{s.tokens.output}
-                      {s.tokens.cacheRead || s.tokens.cacheWrite
-                        ? ` · cache ↑${s.tokens.cacheRead} ↓${s.tokens.cacheWrite}`
-                        : ''}
-                      {s.attempts && s.attempts > 1 ? ` · 重试 ${s.attempts - 1} 次` : ''}
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <Empty description="无 span" />
-            )}
+
+            {/* Span 视图：瀑布图 / 列表切换 */}
+            <Tabs
+              size="small"
+              defaultActiveKey="gantt"
+              items={[
+                {
+                  key: 'gantt',
+                  label: '瀑布图',
+                  children: detail.spans.length ? (
+                    <TraceGantt spans={detail.spans} traceStartedAt={traceStartedAt} />
+                  ) : (
+                    <Empty description="无 span" />
+                  ),
+                },
+                {
+                  key: 'list',
+                  label: '列表',
+                  children: detail.spans.length ? (
+                    detail.spans.map((s, i) => (
+                      <div
+                        key={`${s.spanId}-${i}`}
+                        style={{
+                          display: 'flex',
+                          gap: 12,
+                          padding: '10px 12px',
+                          background: '#fafafa',
+                          borderRadius: 8,
+                          borderLeft: `4px solid ${s.status === 'error' ? '#dc2626' : KIND_COLOR(s.kind)}`,
+                        }}
+                      >
+                        <Tag color={s.status === 'error' ? 'error' : KIND_META[s.kind].color}>
+                          {s.status === 'error' ? `${KIND_META[s.kind].label}!` : KIND_META[s.kind].label}
+                        </Tag>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, wordBreak: 'break-all' }} className="mono">
+                            {s.name}
+                          </div>
+                          <div style={{ color: '#6b7280', fontSize: 12 }}>
+                            {new Date(s.startedAt).toLocaleTimeString('zh-CN')} · {Math.round(s.durationMs)}ms
+                            {s.errorClass ? ` · errorClass: ${s.errorClass}` : ''}
+                          </div>
+                          <div style={{ color: '#6b7280', fontSize: 12 }}>
+                            tokens ↑{s.tokens.input} ↓{s.tokens.output}
+                            {s.tokens.cacheRead || s.tokens.cacheWrite
+                              ? ` · cache ↑${s.tokens.cacheRead} ↓${s.tokens.cacheWrite}`
+                              : ''}
+                            {s.attempts && s.attempts > 1 ? ` · 重试 ${s.attempts - 1} 次` : ''}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <Empty description="无 span" />
+                  ),
+                },
+              ]}
+            />
 
             {/* P2-2 重试链（per-attempt）：每次重试的 provider/状态码/退避时长 */}
             {detail.retries?.length ? (
@@ -391,4 +485,17 @@ function formatEventData(data: unknown): string {
   } catch {
     return String(data);
   }
+}
+
+/** 复制文本到剪贴板并提示 */
+function copyText(text: string): void {
+  navigator.clipboard?.writeText(text).then(
+    () => message.success('已复制'),
+    () => message.error('复制失败'),
+  );
+}
+
+/** 判断字符串是否为可跳转的 URL（http/https） */
+function isUrl(s: string): boolean {
+  return /^https?:\/\//i.test(s);
 }

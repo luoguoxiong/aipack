@@ -17,6 +17,8 @@ export interface Summary {
   retryBackoffP95Ms: number;
   permissionDenied: number;
   errorClasses: Record<string, number>;
+  /** Phase 6 成本合计（单位：美元 $，向后兼容，缺失时按 0 处理） */
+  costTotal?: number;
 }
 
 export interface ToolStat {
@@ -120,6 +122,10 @@ export interface TraceDetail {
   spans: Span[];
   events: TraceEvent[];
   retries: RetryAttempt[];
+  /** Phase 9 跨系统链路：W3C traceId（可选，用于跨服务链路关联） */
+  w3cTraceId?: string;
+  /** Phase 9 跨系统链路：父系统 trace 引用（URL 或父 traceId，可选） */
+  parentTraceId?: string;
 }
 
 export interface AppInfo {
@@ -133,6 +139,80 @@ export interface AppInfo {
 export interface LoginResponse {
   token: string;
   username: string;
+}
+
+// ── Phase 4：多用户 RBAC ──────────────────────────────────────────
+
+/** 多用户登录响应（/api/auth/login multi 模式） */
+export interface MultiLoginResponse {
+  user: { id: string; email: string; name?: string };
+  accessToken: string;
+  refreshToken: string;
+}
+
+/** /api/auth/me 多用户模式响应 */
+export interface MultiMeResponse {
+  id: string;
+  email: string;
+  name?: string;
+  createdAt?: number;
+  role?: 'owner' | 'editor' | 'viewer';
+  projectId?: string;
+}
+
+export interface UserInfo {
+  id: string;
+  email: string;
+  name?: string;
+  role?: 'owner' | 'editor' | 'viewer';
+  projectId?: string;
+}
+
+export interface ProjectItem {
+  id: string;
+  name: string;
+  ownerId: string;
+  createdAt: number;
+}
+
+export interface ProjectMember {
+  userId: string;
+  email?: string;
+  name?: string;
+  role: 'owner' | 'editor' | 'viewer';
+  grantedAt: number;
+  grantedBy: string;
+}
+
+// ── Phase 5：Agent 定义 ──────────────────────────────────────────
+
+export interface AgentSpec {
+  systemPrompt: string;
+  model: {
+    provider: string;
+    id: string;
+    temperature?: number;
+    maxTokens?: number;
+  };
+  tools: string[];
+  params?: {
+    maxTurns?: number;
+    approvalMode?: 'auto' | 'always' | 'never';
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+export interface AgentDefinitionItem {
+  id: string;
+  projectId: string;
+  name: string;
+  version: number;
+  status: 'draft' | 'published' | 'archived';
+  spec: AgentSpec;
+  createdBy: string;
+  createdAt: number;
+  publishedAt?: number;
 }
 
 // ── 告警 ──────────────────────────────────────────────────────────
@@ -192,4 +272,51 @@ export interface AlertEventListResponse {
 export interface Meta {
   /** Trace 详情"查看日志"跳转模板（%s 替换为 traceId），未配置时缺省 */
   logStreamUrlTemplate?: string;
+}
+
+// ── Phase 6 成本核算 ─────────────────────────────────────────────
+
+/** 成本聚合项（按 model 或 app 维度分组） */
+export interface CostSummaryItem {
+  /** model id 或 app id */
+  key: string;
+  /** 成本（单位：分，便于精确累加） */
+  costCents: number;
+  /** 调用次数 */
+  runs: number;
+}
+
+/** 模型价格配置 */
+export interface ModelPrice {
+  modelId: string;
+  inputPer1m: number;
+  outputPer1m: number;
+  cacheReadPer1m: number;
+  cacheWritePer1m: number;
+  currency: string;
+  /** 生效时间（epoch ms） */
+  effectiveAt: number;
+}
+
+// ── Phase 9 错误归因下钻 ─────────────────────────────────────────
+
+/** 错误类 TopN 计数项 */
+export interface ErrorClassCountItem {
+  errorClass: string;
+  count: number;
+}
+
+/** 错误类下钻结果：最近 trace + 模型/工具分布 */
+export interface ErrorClassDrillResult {
+  errorClass: string;
+  recentTraces: Array<{
+    traceId: string;
+    startedAt: number;
+    durationMs: number;
+    model?: string;
+    appId?: string;
+    sessionKey?: string;
+  }>;
+  byModel: Record<string, number>;
+  byTool: Record<string, number>;
 }

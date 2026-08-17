@@ -7,16 +7,19 @@
  * - 空数据防护：见 rules.ts requiresNoDataGuard —— 空窗口不评估，避免误报。
  */
 
-import type { Aggregator } from '../aggregator';
+import type { Aggregator } from '../aggregator/interface';
 import type { AggregatedMetrics } from '../types';
-import type { SQLiteStore, AlertRuleRow } from '../store';
+import type { TraceStore, AlertStore, AlertRuleRow } from '../store';
 import type { Notifier } from './notify';
 import { compare, requiresNoDataGuard, isVersionRegressionMetric, MIN_VERSION_REQUESTS } from './rules';
 
 export interface EvaluatorDeps {
   /** 按应用解析聚合器（与查询 API 同一实例） */
   aggregatorFor(appId?: string): Aggregator;
-  store: SQLiteStore;
+  /** 监控查询（version 回归分析）；Phase 2 起为 TraceStore（可能 ClickHouse） */
+  store: TraceStore;
+  /** 告警规则/事件存储（仍为 SQLiteStore，与监控库分离） */
+  alertStore: AlertStore;
   notifier: Notifier;
   /** 评估周期（ms），默认 60s */
   intervalMs?: number;
@@ -50,23 +53,24 @@ export function createAlertEvaluator(deps: EvaluatorDeps): AlertEvaluator {
   };
 
   /** 取指标值；无数据/指标不可得时返回 undefined（跳过评估） */
-  function computeValue(rule: AlertRuleRow): number | undefined {
+  async function computeValue(rule: AlertRuleRow): Promise<number | undefined> {
     const since = Date.now() - rule.lookbackMs;
     const agg = deps.aggregatorFor(rule.appId || undefined);
     const metric = rule.metric;
     // summary 无 groupBy 时恒返回 AggregatedMetrics（聚合器签名是联合类型，此处显式窄化）
-    const summaryOf = (): AggregatedMetrics => agg.summary({ since }) as AggregatedMetrics;
+    const summaryOf = async (): Promise<AggregatedMetrics> => (await agg.summary({ since })) as AggregatedMetrics;
 
     if (metric === 'toolSuccessRate') {
-      const tool = agg.tools({ since }).find((t) => t.tool === rule.toolName);
+      const tools = await agg.tools({ since });
+      const tool = tools.find((t) => t.tool === rule.toolName);
       if (!tool) return undefined; // 窗口内该工具无调用 → 不评估
       return tool.successRate;
     }
     if (metric === 'errorClassCount') {
-      return summaryOf().errorClasses[rule.errorClass ?? ''] ?? 0;
+      return (await summaryOf()).errorClasses[rule.errorClass ?? ''] ?? 0;
     }
 
-    const summary = summaryOf();
+    const summary = await summaryOf();
     if (requiresNoDataGuard(metric) && summary.requests === 0) return undefined;
 
     switch (metric) {
@@ -97,13 +101,13 @@ export function createAlertEvaluator(deps: EvaluatorDeps): AlertEvaluator {
    *   / unknown 不参与对比 → 返回 undefined 跳过评估；
    * - 阈值语义：versionSuccessRate 单位=百分点（0.1 = 10%），versionP95Ms 单位=ms。
    */
-  function computeVersionRegression(
+  async function computeVersionRegression(
     rule: AlertRuleRow,
-  ): { value: number; violated: boolean; vA: string; vB: string } | undefined {
+  ): Promise<{ value: number; violated: boolean; vA: string; vB: string } | undefined> {
     const until = Date.now();
     const since = until - rule.lookbackMs;
-    const versions = deps.store
-      .queryVersionMetrics({ since, until, appId: rule.appId || undefined })
+    const versions = (await deps.store
+      .queryVersionMetrics({ since, until, appId: rule.appId || undefined }))
       .filter((v) => v.version !== 'unknown'); // 旧 SDK/未配置版本不参与发布回归对比
     if (versions.length < 2) return undefined; // 冷启动：窗口内不足两个版本
     const a = versions[0]; // 最新
@@ -130,7 +134,7 @@ export function createAlertEvaluator(deps: EvaluatorDeps): AlertEvaluator {
     ctx?: { vA?: string; vB?: string },
   ): Promise<void> {
     const now = Date.now();
-    deps.store.insertAlertEvent({
+    deps.alertStore.insertAlertEvent({
       ruleId: rule.id,
       ruleName: rule.name,
       appId: rule.appId,
@@ -148,7 +152,7 @@ export function createAlertEvaluator(deps: EvaluatorDeps): AlertEvaluator {
   }
 
   async function evaluateOnce(): Promise<number> {
-    const rules = deps.store.listAlertRules();
+    const rules = deps.alertStore.listAlertRules();
     let transitions = 0;
     for (const rule of rules) {
       if (!rule.enabled) continue;
@@ -156,13 +160,13 @@ export function createAlertEvaluator(deps: EvaluatorDeps): AlertEvaluator {
       let violated: boolean;
       let ctx: { vA?: string; vB?: string } | undefined;
       if (isVersionRegressionMetric(rule.metric)) {
-        const reg = computeVersionRegression(rule);
+        const reg = await computeVersionRegression(rule);
         if (!reg) continue; // 冷启动/数据不足 → 跳过（状态保持不变）
         value = reg.value;
         violated = reg.violated;
         ctx = { vA: reg.vA, vB: reg.vB };
       } else {
-        const v = computeValue(rule);
+        const v = await computeValue(rule);
         if (v === undefined) continue;
         value = v;
         violated = compare(v, rule.operator, rule.threshold);
