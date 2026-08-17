@@ -18,6 +18,9 @@ import {
   CloudServerOutlined,
   NodeIndexOutlined,
   DashboardOutlined,
+  BellOutlined,
+  DollarOutlined,
+  CloudUploadOutlined,
 } from '@ant-design/icons';
 
 interface DocsLayoutProps {
@@ -26,9 +29,25 @@ interface DocsLayoutProps {
 
 interface MenuItem {
   key: string;
-  label: string;
+  label: ReactNode;
   icon?: ReactNode;
+  type?: 'group';
   children?: MenuItem[];
+}
+
+// 递归查找菜单项（支持嵌套 children / type='group'）
+function findMenuItem(
+  items: MenuItem[],
+  predicate: (m: MenuItem) => boolean,
+): MenuItem | undefined {
+  for (const m of items) {
+    if (predicate(m)) return m;
+    if (m.children) {
+      const hit = findMenuItem(m.children, predicate);
+      if (hit) return hit;
+    }
+  }
+  return undefined;
 }
 
 const quickstartMenu: MenuItem[] = [
@@ -59,12 +78,47 @@ const extendMenu: MenuItem[] = [
 ];
 
 const observabilityMenu: MenuItem[] = [
-  { key: '/observability', label: '事件时间线', icon: <NodeIndexOutlined /> },
-  { key: '/observability#setup', label: '接入方式', icon: <ApiOutlined /> },
-  { key: '/observability#events', label: '事件一览', icon: <DashboardOutlined /> },
-  { key: '/observability#trace', label: 'Trace 设计', icon: <LineChartOutlined /> },
-  { key: '/observability#metrics', label: '指标口径', icon: <AimOutlined /> },
-  { key: '/observability#s2', label: '聚合存储与 REST API', icon: <DatabaseOutlined /> },
+  // ── SDK 埋点（@aipack-ai/observability） ──
+  {
+    key: 'group-sdk',
+    type: 'group',
+    label: (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <LineChartOutlined /> SDK 埋点
+      </span>
+    ),
+    children: [
+      { key: '/observability#sdk-overview', label: '总览', icon: <RocketOutlined /> },
+      { key: '/observability#setup', label: '1. 接入方式', icon: <ApiOutlined /> },
+      { key: '/observability#events', label: '2. 事件一览', icon: <DashboardOutlined /> },
+      { key: '/observability#trace', label: '3. Trace 设计', icon: <NodeIndexOutlined /> },
+      { key: '/observability#metrics', label: '4. 生产指标口径', icon: <AimOutlined /> },
+      { key: '/observability#s2', label: '5. 埋点上报与后台收集', icon: <DatabaseOutlined /> },
+    ],
+  },
+  // ── Server 部署（@aipack-ai/observability-server） ──
+  {
+    key: 'group-server',
+    type: 'group',
+    label: (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <CloudServerOutlined /> Server 部署
+      </span>
+    ),
+    children: [
+      { key: '/observability#server-overview', label: '总览', icon: <RocketOutlined /> },
+      { key: '/observability#quickstart', label: '1. 快速开始', icon: <RocketOutlined /> },
+      { key: '/observability#architecture', label: '2. 架构总览', icon: <ExperimentOutlined /> },
+      { key: '/observability#storage', label: '3. 存储与聚合', icon: <DatabaseOutlined /> },
+      { key: '/observability#api', label: '4. REST API', icon: <ApiOutlined /> },
+      { key: '/observability#auth', label: '5. 用户与 RBAC', icon: <SafetyCertificateOutlined /> },
+      { key: '/observability#alerts', label: '6. 告警系统', icon: <BellOutlined /> },
+      { key: '/observability#cost', label: '7. 成本核算', icon: <DollarOutlined /> },
+      { key: '/observability#archive', label: '8. 冷数据归档', icon: <CloudUploadOutlined /> },
+      { key: '/observability#retention', label: '9. 数据保留', icon: <DatabaseOutlined /> },
+      { key: '/observability#dashboard', label: '10. 内置面板', icon: <DashboardOutlined /> },
+    ],
+  },
 ];
 
 const examplesMenu: MenuItem[] = [
@@ -99,12 +153,13 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     else if (path === '/packages' || path.startsWith('/packages')) items = packagesMenu;
     const selected = location.pathname + (location.hash || '');
     return {
-      // 精确匹配优先，避免 '/examples' 前缀项抢先匹配掉 '/examples#memory' 等锚点项
+      // 精确匹配优先，支持嵌套 children/group（递归查找）
       selectedKey:
-        items.find((m) => m.key === selected)?.key ||
-        items.find((m) => selected.startsWith(m.key))?.key ||
+        findMenuItem(items, (m) => m.key === selected)?.key ||
+        findMenuItem(items, (m) => selected.startsWith(m.key))?.key ||
         path,
-      openKeys: items.map((m) => m.key),
+      // group 类型不需要 openKeys；平铺菜单保留原行为
+      openKeys: items.filter((m) => m.type !== 'group').map((m) => m.key),
       rootPath: path,
     };
   }, [location.pathname, location.hash]);
@@ -123,16 +178,17 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     const [path, hash] = key.split('#');
     const target = hash ? `${path}#${hash}` : path;
     if (target !== location.pathname + location.hash) {
-      // 统一走 navigate 更新 URL（含 hash），由页面响应 hash 变化
-      // （如 /examples 页需先切换 Tab 才能定位锚点）
+      // navigate 触发 URL 变化；页面内部 useLocation().hash effect 会处理滚动
       navigate(target);
     }
-    if (hash) {
-      const el = document.getElementById(hash);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else {
+    if (!hash) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
     }
+    // 纯锚点直接滚动（如果 DOM 已渲染）；页面的 useLocation effect 也会兜底
+    const el = document.getElementById(hash);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // （若 DOM 未渲染到，页面内部 useEffect(location.hash) 会在 50ms 后再试一次）
   };
 
   if (rootPath === '/') {
@@ -151,11 +207,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
           defaultOpenKeys={openKeys}
           onClick={handleClick}
           style={{ borderRight: 'none', background: 'transparent' }}
-          items={currentMenu.map((m) => ({
-            key: m.key,
-            icon: m.icon,
-            label: m.label,
-          }))}
+          items={currentMenu as any}
         />
       </aside>
       <main className="docs-content">
