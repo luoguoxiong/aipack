@@ -29,6 +29,7 @@
  *     - 单实例吞吐：单 partition 顺序消费，批量 INSERT CH（约 5k msg/s）
  */
 
+import { createRequire } from 'node:module';
 import { loadConfig } from '../config.js';
 import type { CollectorConfig } from '../config.js';
 import { createTraceStore } from '../stores/index.js';
@@ -48,6 +49,9 @@ import type { ModelPriceStore } from '../stores/model-price-store.js';
 import { MysqlPool } from '../stores/mysql.js';
 import { createCostCalculator } from '../cost/calculator.js';
 import type { CostCalculator } from '../cost/calculator.js';
+
+// ESM（本包 type: module）下无全局 require，用 createRequire 兼容原 require('better-sqlite3') 的懒加载写法
+const require = createRequire(import.meta.url);
 
 interface WorkerConfig {
   brokers: string[];

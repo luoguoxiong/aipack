@@ -8,7 +8,10 @@
  * 连接串示例：mysql://aipack:aipackpass@localhost:3306/aipack
  */
 
+import { createRequire } from 'node:module';
 import type { Pool, PoolOptions, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
+
+const require = createRequire(import.meta.url);
 
 export interface Migration {
   version: number;
