@@ -23,6 +23,8 @@
     "build": "tsup && vite build --config web/vite.config.ts",
     "build:web": "vite build --config web/vite.config.ts",
     "prebuild": "pnpm --filter @aipack-ai/observability build || true",
+    "dev": "tsx src/main.ts",
+    "start": "node dist/main.js",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
     "test": "node --import tsx --test test/observability-server.test.ts",
     "worker": "tsx src/worker/ingest-worker.ts",

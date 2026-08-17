@@ -1,6 +1,8 @@
 # aipack observability-server 平台型部署基础设施
 #
-# 启动: docker compose -f infra/docker-compose.yml --env-file infra/.env up -d
+# 启动(在 packages/observability-server/ 目录下):
+#   cp .env.example .env  # 按需改密码
+#   docker compose -f infra/docker-compose.yml --env-file .env up -d
 # 停止: docker compose -f infra/docker-compose.yml down
 # 重置: docker compose -f infra/docker-compose.yml down -v
 #
