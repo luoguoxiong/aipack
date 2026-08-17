@@ -7,6 +7,8 @@
  * 零依赖实现，用于业务库主键（BTree 友好的时间有序 ID）。
  */
 
+import { randomFillSync } from 'node:crypto';
+
 // Crockford Base32 字母表（排除 I/L/O/U 避免混淆）
 const ENCODING = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const ENCODING_LEN = 32;
@@ -60,8 +62,8 @@ function encodeRandom(bytes: Uint8Array): string {
 
 function randomBytes(n: number): Uint8Array {
   const buf = new Uint8Array(n);
-  // 用 crypto.getRandomValues（Node 18+ globalThis.crypto）
-  globalThis.crypto.getRandomValues(buf);
+  // 用 node:crypto 的 randomFillSync（全 Node 版本可用；globalThis.crypto 在 Node 18 需 flag，19+ 才默认开启）
+  randomFillSync(buf);
   return buf;
 }
 

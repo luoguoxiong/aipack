@@ -2,14 +2,17 @@
 
 本地一键拉起 observability-server 平台型部署所需的 5 个依赖服务:MySQL / ClickHouse / Kafka / Zookeeper / Redis。
 
+> **工作目录**：以下命令在 `packages/observability-server/` 目录下执行（`.env` 在该目录，`infra/` 是其子目录）。
+> 在仓库根目录执行则用全路径：`docker compose -f packages/observability-server/infra/docker-compose.yml --env-file packages/observability-server/.env up -d`
+
 ## 快速开始
 
 ```bash
 # 1. 复制环境变量(按需改密码)
-cp infra/.env.example infra/.env
+cp .env.example .env
 
 # 2. 启动全部服务
-docker compose -f infra/docker-compose.yml --env-file infra/.env up -d
+docker compose -f infra/docker-compose.yml --env-file .env up -d
 
 # 3. 验证健康状态
 docker compose -f infra/docker-compose.yml ps
@@ -24,18 +27,19 @@ redis-cli -h 127.0.0.1 -p 6379 -a aipackpass ping
 
 ## 服务清单
 
-| 服务 | 镜像 | 宿主端口 | 容器端口 | 用途 |
-|---|---|---|---|---|
-| mysql | mysql:8.4 | 3306 | 3306 | 业务库:users/projects/agent_definitions/acl/apps/model_prices |
-| clickhouse | clickhouse/clickhouse-server:24.8 | 8123 (HTTP) / 9000 (TCP) | 8123 / 9000 | 监控库:runs/spans/tool_calls/events/retry_attempts |
-| zookeeper | confluentinc/cp-zookeeper:7.7.0 | - | 2181 | Kafka 协调 |
-| kafka | confluentinc/cp-kafka:7.7.0 | 9094 | 9092 (INTERNAL) | 消息队列,topic: `aipack.ingest` / `aipack.ingest.dlq` |
-| kafka-init | confluentinc/cp-kafka:7.7.0 | - | - | 一次性容器,创建 topic 后退出 |
-| redis | redis:7.4-alpine | 6379 | 6379 | 共享聚合窗口 + 限流计数 |
+| 服务       | 镜像                              | 宿主端口                 | 容器端口        | 用途                                                          |
+| ---------- | --------------------------------- | ------------------------ | --------------- | ------------------------------------------------------------- |
+| mysql      | mysql:8.4                         | 3306                     | 3306            | 业务库:users/projects/agent_definitions/acl/apps/model_prices |
+| clickhouse | clickhouse/clickhouse-server:24.8 | 8123 (HTTP) / 9000 (TCP) | 8123 / 9000     | 监控库:runs/spans/tool_calls/events/retry_attempts            |
+| zookeeper  | confluentinc/cp-zookeeper:7.7.0   | -                        | 2181            | Kafka 协调                                                    |
+| kafka      | confluentinc/cp-kafka:7.7.0       | 9094                     | 9092 (INTERNAL) | 消息队列,topic: `aipack.ingest` / `aipack.ingest.dlq`         |
+| kafka-init | confluentinc/cp-kafka:7.7.0       | -                        | -               | 一次性容器,创建 topic 后退出                                  |
+| redis      | redis:7.4-alpine                  | 6379                     | 6379            | 共享聚合窗口 + 限流计数                                       |
 
 ## 端口冲突
 
-默认端口都被占用时,改 `infra/.env`:
+默认端口都被占用时,改 `.env`(位于 `packages/observability-server/` 根目录):
+
 - `MYSQL_PORT=3307`
 - `CLICKHOUSE_HTTP_PORT=8124` / `CLICKHOUSE_TCP_PORT=9001`
 - `KAFKA_PORT=9095`
@@ -57,10 +61,12 @@ docker volume rm infra_clickhouse_data
 ## Kafka topic 配置
 
 `kafka-init` 容器在首次启动时自动创建:
+
 - `aipack.ingest` — 6 分区(由 `KAFKA_INGEST_PARTITIONS` 控制),retention 7 天
 - `aipack.ingest.dlq` — 1 分区,retention 30 天
 
 手动创建/查看:
+
 ```bash
 docker exec aipack-kafka kafka-topics --bootstrap-server localhost:9092 --list
 docker exec aipack-kafka kafka-topics --bootstrap-server localhost:9092 --describe --topic aipack.ingest

@@ -9,6 +9,7 @@
  */
 
 import type Database from 'better-sqlite3';
+import { createRequire } from 'node:module';
 import type {
   TraceStore,
   RunQueryFilter,
@@ -70,6 +71,9 @@ import {
   SQLiteRedactRuleStore,
   MySQLRedactRuleStore,
 } from './redact-rule-store';
+
+// ESM（本包 type: module）下无全局 require，用 createRequire 兼容原 require('better-sqlite3') 的懒加载写法
+const require = createRequire(import.meta.url);
 
 export interface BusinessStores {
   appStore: AppStore;

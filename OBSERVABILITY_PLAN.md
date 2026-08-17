@@ -106,7 +106,7 @@
 
 **任务**：
 - [ ] 新建 `infra/docker-compose.yml`，编排 5 个服务
-- [ ] 新建 `infra/.env.example`（端口/密码/版本）
+- [ ] 新建 `.env.example`（容器变量+应用连接配置；单一 .env 供应用与 compose 共用）
 - [ ] 新建 `infra/README.md`（启动/停止/重置命令）
 - [ ] ClickHouse 初始化 schema（`infra/clickhouse/init.sql`）
 - [ ] MySQL 初始化 schema（`infra/mysql/init.sql`）
