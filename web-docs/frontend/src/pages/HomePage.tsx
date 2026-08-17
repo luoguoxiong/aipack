@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { Button, Row, Col, Card, Tabs, Tag, message } from 'antd';
 import {
-  RocketOutlined,
   BookOutlined,
   ThunderboltOutlined,
   CodeOutlined,
@@ -131,11 +130,6 @@ export default function HomePage() {
       {/* Hero Section */}
       <section className="hero-section">
         <div className="hero-content">
-          <div style={{ marginBottom: 24 }}>
-            <Tag color="purple" style={{ fontSize: 13, padding: '4px 12px', borderRadius: 999 }}>
-              <RocketOutlined /> v1.0 正式发布 · 自研 Agent 框架
-            </Tag>
-          </div>
           <h1 className="hero-title">
             用 aipack，<br />快速构建你的 AI Agent
           </h1>
