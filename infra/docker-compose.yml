@@ -1,0 +1,161 @@
+# aipack observability-server 平台型部署基础设施
+#
+# 启动: docker compose -f infra/docker-compose.yml --env-file infra/.env up -d
+# 停止: docker compose -f infra/docker-compose.yml down
+# 重置: docker compose -f infra/docker-compose.yml down -v
+#
+# 服务清单:
+#   mysql         业务库 (users/projects/agent_definitions/acl/apps/model_prices)
+#   clickhouse    监控库 (runs/spans/tool_calls/events/retry_attempts)
+#   zookeeper     Kafka 协调
+#   kafka         消息队列 (topic: aipack.ingest / aipack.ingest.dlq)
+#   redis         共享聚合窗口 + 限流计数
+#
+# 默认仅暴露 localhost 端口,生产环境请改用内网/Docker network + TLS。
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: aipack-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-aipack}
+      MYSQL_USER: ${MYSQL_USER:-aipack}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-aipackpass}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./mysql/conf.d:/etc/mysql/conf.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpass}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: aipack-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-aipack}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-aipack}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-aipackpass}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"   # HTTP
+      - "${CLICKHOUSE_TCP_PORT:-9000}:9000"    # native
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.7.0
+    container_name: aipack-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: aipack-kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # 单机部署用 LISTENER_DOCKER_EXTERNAL 暴露给宿主
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:${KAFKA_PORT:-9094}
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 168                  # 7 天
+      KAFKA_LOG_SEGMENT_BYTES: 536870912              # 512MB
+      KAFKA_MESSAGE_MAX_BYTES: 10485760               # 10MB (匹配 collector MAX_BODY)
+    ports:
+      - "${KAFKA_PORT:-9094}:9094"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # 一次性初始化容器:创建 topic (Kafka AUTO_CREATE_TOPICS_ENABLE=false 时必需)
+  kafka-init:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: aipack-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "Creating topics..."
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists \
+          --topic aipack.ingest --partitions ${KAFKA_INGEST_PARTITIONS:-6} --replication-factor 1 \
+          --config retention.ms=604800000 --config max.message.bytes=10485760
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists \
+          --topic aipack.ingest.dlq --partitions 1 --replication-factor 1 \
+          --config retention.ms=2592000000
+        echo "Topics created:"
+        kafka-topics --bootstrap-server kafka:9092 --list
+    restart: "no"
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: aipack-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:-aipackpass}
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --appendonly
+      - "yes"
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-aipackpass}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mysql_data:
+  clickhouse_data:
+  zookeeper_data:
+  kafka_data:
+  redis_data:

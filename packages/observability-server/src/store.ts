@@ -13,6 +13,7 @@ import Database from 'better-sqlite3';
 import type { RunRecord, SpanRecord, ToolCallRecord, EventRecord, RetryRecord, EventBatch } from '@aipack-ai/observability';
 import type { AlertMetric, AlertOperator } from './alerts/rules';
 import type { VersionMetrics } from './types';
+import type { AppStore } from './stores/app-store';
 
 /** 面板应用（appId + appSecret，动态创建，替代静态 OBS_APPS 白名单） */
 export interface AppRecord {
@@ -55,38 +56,58 @@ export interface TraceDetail {
   retries: RetryRecord[];
 }
 
-export interface TraceStore {
-  insertRun(r: RunRecord): void;
-  insertSpan(s: SpanRecord): void;
-  insertToolCall(t: ToolCallRecord): void;
-  queryRuns(filter: RunQueryFilter): { total: number; items: RunListItem[] };
-  queryTrace(traceId: string): TraceDetail | undefined;
-  /** 按版本聚合（DB 直查，非内存窗口），返回按 lastSeenAt 倒序 */
-  queryVersionMetrics(filter: { since?: number; until?: number; appId?: string }): VersionMetrics[];
-  /** 批量写入（事务），由收集端 ingest 调用；appId 由鉴权头推导并盖戳 */
-  flush(batch: EventBatch, appId: string): void;
-  /** 删除 started_at 早于 before 的三表明细（事务），返回删除行数 */
-  prune(before: number): number;
-  /** 全库快照备份（VACUUM INTO），返回备份文件路径 */
-  backup(dir: string): string;
-  close(): void;
+export interface ErrorClassCountItem {
+  errorClass: string;
+  count: number;
 }
 
-/** 应用存储（apps 表）：面板动态管理 appId/appSecret */
-export interface AppStore {
-  createApp(name: string): AppRecord;
-  listApps(): AppRecord[];
-  deleteApp(appId: string): boolean;
-  getApp(appId: string): AppRecord | undefined;
-  /** 校验上报鉴权（appId + appSecret） */
-  verifyApp(appId: string, appSecret: string): boolean;
-  /** 重置应用密钥，返回新 secret */
-  regenerateSecret(appId: string): string | undefined;
-  /** 上报成功后刷新 last_seen_at */
-  touchApp(appId: string, ts: number): void;
-  /** 启动时种入静态白名单（OBS_APPS），已存在则跳过 */
-  seedApps(apps: Record<string, string>): void;
+export interface ErrorClassDrillResult {
+  errorClass: string;
+  /** 最近 N 条该类错误的 trace 摘要 */
+  recentTraces: Array<{
+    traceId: string;
+    startedAt: number;
+    durationMs: number;
+    model?: string;
+    appId?: string;
+    sessionKey?: string;
+  }>;
+  /** 模型分布（各模型出现该错误的次数） */
+  byModel: Record<string, number>;
+  /** 工具分布（各工具调用引发该错误的次数；blocked/skipped 不计入） */
+  byTool: Record<string, number>;
 }
+
+export interface ErrorClassFilter {
+  since?: number;
+  until?: number;
+  appId?: string;
+  limit?: number;
+}
+
+export interface TraceStore {
+  insertRun(r: RunRecord): Promise<void>;
+  insertSpan(s: SpanRecord): Promise<void>;
+  insertToolCall(t: ToolCallRecord): Promise<void>;
+  queryRuns(filter: RunQueryFilter): Promise<{ total: number; items: RunListItem[] }>;
+  queryTrace(traceId: string): Promise<TraceDetail | undefined>;
+  /** 按版本聚合（DB 直查，非内存窗口），返回按 lastSeenAt 倒序 */
+  queryVersionMetrics(filter: { since?: number; until?: number; appId?: string }): Promise<VersionMetrics[]>;
+  /** Phase 9 — 错误类 TopN 计数（面板卡片） */
+  queryErrorClassCounts(filter: ErrorClassFilter): Promise<ErrorClassCountItem[]>;
+  /** Phase 9 — 错误归因下钻：最近 N traces + 工具/模型分布 */
+  queryErrorClassDrill(filter: ErrorClassFilter & { errorClass: string }): Promise<ErrorClassDrillResult>;
+  /** 批量写入（事务），由收集端 ingest 调用；appId 由鉴权头推导并盖戳 */
+  flush(batch: EventBatch, appId: string): Promise<void>;
+  /** 删除 started_at 早于 before 的三表明细（事务），返回删除行数 */
+  prune(before: number): Promise<number>;
+  /** 全库快照备份（VACUUM INTO），返回备份文件路径 */
+  backup(dir: string): Promise<string>;
+  close(): Promise<void>;
+}
+
+/** 应用存储（apps 表）：面板动态管理 appId/appSecret — 异步接口，见 stores/app-store.ts */
+export type { AppStore } from './stores/app-store';
 
 /** 告警规则（alert_rules 表，面板 CRUD） */
 export interface AlertRuleRow {
@@ -168,7 +189,10 @@ CREATE TABLE IF NOT EXISTS runs (
   input_tokens INTEGER,
   output_tokens INTEGER,
   cache_read   INTEGER,
-  cache_write  INTEGER
+  cache_write  INTEGER,
+  -- Phase 9 — W3C Trace Context
+  parent_trace_id TEXT,
+  w3c_trace_id    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at);
 CREATE INDEX IF NOT EXISTS idx_runs_session ON runs(session_key);
@@ -306,10 +330,22 @@ function ensureVersionColumn(db: Database.Database): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_runs_version ON runs(version)');
 }
 
+/** Phase 9 — 存量库迁移：runs 表补 parent_trace_id / w3c_trace_id 两列 */
+function ensureW3cColumns(db: Database.Database): void {
+  const cols = db.prepare('PRAGMA table_info(runs)').all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === 'parent_trace_id')) {
+    db.exec('ALTER TABLE runs ADD COLUMN parent_trace_id TEXT');
+  }
+  if (!cols.some((c) => c.name === 'w3c_trace_id')) {
+    db.exec('ALTER TABLE runs ADD COLUMN w3c_trace_id TEXT');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_runs_w3c ON runs(w3c_trace_id) WHERE w3c_trace_id IS NOT NULL');
+}
+
 const RUN_COLS =
   'trace_id, app_id, started_at, ended_at, session_key, channel, model, version, status, error_class, ' +
   'turns, duration_ms, active_ms, queued_ms, ttft_ms, input_tokens, output_tokens, ' +
-  'cache_read, cache_write';
+  'cache_read, cache_write, parent_trace_id, w3c_trace_id';
 
 const SPAN_COLS =
   'trace_id, app_id, span_id, kind, name, started_at, duration_ms, status, error_class, ' +
@@ -345,6 +381,7 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
     ensureAppIdColumns(this.db);
     ensureSpanCacheColumns(this.db);
     ensureVersionColumn(this.db);
+    ensureW3cColumns(this.db);
 
     this.insertRunStmt = this.db.prepare(
       `INSERT INTO runs (${RUN_COLS}) VALUES (${RUN_COLS.split(',').map(() => '?').join(',')})`,
@@ -373,7 +410,7 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
 
   // ─── 应用管理（apps 表）───────────────────────────────────────
 
-  createApp(name: string): AppRecord {
+  async createApp(name: string): Promise<AppRecord> {
     const now = Date.now();
     const record: AppRecord = {
       appId: `app_${randomHex(8)}`,
@@ -387,31 +424,31 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
     return record;
   }
 
-  listApps(): AppRecord[] {
+  async listApps(): Promise<AppRecord[]> {
     const rows = this.db
       .prepare('SELECT * FROM apps ORDER BY created_at DESC')
       .all() as Array<Record<string, unknown>>;
     return rows.map(rowToApp);
   }
 
-  deleteApp(appId: string): boolean {
+  async deleteApp(appId: string): Promise<boolean> {
     const result = this.db.prepare('DELETE FROM apps WHERE app_id = ?').run(appId);
     return result.changes > 0;
   }
 
-  getApp(appId: string): AppRecord | undefined {
+  async getApp(appId: string): Promise<AppRecord | undefined> {
     const row = this.db.prepare('SELECT * FROM apps WHERE app_id = ?').get(appId) as
       | Record<string, unknown>
       | undefined;
     return row ? rowToApp(row) : undefined;
   }
 
-  verifyApp(appId: string, appSecret: string): boolean {
-    const app = this.getApp(appId);
+  async verifyApp(appId: string, appSecret: string): Promise<boolean> {
+    const app = await this.getApp(appId);
     return !!app && safeEqual(app.appSecret, appSecret);
   }
 
-  regenerateSecret(appId: string): string | undefined {
+  async regenerateSecret(appId: string): Promise<string | undefined> {
     const secret = `sk_${randomHex(24)}`;
     const result = this.db
       .prepare('UPDATE apps SET app_secret = ? WHERE app_id = ?')
@@ -419,11 +456,11 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
     return result.changes > 0 ? secret : undefined;
   }
 
-  touchApp(appId: string, ts: number): void {
+  async touchApp(appId: string, ts: number): Promise<void> {
     this.db.prepare('UPDATE apps SET last_seen_at = ? WHERE app_id = ?').run(ts, appId);
   }
 
-  seedApps(apps: Record<string, string>): void {
+  async seedApps(apps: Record<string, string>): Promise<void> {
     const stmt = this.db.prepare(
       'INSERT OR IGNORE INTO apps (app_id, app_secret, name, created_at) VALUES (?, ?, ?, ?)',
     );
@@ -435,19 +472,19 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
 
   // ─── 明细落盘 ─────────────────────────────────────────────────
 
-  insertRun(r: RunRecord): void {
+  async insertRun(r: RunRecord): Promise<void> {
     this.insertRunStmt.run(runArgs(r, undefined));
   }
 
-  insertSpan(s: SpanRecord): void {
+  async insertSpan(s: SpanRecord): Promise<void> {
     this.insertSpanStmt.run(spanArgs(s, undefined));
   }
 
-  insertToolCall(t: ToolCallRecord): void {
+  async insertToolCall(t: ToolCallRecord): Promise<void> {
     this.insertToolStmt.run(toolArgs(t, undefined));
   }
 
-  queryRuns(filter: RunQueryFilter): { total: number; items: RunListItem[] } {
+  async queryRuns(filter: RunQueryFilter): Promise<{ total: number; items: RunListItem[] }> {
     const where: string[] = [];
     const params: unknown[] = [];
     if (filter.since !== undefined) {
@@ -503,7 +540,7 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
     return { total: c, items: rows.map((r) => rowToRun(r)) };
   }
 
-  queryTrace(traceId: string): TraceDetail | undefined {
+  async queryTrace(traceId: string): Promise<TraceDetail | undefined> {
     const run = this.db
       .prepare('SELECT * FROM runs WHERE trace_id = ?')
       .get(traceId) as Record<string, unknown> | undefined;
@@ -537,7 +574,7 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
    *  - 错误分类 / 工具统计：GROUP BY / JOIN tool_calls
    *  version 为 NULL 的历史数据统一归入 'unknown'；返回按 lastSeenAt 倒序。
    */
-  queryVersionMetrics(filter: { since?: number; until?: number; appId?: string }): VersionMetrics[] {
+  async queryVersionMetrics(filter: { since?: number; until?: number; appId?: string }): Promise<VersionMetrics[]> {
     const conds: string[] = [];
     const params: unknown[] = [];
     if (filter.since !== undefined) {
@@ -703,7 +740,7 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
     return out;
   }
 
-  flush(batch: EventBatch, appId: string): void {
+  async flush(batch: EventBatch, appId: string): Promise<void> {
     if (
       !batch.runs.length &&
       !batch.spans.length &&
@@ -721,7 +758,7 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
   /** 删除 started_at 早于 before 的三表明细（事务）。按时间走 started_at 索引。
    *  tool_calls 无时间戳字段（ToolCallRecord 未含 startedAt），随其 trace 的
    *  runs 删除而清为孤儿（NOT EXISTS 走 runs 主键 + tool_calls trace 索引）。 */
-  prune(before: number): number {
+  async prune(before: number): Promise<number> {
     if (!Number.isFinite(before)) return 0;
     const delRuns = this.db.prepare('DELETE FROM runs WHERE started_at < ?');
     const delSpans = this.db.prepare('DELETE FROM spans WHERE started_at < ?');
@@ -747,7 +784,7 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
   }
 
   /** 全库快照备份（VACUUM INTO 到独立文件），返回备份路径 */
-  backup(dir: string): string {
+  async backup(dir: string): Promise<string> {
     mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `obs-backup-${Date.now()}.db`);
     this.db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
@@ -841,7 +878,80 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
     return { total: c, items: rows.map(rowToAlertEvent) };
   }
 
-  close(): void {
+  // ─── Phase 9：错误归因下钻 ─────────────────────────────────────
+
+  async queryErrorClassCounts(filter: ErrorClassFilter): Promise<ErrorClassCountItem[]> {
+    const { sql, params } = buildErrorWhere(filter);
+    const rows = this.db
+      .prepare(
+        `SELECT error_class AS cls, COUNT(*) AS c FROM runs
+         ${sql} AND error_class IS NOT NULL
+         GROUP BY error_class ORDER BY c DESC LIMIT ?`,
+      )
+      .all(...params, filter.limit ?? 20) as Array<{ cls: string; c: number }>;
+    return rows.map((r) => ({ errorClass: String(r.cls), count: Number(r.c) }));
+  }
+
+  async queryErrorClassDrill(
+    filter: ErrorClassFilter & { errorClass: string },
+  ): Promise<ErrorClassDrillResult> {
+    const { sql, params } = buildErrorWhere(filter);
+    const allParams = [...params, filter.errorClass];
+    const limit = filter.limit ?? 100;
+
+    // 1. 最近 N 条 traces（按 startedAt DESC）
+    const traceRows = this.db
+      .prepare(
+        `SELECT trace_id, started_at, duration_ms, model, app_id, session_key
+         FROM runs ${sql} AND error_class = ?
+         ORDER BY started_at DESC LIMIT ?`,
+      )
+      .all(...allParams, limit) as Array<Record<string, unknown>>;
+
+    const recentTraces = traceRows.map((r) => ({
+      traceId: String(r.trace_id),
+      startedAt: Number(r.started_at),
+      durationMs: Number(r.duration_ms),
+      model: optStr(r.model),
+      appId: optStr(r.app_id),
+      sessionKey: optStr(r.session_key),
+    }));
+
+    // 2. 模型分布：error_class=该类的 model span JOIN runs
+    const modelRows = this.db
+      .prepare(
+        `SELECT s.name AS m, COUNT(*) AS c FROM runs r
+           JOIN spans s ON s.trace_id = r.trace_id AND s.kind = 'model'
+         ${sql.replace('r.', 'runs.').replace('WHERE ', 'WHERE r.').replace('error_class = ?', `r.error_class = ?`)}
+         GROUP BY s.name ORDER BY c DESC`,
+      )
+      .all(...allParams) as Array<{ m: unknown; c: number }>;
+    const byModel: Record<string, number> = {};
+    for (const r of modelRows) {
+      // s.name 格式为 "model:<id>"，去掉前缀；若解析失败保留原名
+      const raw = String(r.m ?? 'unknown');
+      const key = raw.startsWith('model:') ? raw.slice('model:'.length) : raw;
+      byModel[key] = Number(r.c);
+    }
+
+    // 3. 工具分布：error_class=该类的 tool_calls JOIN runs（status='error' 才计数）
+    const toolRows = this.db
+      .prepare(
+        `SELECT t.tool_name AS tn, COUNT(*) AS c FROM runs r
+           JOIN tool_calls t ON t.trace_id = r.trace_id
+         ${buildErrorWhereForJoin(filter)} AND r.error_class = ? AND t.status = 'error'
+         GROUP BY t.tool_name ORDER BY c DESC`,
+      )
+      .all(...allParams) as Array<{ tn: unknown; c: number }>;
+    const byTool: Record<string, number> = {};
+    for (const r of toolRows) {
+      byTool[String(r.tn ?? 'unknown')] = Number(r.c);
+    }
+
+    return { errorClass: filter.errorClass, recentTraces, byModel, byTool };
+  }
+
+  async close(): Promise<void> {
     this.db.close();
   }
 }
@@ -870,6 +980,9 @@ function rowToRun(r: Record<string, unknown>): RunListItem {
     cacheRead: optNum(r.cache_read),
     cacheWrite: optNum(r.cache_write),
     retries: Number(r.retries ?? 0),
+    // Phase 9 — W3C Trace Context
+    parentTraceId: optStr(r.parent_trace_id),
+    w3cTraceId: optStr(r.w3c_trace_id),
   };
 }
 
@@ -916,6 +1029,7 @@ function runArgs(r: RunRecord, appId: string | undefined): unknown[] {
     r.traceId, n(appId), r.startedAt, r.endedAt, r.sessionKey, n(r.channel), n(r.model),
     n(r.appVersion), r.status, n(r.errorClass), r.turns, r.durationMs, r.activeMs, r.queuedMs,
     n(r.ttftMs), r.inputTokens, r.outputTokens, n(r.cacheRead), n(r.cacheWrite),
+    n(r.parentTraceId), n(r.w3cTraceId), // Phase 9 — W3C Trace Context
   ];
 }
 
@@ -1049,4 +1163,46 @@ function round8(n: number): number {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+// ─── Phase 9：错误归因查询辅助（SQL WHERE 组装）──────────────────
+
+/** 生成 runs 表范围过滤 WHERE 子句（前缀含 WHERE，条件用 AND 连接），返回 { sql, params } */
+function buildErrorWhere(filter: ErrorClassFilter): { sql: string; params: unknown[] } {
+  const conds: string[] = [];
+  const params: unknown[] = [];
+  if (filter.since !== undefined) {
+    conds.push('started_at >= ?');
+    params.push(filter.since);
+  }
+  if (filter.until !== undefined) {
+    conds.push('started_at < ?');
+    params.push(filter.until);
+  }
+  if (filter.appId) {
+    conds.push('app_id = ?');
+    params.push(filter.appId);
+  }
+  return {
+    sql: conds.length ? `WHERE ${conds.join(' AND ')}` : 'WHERE 1=1',
+    params,
+  };
+}
+
+/** 为 JOIN 版本（runs 别名 r + tool_calls/spans）生成等价 WHERE：字段用 r.xxx */
+function buildErrorWhereForJoin(filter: ErrorClassFilter): string {
+  const conds: string[] = [];
+  if (filter.since !== undefined) conds.push(`r.started_at >= ${escapeInt(filter.since)}`);
+  if (filter.until !== undefined) conds.push(`r.started_at < ${escapeInt(filter.until)}`);
+  if (filter.appId) conds.push(`r.app_id = ${escapeStr(filter.appId)}`);
+  return conds.length ? `WHERE ${conds.join(' AND ')}` : 'WHERE 1=1';
+}
+
+// SQLite better-sqlite3 同步函数无法在 JOIN 里用参数化两次（参数已经消耗过），
+// 这里提供安全转义作为退而求其次（since/until/appId 都是受信任输入）
+function escapeInt(v: number): string {
+  return Number.isFinite(v) ? String(Math.floor(v)) : '0';
+}
+function escapeStr(s: string): string {
+  return "'" + String(s).replace(/'/g, "''") + "'";
 }

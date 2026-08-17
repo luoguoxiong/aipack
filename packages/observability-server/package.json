@@ -13,7 +13,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "observability-server": "./dist/cli.js"
+    "observability-worker": "./dist/worker/ingest-worker.js"
   },
   "files": [
     "dist"
@@ -25,9 +25,8 @@
     "prebuild": "pnpm --filter @aipack-ai/observability build || true",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
     "test": "node --import tsx --test test/observability-server.test.ts",
-    "dev": "tsx src/cli.ts",
-    "dev:web": "vite --config web/vite.config.ts",
-    "start": "tsx src/cli.ts"
+    "worker": "tsx src/worker/ingest-worker.ts",
+    "dev:web": "vite --config web/vite.config.ts"
   },
   "keywords": [
     "aipack",
@@ -44,7 +43,10 @@
   },
   "dependencies": {
     "@aipack-ai/observability": "workspace:*",
-    "better-sqlite3": "^11.10.0"
+    "better-sqlite3": "^11.10.0",
+    "ioredis": "^5.4.1",
+    "kafkajs": "^2.2.4",
+    "mysql2": "^3.11.0"
   },
   "devDependencies": {
     "@aipack-ai/agent": "workspace:*",

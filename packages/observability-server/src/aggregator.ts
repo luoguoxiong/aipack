@@ -17,6 +17,7 @@ import type {
   TimeseriesPoint,
   ToolStat,
 } from './types';
+import type { Aggregator as IAggregator } from './aggregator/interface';
 
 interface ToolAgg {
   calls: number;
@@ -41,6 +42,8 @@ interface DimensionStats {
   retriesByStatus: Map<string, number>;
   /** P2-2 重试退避时长直方图（ms） */
   retryBackoff: Histogram;
+  /** Phase 6 — Cost：该桶累计 cost（分） */
+  costCents: number;
 }
 
 function newStats(): DimensionStats {
@@ -58,6 +61,7 @@ function newStats(): DimensionStats {
     errorClass: new Map(),
     retriesByStatus: new Map(),
     retryBackoff: new Histogram(),
+    costCents: 0,
   };
 }
 
@@ -70,7 +74,7 @@ export interface AggregatorOptions {
 
 type DimName = 'model' | 'tool' | 'session' | 'version';
 
-export class Aggregator {
+export class Aggregator implements IAggregator {
   private windowBuckets: number;
   private bucketMs: number;
   private global = new Map<number, DimensionStats>();
@@ -82,6 +86,8 @@ export class Aggregator {
   };
   /** traceId -> 版本（run 上报时记录，spans/toolCalls 无版本字段，靠它归入 version 维度；sweep 清理过期） */
   private traceVersion = new Map<string, { version: string; idx: number }>();
+  /** Phase 6 — Cost：累计 model span 的 costCents（分），summary 返回为 costTotal */
+  private totalCostCents = 0;
 
   constructor(opts: AggregatorOptions = {}) {
     this.bucketMs = opts.bucketMs ?? 60 * 1000;
@@ -130,8 +136,11 @@ export class Aggregator {
       st.retries += retries;
       st.totalTokens += tokens;
       st.duration.insert(s.durationMs);
+      st.costCents += s.costCents ?? 0;
       if (s.errorClass) bump(st.errorClass, s.errorClass);
     }
+    // Phase 6 — 累计 model span 成本（由 worker 端 CostCalculator 写入 span.costCents）
+    this.totalCostCents += s.costCents ?? 0;
   }
 
   ingestToolCall(t: ToolCallRecord): void {
@@ -185,10 +194,10 @@ export class Aggregator {
 
   // ─── 查询入口 ──────────────────────────────────────────────────
 
-  summary(
+  async summary(
     filter: SummaryFilter,
     groupBy?: GroupBy,
-  ): AggregatedMetrics | Record<string, AggregatedMetrics> {
+  ): Promise<AggregatedMetrics | Record<string, AggregatedMetrics>> {
     this.sweep();
     if (groupBy) {
       // version 过滤仅作用于未分组聚合：model/tool/session 维度桶不按版本细分，
@@ -206,11 +215,11 @@ export class Aggregator {
     return this.aggregate(source, filter);
   }
 
-  timeseries(
+  async timeseries(
     filter: SummaryFilter,
     stepMs: number,
     metric: TimeseriesMetric,
-  ): TimeseriesPoint[] {
+  ): Promise<TimeseriesPoint[]> {
     this.sweep();
     const stepIdx = Math.max(1, Math.round(stepMs / this.bucketMs));
     const groups = new Map<number, DimensionStats>();
@@ -231,9 +240,11 @@ export class Aggregator {
           ? gs.requests
           : metric === 'tokensTotal'
             ? gs.totalTokens
-            : gs.requests > 0
-              ? gs.success / gs.requests
-              : 0;
+            : metric === 'cost'
+              ? gs.costCents
+              : gs.requests > 0
+                ? gs.success / gs.requests
+                : 0;
       out.push({ t: g * stepIdx * this.bucketMs, v: round(v, 8) });
     }
     out.sort((a, b) => a.t - b.t);
@@ -241,7 +252,7 @@ export class Aggregator {
   }
 
   /** 工具统计（按成功率升序，blocked/skipped 不计入分母）；filter.version 时仅统计该版本 */
-  tools(filter: SummaryFilter): ToolStat[] {
+  async tools(filter: SummaryFilter): Promise<ToolStat[]> {
     this.sweep();
     const merged = newStats();
     const source = filter.version
@@ -266,13 +277,18 @@ export class Aggregator {
     return out;
   }
 
+  /** 关闭（Memory 实现无资源，no-op） */
+  async close(): Promise<void> {
+    // 内存聚合器无外部资源，no-op
+  }
+
   // ─── 内部 ──────────────────────────────────────────────────────
 
   private nowBucket(now = Date.now()): number {
     return Math.floor(now / this.bucketMs);
   }
 
-  private sweep(now = Date.now()): void {
+  sweep(now = Date.now()): void {
     const minIdx = this.nowBucket(now) - this.windowBuckets;
     sweepMap(this.global, minIdx);
     for (const name of ['model', 'tool', 'session', 'version'] as const) {
@@ -282,6 +298,16 @@ export class Aggregator {
     for (const [traceId, { idx }] of this.traceVersion) {
       if (idx < minIdx) this.traceVersion.delete(traceId);
     }
+  }
+
+  /** Phase 6 — 重置所有聚合状态（含 totalCostCents 清零） */
+  reset(): void {
+    this.totalCostCents = 0;
+    this.global.clear();
+    for (const name of ['model', 'tool', 'session', 'version'] as const) {
+      this.dims[name].clear();
+    }
+    this.traceVersion.clear();
   }
 
   private dimBucket(dim: DimName, key: string, idx: number): DimensionStats {
@@ -302,7 +328,8 @@ export class Aggregator {
       if (!inRange(idx, filter, this.bucketMs)) continue;
       mergeStats(merged, st);
     }
-    return toMetrics(merged);
+    // Phase 6 — 注入累计 cost（分）：用合并后的 per-bucket costCents（支持时间范围过滤）
+    return { ...toMetrics(merged), costTotal: merged.costCents };
   }
 }
 
@@ -331,6 +358,7 @@ function mergeStats(target: DimensionStats, src: DimensionStats): void {
   target.modelCalls += src.modelCalls;
   target.retries += src.retries;
   target.permissionDenied += src.permissionDenied;
+  target.costCents += src.costCents;
   for (const [name, agg] of src.tools) {
     const t = target.tools.get(name) ?? { calls: 0, ok: 0, error: 0, totalMs: 0 };
     t.calls += agg.calls;

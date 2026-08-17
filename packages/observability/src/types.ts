@@ -24,6 +24,12 @@ export interface RunRecord {
   outputTokens: number;
   cacheRead?: number;
   cacheWrite?: number;
+  /** Phase 6 — Cost：本次 run 总成本（分），由 worker 端 CostCalculator 累加后写入 */
+  costCents?: number;
+  /** Phase 9 — W3C Trace Context：外部系统传入的父 trace-id（跨系统调用链） */
+  parentTraceId?: string;
+  /** Phase 9 — W3C Trace Context：标准 32 hex 的 w3c trace-id，用于与 OpenTelemetry 链路打通 */
+  w3cTraceId?: string;
 }
 
 export interface SpanRecord {
@@ -42,6 +48,8 @@ export interface SpanRecord {
   cacheWrite?: number;
   /** 会话标识（支撑 session 维度 token 统计） */
   sessionKey?: string;
+  /** Phase 6 — Cost：本次模型调用成本（分），由 worker 端 CostCalculator 计算后写入 */
+  costCents?: number;
 }
 
 export interface ToolCallRecord {
