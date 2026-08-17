@@ -1,14 +1,18 @@
 # Netlify 部署配置 (仓库根目录)
 # 文档: https://docs.netlify.com/configure-builds/file-based-configuration/
+# Monorepo 配置: https://docs.netlify.com/configure-builds/monorepos/
 
 [build]
-  # 构建命令: 显式进入 web-docs 并用 --ignore-workspace 安装依赖
+  # 基础目录 (Monorepo 必需配置): 告诉 Netlify 这是唯一要构建的项目根,
+  # 避免自动扫描 packages/* apps/* 下的 package.json 触发 "Projects detected" 错误。
+  base = "web-docs"
+  # 构建命令 (注意: 因为 base=web-docs, 命令在 web-docs 目录下执行)
   # web-docs 不在根 pnpm-workspace.yaml 成员列表中 (只有 packages/* 和 apps/*),
-  # 但 pnpm 会向上查找发现根 workspace,导致安装 14 个根子项目而非 web-docs 依赖。
+  # 但 pnpm 会向上查找发现根 workspace,导致安装根子项目而非 web-docs 依赖。
   # --ignore-workspace 让 pnpm 把 web-docs 当独立项目安装。
-  command = "cd web-docs && pnpm install --frozen-lockfile --ignore-workspace && pnpm build"
-  # 发布目录 (vite.config.ts 中 outDir: '../dist')
-  publish = "web-docs/dist"
+  command = "pnpm install --frozen-lockfile --ignore-workspace && pnpm build"
+  # 发布目录 (相对 base 目录, vite.config.ts 中 outDir: '../dist')
+  publish = "dist"
 
 [build.environment]
   # 锁定 Node 版本以匹配本地开发环境
