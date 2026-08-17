@@ -48,9 +48,14 @@ jobs:
         run: npm install -g netlify-cli
 
       - name: Deploy to Netlify
+        # 必须在 web-docs 目录下执行,否则 Netlify CLI 会扫描整个 monorepo,
+        # 检测到 packages/* 和 apps/* 下的多个 package.json,触发
+        # "Projects detected" 错误。base=web-docs 仅对 netlify build 生效,
+        # netlify deploy --dir 不会使用 base 进行项目过滤。
+        working-directory: web-docs
         run: |
           netlify deploy \
-            --dir web-docs/dist \
+            --dir dist \
             --site ${{ secrets.NETLIFY_SITE_ID }} \
             --auth ${{ secrets.NETLIFY_AUTH_TOKEN }} \
             --prod
