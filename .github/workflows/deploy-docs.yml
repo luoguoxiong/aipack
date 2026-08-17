@@ -37,7 +37,9 @@ jobs:
           cache-dependency-path: web-docs/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm --dir web-docs install --frozen-lockfile
+        # web-docs 不在根 pnpm-workspace.yaml 成员列表中,但 pnpm 会向上查找发现根 workspace,
+        # 导致安装根子项目而非 web-docs 依赖。--ignore-workspace 让 pnpm 把 web-docs 当独立项目安装。
+        run: pnpm --dir web-docs install --frozen-lockfile --ignore-workspace
 
       - name: Build docs
         run: pnpm --dir web-docs build
