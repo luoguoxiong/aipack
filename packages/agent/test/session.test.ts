@@ -149,14 +149,13 @@ describe('FileSessionStorage list', () => {
   });
 
   it('list 时清理过期会话', async () => {
-    const store = new FileSessionStorage({ baseDir: tmpDir, maxAge: 50 });
+    // maxAge 留出余量，避免 I/O 抖动导致 fresh 误判过期
+    const store = new FileSessionStorage({ baseDir: tmpDir, maxAge: 1000 });
     await store.save('expired', {
       ...makeSession('expired'),
-      createdAt: new Date(Date.now() - 1000).toISOString(),
-      updatedAt: new Date(Date.now() - 1000).toISOString(),
+      createdAt: new Date(Date.now() - 10_000).toISOString(),
+      updatedAt: new Date(Date.now() - 10_000).toISOString(),
     });
-    await new Promise(r => setTimeout(r, 80));
-    // 等待后再保存 fresh，确保它未过期
     await store.save('fresh', makeSession('fresh'));
     const keys = await store.list();
     assert.ok(!keys.includes('expired'), '过期会话不应出现在 list');
