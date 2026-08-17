@@ -51,15 +51,6 @@ export function createProjectsHandler(deps: ProjectsApiDeps): ProjectsHandler {
       const path = url.pathname;
       const method = req.method || 'GET';
 
-      // ── 列表 ─────────────────────────────────────────────
-      if (path === '/api/projects') {
-        const auth = await authenticate(req, authCtx, true);
-        if (!auth || !auth.ok) return auth ? writeAuthFailure(res, auth) : json(res, 401, { error: 'unauthorized' });
-        if (!auth.user.isMulti) return json(res, 200, []); // 单用户模式：无项目概念
-        const projects = await deps.projectStore.listProjectsByUser(auth.user.userId);
-        return json(res, 200, projects.map(toProjectDto));
-      }
-
       // ── 创建 ─────────────────────────────────────────────
       if (method === 'POST' && path === '/api/projects') {
         const auth = await authenticate(req, authCtx, true);
@@ -85,6 +76,15 @@ export function createProjectsHandler(deps: ProjectsApiDeps): ProjectsHandler {
           'Set-Cookie': deps.jwt.buildAccessCookie(newToken),
           'X-Rotated-Token': newToken,
         });
+      }
+
+      // ── 列表 ─────────────────────────────────────────────
+      if (method === 'GET' && path === '/api/projects') {
+        const auth = await authenticate(req, authCtx, true);
+        if (!auth || !auth.ok) return auth ? writeAuthFailure(res, auth) : json(res, 401, { error: 'unauthorized' });
+        if (!auth.user.isMulti) return json(res, 200, []); // 单用户模式：无项目概念
+        const projects = await deps.projectStore.listProjectsByUser(auth.user.userId);
+        return json(res, 200, projects.map(toProjectDto));
       }
 
       // ── /api/projects/:pid(/...) ─────────────────────────
