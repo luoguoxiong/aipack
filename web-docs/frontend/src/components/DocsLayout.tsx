@@ -21,6 +21,7 @@ import {
   BellOutlined,
   DollarOutlined,
   CloudUploadOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons';
 
 interface DocsLayoutProps {
@@ -121,6 +122,22 @@ const observabilityMenu: MenuItem[] = [
   },
 ];
 
+const memoryMenu: MenuItem[] = [
+  { key: '/memory#overview', label: '总览', icon: <RocketOutlined /> },
+  { key: '/memory#quickstart', label: '1. 快速开始', icon: <ThunderboltOutlined /> },
+  { key: '/memory#pipeline', label: '2. 数据流闭环', icon: <ApiOutlined /> },
+  { key: '/memory#capture', label: '3. 自动捕获', icon: <DatabaseOutlined /> },
+  { key: '/memory#injection', label: '4. 自动注入', icon: <ThunderboltOutlined /> },
+  { key: '/memory#retrieval', label: '5. 混合检索', icon: <AimOutlined /> },
+  { key: '/memory#tools', label: '6. Agent 工具', icon: <CodeOutlined /> },
+  { key: '/memory#consolidation', label: '7. 记忆合并与修剪', icon: <ExperimentOutlined /> },
+  { key: '/memory#ttl', label: '8. TTL 过期', icon: <ClockCircleOutlined /> },
+  { key: '/memory#store-api', label: '9. Store API', icon: <ApiOutlined /> },
+  { key: '/memory#custom-store', label: '10. 自定义 Store', icon: <DatabaseOutlined /> },
+  { key: '/memory#events', label: '11. 事件监控', icon: <DashboardOutlined /> },
+  { key: '/memory#config', label: '12. 插件配置全览', icon: <SettingOutlined /> },
+];
+
 const examplesMenu: MenuItem[] = [
   { key: '/examples', label: '最小示例', icon: <CodeOutlined /> },
   { key: '/examples#memory', label: '记忆集成', icon: <DatabaseOutlined /> },
@@ -149,6 +166,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     else if (path === '/api' || path.startsWith('/api')) items = apiMenu;
     else if (path === '/extend' || path.startsWith('/extend')) items = extendMenu;
     else if (path === '/observability' || path.startsWith('/observability')) items = observabilityMenu;
+    else if (path === '/memory' || path.startsWith('/memory')) items = memoryMenu;
     else if (path === '/examples' || path.startsWith('/examples')) items = examplesMenu;
     else if (path === '/packages' || path.startsWith('/packages')) items = packagesMenu;
     const selected = location.pathname + (location.hash || '');
@@ -169,6 +187,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     if (rootPath === '/api') return apiMenu;
     if (rootPath === '/extend') return extendMenu;
     if (rootPath === '/observability') return observabilityMenu;
+    if (rootPath === '/memory') return memoryMenu;
     if (rootPath === '/examples') return examplesMenu;
     if (rootPath === '/packages') return packagesMenu;
     return [];
