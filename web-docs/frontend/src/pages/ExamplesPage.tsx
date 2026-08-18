@@ -31,10 +31,10 @@ export default function ExamplesPage() {
         message="安装示例依赖"
         description={
           <span>
-            除 <code>aipack</code> 核心外：
-            memory 示例需 <code>pnpm add aipack-memory</code>，
-            compression 示例需 <code>pnpm add aipack-compression</code>，
-            CLI 需 <code>pnpm add -g aipack-cli</code>。
+            除 <code>@aipack-ai/agent</code> 核心外：
+            memory 示例需 <code>pnpm add @aipack-ai/memory</code>，
+            compression 示例需 <code>pnpm add @aipack-ai/compression</code>，
+            CLI 需 <code>pnpm add -g @aipack-ai/cli</code>。
           </span>
         }
         style={{ marginBottom: 32 }}

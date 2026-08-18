@@ -57,13 +57,13 @@ const features = [
 ];
 
 const quickInstallCode = `# 安装核心框架
-pnpm add aipack
+pnpm add @aipack-ai/agent
 
 # 或使用 npm
-npm install aipack
+npm install @aipack-ai/agent
 
 # （可选）全局安装命令行工具
-pnpm add -g aipack-cli`;
+pnpm add -g @aipack-ai/cli`;
 
 const minimalExample = `import {
   createRuntime,
@@ -121,7 +121,7 @@ export default function HomePage() {
   const navigate = useNavigate();
 
   const copyInstall = async () => {
-    await navigator.clipboard.writeText('pnpm add aipack');
+    await navigator.clipboard.writeText('pnpm add @aipack-ai/agent');
     message.success('安装命令已复制');
   };
 
@@ -177,7 +177,7 @@ export default function HomePage() {
             <Button
               size="large"
               icon={<GithubOutlined />}
-              onClick={() => message.info('GitHub 仓库即将开放')}
+              onClick={() => window.open('https://github.com/luoguoxiong/aipack', '_blank')}
               style={{
                 height: 48,
                 paddingLeft: 24,
@@ -235,7 +235,7 @@ export default function HomePage() {
               <div className="install-block" onClick={copyInstall} style={{ cursor: 'pointer' }}>
                 <div className="install-code">
                   <span className="prompt">$</span>
-                  pnpm add aipack
+                  pnpm add @aipack-ai/agent
                 </div>
                 <Button size="small" type="primary" ghost onClick={(e) => { e.stopPropagation(); copyInstall(); }}>
                   复制
@@ -530,7 +530,7 @@ export default function HomePage() {
             <a onClick={() => navigate('/api')} style={{ cursor: 'pointer' }}>API 文档</a>
             <a onClick={() => navigate('/extend')} style={{ cursor: 'pointer' }}>扩展指南</a>
             <a onClick={() => navigate('/examples')} style={{ cursor: 'pointer' }}>示例代码</a>
-            <a onClick={() => message.info('GitHub 即将开放')} style={{ cursor: 'pointer' }}>GitHub</a>
+            <a href="https://github.com/luoguoxiong/aipack" target="_blank" rel="noopener noreferrer" style={{ cursor: 'pointer' }}>GitHub</a>
           </div>
         </div>
       </footer>
