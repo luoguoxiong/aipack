@@ -58,7 +58,8 @@ jobs:
             --dir dist \
             --site ${{ secrets.NETLIFY_SITE_ID }} \
             --auth ${{ secrets.NETLIFY_AUTH_TOKEN }} \
-            --prod
+            --prod \
+            --skip-build
         env:
           # 避免 CI 环境下的交互提示
           CI: true
