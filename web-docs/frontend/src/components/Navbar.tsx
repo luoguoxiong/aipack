@@ -32,7 +32,7 @@ export default function Navbar() {
             fontWeight: 600,
           }}
         >
-          v1.0
+          v0.0.1
         </span>
       </div>
       <div className="navbar-links">
@@ -56,7 +56,7 @@ export default function Navbar() {
         <Button
           type="default"
           icon={<GithubOutlined />}
-          onClick={() => window.open('https://github.com', '_blank')}
+          onClick={() => window.open('https://github.com/luoguoxiong/aipack', '_blank')}
         >
           GitHub
         </Button>
