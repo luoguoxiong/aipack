@@ -8,6 +8,7 @@ import ExtendPage from './pages/ExtendPage';
 import ExamplesPage from './pages/ExamplesPage';
 import PackagesPage from './pages/PackagesPage';
 import ObservabilityPage from './pages/ObservabilityPage';
+import MemoryPage from './pages/MemoryPage';
 
 export default function App() {
   return (
@@ -51,6 +52,14 @@ export default function App() {
           element={
             <DocsLayout>
               <ObservabilityPage />
+            </DocsLayout>
+          }
+        />
+        <Route
+          path="/memory"
+          element={
+            <DocsLayout>
+              <MemoryPage />
             </DocsLayout>
           }
         />
