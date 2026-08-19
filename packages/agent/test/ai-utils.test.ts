@@ -487,6 +487,60 @@ describe('isContextOverflow', () => {
     assert.equal(isContextOverflow(msg, 8000), true);
   });
 
+  it('输出截断：thinking-only 截断（length + 只有thinking 无text/toolCall）', () => {
+    // 典型：reasoning 模型 maxTokens 预算被 thinking 吃光，output=8192 但只有 thinking
+    const msg = {
+      stopReason: 'length',
+      usage: { input: 3800, output: 8192, reasoning: 8192, total: 11992 },
+      content: [{ type: 'thinking', text: '超长思考内容'.repeat(1000) }],
+    };
+    assert.equal(isContextOverflow(msg, 131072), true);
+  });
+
+  it('输出截断：thinking+text 不算（有有效产出）', () => {
+    const msg = {
+      stopReason: 'length',
+      usage: { input: 3800, output: 8192 },
+      content: [
+        { type: 'thinking', text: '思考中'.repeat(500) },
+        { type: 'text', text: '我先读取这个 PPT。' },
+      ],
+    };
+    assert.equal(isContextOverflow(msg, 131072), false);
+  });
+
+  it('输出截断：thinking+toolCall 不算（有工具调用）', () => {
+    const msg = {
+      stopReason: 'length',
+      usage: { input: 3800, output: 8192 },
+      content: [
+        { type: 'thinking', text: '思考中'.repeat(500) },
+        { type: 'toolCall', id: 'c1', name: 'office_read', arguments: {} },
+      ],
+    };
+    assert.equal(isContextOverflow(msg, 131072), false);
+  });
+
+  it('输出截断：output 打满 maxTokens（≥95%）视为溢出', () => {
+    const msg = {
+      stopReason: 'length',
+      usage: { input: 500, output: 7800 }, // 7800/8192 ≈ 95.2%
+      maxTokens: 8192,
+      content: [{ type: 'text', text: '长文回复被截断' }],
+    };
+    assert.equal(isContextOverflow(msg, 131072), true);
+  });
+
+  it('输出截断：output 未达上限不算溢出', () => {
+    const msg = {
+      stopReason: 'length',
+      usage: { input: 500, output: 5000 }, // 5000/8192 ≈ 61%
+      maxTokens: 8192,
+      content: [{ type: 'text', text: '未截断' }],
+    };
+    assert.equal(isContextOverflow(msg, 131072), false);
+  });
+
   it('正常成功消息不算溢出', () => {
     const msg = {
       stopReason: 'stop',
