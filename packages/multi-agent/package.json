@@ -1,0 +1,43 @@
+{
+  "name": "@aipack-ai/multi-agent",
+  "version": "0.0.1",
+  "description": "多Agent编排框架：AgentGraph + Pipeline + Router 等模式",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "keywords": [
+    "multi-agent",
+    "orchestration",
+    "pipeline",
+    "router",
+    "agent-graph"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.19.0"
+  },
+  "dependencies": {
+    "@aipack-ai/agent": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.5.0"
+  }
+}
