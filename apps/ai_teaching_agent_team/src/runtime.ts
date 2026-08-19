@@ -1,17 +1,18 @@
 /**
  * apps/ai_teaching_agent_team/src/runtime.ts
  *
- * 4-Agent 教学团队设计(顺序接力流水线,全部流式):
+ * 4-Agent 教学团队设计(基于 @aipack-ai/multi-agent):
  *   - Professor(教授):用 search_web 检索主题资料,从第一性原理构建详尽知识库
  *   - Academic Advisor(学术顾问):基于知识库设计结构化学习路线图(无工具,纯综合)
  *   - Research Librarian(研究馆员):用 search_web 策展高质量学习资源
  *   - Teaching Assistant(助教):用 search_web 基于知识库+路线图设计练习材料
  *
- * aipack 是单 Runtime 框架,故用四个独立 Runtime 实例 + 顺序链式编排。
- * 每个 Runtime 都用 stream() 流式输出,通过 onProgress 回调把增量推给 SSE。
+ * 依赖关系:
+ *   Professor ──→ Advisor ──→ TA
+ *       └──────→ Librarian     (Advisor 与 Librarian 可并行)
  *
- * 与 ai_travel_agent 双 Agent 的关键差异:4 个 agent 全部流式(非仅最后一个),
- * 且后两个 agent 基于前面 agent 的产出展开(真正团队接力)。
+ * 使用 createAgentGraph + SharedContext(blackboard) 声明式编排,
+ * 自定义流式执行器保留 runtime.stream() 细粒度 delta 给 SSE。
  */
 import {
   createRuntime,
@@ -20,7 +21,16 @@ import {
   type Model,
   type StreamFn,
   type Runtime,
+  type Result,
 } from '@aipack-ai/agent';
+import {
+  createAgentGraph,
+  createSharedContext,
+  type AgentNode,
+  type AgentGraph,
+  type SharedContext,
+  type AgentEdge,
+} from '@aipack-ai/multi-agent';
 import { createSearchTool } from './tools/search.js';
 import { buildModel } from './config.js';
 import { buildCourseMarkdown } from './markdown.js';
@@ -54,7 +64,7 @@ const LIBRARIAN_SYSTEM_PROMPT = `你是一位资深学习资源研究馆员。�
 - 主动调用 search_web 工具检索真实存在的优质资源(技术博客、GitHub 仓库、官方文档、视频教程、在线课程、论文)
 - 每条资源标注:名称、类型、简短描述、难度(入门/进阶/高级)、链接(若已知)
 - 按资源类型或学习阶段分类组织,用结构化 Markdown 输出(列表 + 分节标题)
-- 只推荐你认为真实存在且高质量的资源,不要编造链接;若不确定具体链接,给出资源名称与检索建议
+- 只推荐你认为真实存在且高质量的资,不要编造链接;若不确定具体链接,给出资源名称与检索建议
 - 资源数量适中(10-20 条),重质不重量
 - 用中文输出`;
 
@@ -101,7 +111,7 @@ export interface CourseProgress {
   message?: string;
 }
 
-// agent → start/done 阶段名映射(保证字面量类型正确)
+// agent → start/done 阶段名映射
 const STAGE_START: Record<AgentRole, CourseProgress['type']> = {
   professor: 'professor_start',
   advisor: 'advisor_start',
@@ -128,7 +138,7 @@ export function createProfessorRuntime(model: Model, streamFn: StreamFn, serpapi
     systemPrompt: PROFESSOR_SYSTEM_PROMPT,
     tools: [createSearchTool(serpapiKey)],
     sessionStorage: createFileSessionStorage({ baseDir: SESSION_BASE_DIR, maxAge: SESSION_MAX_AGE }),
-    maxTurns: 20, // 允许多轮搜索
+    maxTurns: 20,
     config: { role: 'professor' },
   });
 }
@@ -172,13 +182,151 @@ export function createTeachingAssistantRuntime(model: Model, streamFn: StreamFn,
   });
 }
 
-// ─── 单 Agent 流式执行 ──────────────────────────────────────────
+// ─── AgentNode 构建 ─────────────────────────────────────────────
+
+/** 角色到 AgentNode 的映射 */
+const ROLE_MAP: Record<AgentRole, string> = {
+  professor: 'professor',
+  advisor: 'advisor',
+  librarian: 'librarian',
+  ta: 'ta',
+};
 
 /**
- * 运行单个 agent:流式输出,把 text 增量映射为 delta 进度事件。
- * 工具调用(tool_start/tool_end)静默处理(前端通过 stage 事件感知进度)。
+ * 用 RuntimeTeam 构建 4 个 AgentNode + SharedContext + AgentGraph。
+ *
+ * 图结构:
+ *   Professor ──→ Advisor ──→ TA
+ *       └──────→ Librarian     (Advisor 与 Librarian 可并行)
+ *
+ * 数据流(通过 blackboard):
+ *   Professor 输出 → blackboard.knowledgeBase
+ *   Advisor 读取 blackboard.knowledgeBase → 输出 blackboard.roadmap
+ *   Librarian 读取 blackboard.knowledgeBase → 输出 blackboard.resources
+ *   TA 读取 blackboard.knowledgeBase + blackboard.roadmap → 输出 blackboard.practice
  */
-async function runAgent(
+export function buildTeachingGraph(team: RuntimeTeam): {
+  graph: AgentGraph;
+  nodes: AgentNode[];
+  edges: AgentEdge[];
+  entryId: string;
+} {
+  const professorNode: AgentNode = {
+    id: 'professor',
+    name: 'Professor 教授',
+    description: '构建详尽知识库',
+    runtime: team.professor,
+    outputMapping: (result: Result, ctx: SharedContext) => {
+      ctx.blackboard.set('knowledgeBase', result.content);
+    },
+  };
+
+  const advisorNode: AgentNode = {
+    id: 'advisor',
+    name: 'Academic Advisor 学术顾问',
+    description: '设计结构化学习路线图',
+    runtime: team.advisor,
+    inputMapping: (ctx: SharedContext) => {
+      const topic = ctx.blackboard.get('topic') as string;
+      const kb = ctx.blackboard.get('knowledgeBase') as string;
+      return [
+        `学习主题:${topic}`,
+        '',
+        '知识库:',
+        kb,
+        '',
+        '请基于以上知识库设计一份结构化学习路线图(分模块递进,标注目标/时间/前置知识)。',
+      ].join('\n');
+    },
+    outputMapping: (result: Result, ctx: SharedContext) => {
+      ctx.blackboard.set('roadmap', result.content);
+    },
+  };
+
+  const librarianNode: AgentNode = {
+    id: 'librarian',
+    name: 'Research Librarian 研究馆员',
+    description: '策展高质量学习资源',
+    runtime: team.librarian,
+    inputMapping: (ctx: SharedContext) => {
+      const topic = ctx.blackboard.get('topic') as string;
+      const kb = ctx.blackboard.get('knowledgeBase') as string;
+      return [
+        `学习主题:${topic}`,
+        '',
+        '知识库:',
+        kb,
+        '',
+        '请策展该主题的高质量学习资源。调用 search_web 检索真实资源,按类型/阶段分类,附描述与难度。',
+      ].join('\n');
+    },
+    outputMapping: (result: Result, ctx: SharedContext) => {
+      ctx.blackboard.set('resources', result.content);
+    },
+  };
+
+  const taNode: AgentNode = {
+    id: 'ta',
+    name: 'Teaching Assistant 助教',
+    description: '设计练习材料',
+    runtime: team.ta,
+    inputMapping: (ctx: SharedContext) => {
+      const topic = ctx.blackboard.get('topic') as string;
+      const kb = ctx.blackboard.get('knowledgeBase') as string;
+      const roadmap = ctx.blackboard.get('roadmap') as string;
+      return [
+        `学习主题:${topic}`,
+        '',
+        '知识库:',
+        kb,
+        '',
+        '学习路线图:',
+        roadmap,
+        '',
+        '请基于以上知识库与路线图设计练习材料(渐进式,附详细解答)。可调用 search_web 查找真实示例问题与应用场景。',
+      ].join('\n');
+    },
+    outputMapping: (result: Result, ctx: SharedContext) => {
+      ctx.blackboard.set('practice', result.content);
+    },
+  };
+
+  const nodes = [professorNode, advisorNode, librarianNode, taNode];
+  const edges: AgentEdge[] = [
+    { from: 'professor', to: 'advisor' },
+    { from: 'professor', to: 'librarian' },
+    { from: 'advisor', to: 'ta' },
+  ];
+
+  const graph = createAgentGraph()
+    .addNode(professorNode)
+    .addNode(advisorNode)
+    .addNode(librarianNode)
+    .addNode(taNode)
+    .addEdge(edges[0])
+    .addEdge(edges[1])
+    .addEdge(edges[2])
+    .setEntry('professor');
+
+  return { graph, nodes, edges, entryId: 'professor' };
+}
+
+// ─── 流式图执行器 ───────────────────────────────────────────────
+
+/**
+ * 拓扑层级:每层的节点可并行执行。
+ * Professor → [Advisor, Librarian] → TA
+ */
+const EXECUTION_LAYERS: AgentRole[][] = [
+  ['professor'],
+  ['advisor', 'librarian'],  // 可并行
+  ['ta'],
+];
+
+/**
+ * 流式执行单个 agent:用 runtime.stream() 输出细粒度 text delta 给 SSE。
+ */
+async function streamAgent(
   agent: AgentRole,
   runtime: Runtime,
   prompt: string,
@@ -198,7 +346,6 @@ async function runAgent(
     } else if (chunk.type === 'error') {
       throw new Error(chunk.content || `${agent} 执行出错`);
     }
-    // tool_start/tool_end/thinking/done:静默(不影响流式文本)
   }
 
   if (!text.trim()) throw new Error(`${agent} 未生成内容`);
@@ -206,15 +353,11 @@ async function runAgent(
   return text;
 }
 
-// ─── 顺序流式编排 ───────────────────────────────────────────────
-
 /**
- * 编排 4 阶段流水线:Professor → Advisor → Librarian → TA,全部流式。
+ * 按拓扑层级流式执行教学团队图。
  *
- * @param input 学习主题
- * @param team 已构建的 4-Runtime 团队
- * @param onProgress 流式进度回调(用于 SSE 推送)
- * @param signal 可选 AbortSignal,用于客户端断开时中止
+ * 使用 SharedContext(blackboard) 在 agent 间传数据,
+ * 按层级顺序执行(同层可并行),保留细粒度 SSE delta。
  */
 export async function generateCourse(
   input: CourseInput,
@@ -223,84 +366,57 @@ export async function generateCourse(
   signal?: AbortSignal,
 ): Promise<{ knowledgeBase: string; roadmap: string; resources: string; practice: string; course: string }> {
   const topic = input.topic.trim();
-  // 把模型标识编入 sessionKey,隔离不同模型的会话历史(/ 转为 - 避免路径分隔符)
   const modelTag = input.modelKey ? `:${input.modelKey.replace(/[^a-z0-9._-]+/gi, '-')}` : '';
   const tag = slug(topic) + modelTag;
 
-  // ── 阶段 1:Professor 构建知识库 ───────────────────────────────
-  const knowledgeBase = await runAgent(
-    'professor',
-    team.professor,
-    `学习主题:${topic}\n\n请构建该主题的详尽知识库。先调用 search_web 检索 1-3 个权威资料来源,再综合撰写结构化 Markdown 知识库。`,
-    `professor:${tag}`,
-    onProgress,
-    signal,
-  );
-  if (signal?.aborted) throw new Error('aborted');
+  // 构建图与共享上下文
+  const { nodes } = buildTeachingGraph(team);
+  const ctx = createSharedContext();
+  ctx.blackboard.set('topic', topic);
 
-  // ── 阶段 2:Academic Advisor 设计路线图(基于知识库)─────────────
-  const roadmap = await runAgent(
-    'advisor',
-    team.advisor,
-    [
-      `学习主题:${topic}`,
-      '',
-      '知识库:',
-      knowledgeBase,
-      '',
-      '请基于以上知识库设计一份结构化学习路线图(分模块递进,标注目标/时间/前置知识)。',
-    ].join('\n'),
-    `advisor:${tag}`,
-    onProgress,
-    signal,
-  );
-  if (signal?.aborted) throw new Error('aborted');
+  // 节点 ID → AgentNode 映射
+  const nodeMap = new Map<string, AgentNode>();
+  for (const node of nodes) nodeMap.set(node.id, node);
 
-  // ── 阶段 3:Research Librarian 策展资源(基于知识库)─────────────
-  const resources = await runAgent(
-    'librarian',
-    team.librarian,
-    [
-      `学习主题:${topic}`,
-      '',
-      '知识库:',
-      knowledgeBase,
-      '',
-      '请策展该主题的高质量学习资源。调用 search_web 检索真实资源,按类型/阶段分类,附描述与难度。',
-    ].join('\n'),
-    `librarian:${tag}`,
-    onProgress,
-    signal,
-  );
-  if (signal?.aborted) throw new Error('aborted');
+  // 逐层执行
+  for (const layer of EXECUTION_LAYERS) {
+    if (signal?.aborted) throw new Error('aborted');
 
-  // ── 阶段 4:Teaching Assistant 设计练习(基于知识库+路线图)──────
-  const practice = await runAgent(
-    'ta',
-    team.ta,
-    [
-      `学习主题:${topic}`,
-      '',
-      '知识库:',
-      knowledgeBase,
-      '',
-      '学习路线图:',
-      roadmap,
-      '',
-      '请基于以上知识库与路线图设计练习材料(渐进式,附详细解答)。可调用 search_web 查找真实示例问题与应用场景。',
-    ].join('\n'),
-    `ta:${tag}`,
-    onProgress,
-    signal,
-  );
+    // 同层 agent 并行执行
+    const tasks = layer.map(async (role) => {
+      const node = nodeMap.get(role)!;
+      const runtime = node.runtime as Runtime;
 
-  // ── 拼装完整课程 Markdown ──────────────────────────────────────
-  const course = buildCourseMarkdown(topic, {
-    knowledgeBase,
-    roadmap,
-    resources,
-    practice,
-  });
+      // 解析输入(通过 inputMapping 从 blackboard 获取)
+      const prompt = node.inputMapping
+        ? node.inputMapping(ctx) as string
+        : `学习主题:${topic}\n\n请构建该主题的详尽知识库。先调用 search_web 检索 1-3 个权威资料来源,再综合撰写结构化 Markdown 知识库。`;
+
+      const sessionKey = `${role}:${tag}`;
+      const text = await streamAgent(role, runtime, prompt, sessionKey, onProgress, signal);
+
+      // 写入 blackboard(通过 outputMapping)
+      if (node.outputMapping) {
+        const result: Result = { content: text, success: true, toolsUsed: [], usage: { totalTokens: 0 }, stopReason: 'end_turn', metadata: {} };
+        node.outputMapping(result, ctx);
+      }
+
+      return { role, text };
+    });
+
+    const results = await Promise.all(tasks);
+    // 检查 abort
+    if (signal?.aborted) throw new Error('aborted');
+  }
+
+  // 从 blackboard 读取所有产出
+  const knowledgeBase = ctx.blackboard.get('knowledgeBase') as string;
+  const roadmap = ctx.blackboard.get('roadmap') as string;
+  const resources = ctx.blackboard.get('resources') as string;
+  const practice = ctx.blackboard.get('practice') as string;
+
+  // 拼装完整课程 Markdown
+  const course = buildCourseMarkdown(topic, { knowledgeBase, roadmap, resources, practice });
   onProgress({ type: 'done', course });
 
   return { knowledgeBase, roadmap, resources, practice, course };
@@ -341,7 +457,6 @@ export function createRuntimeRegistry(serpapiKey?: string): RuntimeRegistry {
   const cache = new Map<string, RuntimeTeam>();
   return {
     get(provider, modelId, apiKey) {
-      // 用 key 的哈希区分缓存(不明文存 key);env key 用 'env'
       const keyTag = apiKey ? `u:${createHash('sha256').update(apiKey).digest('hex').slice(0, 8)}` : 'env';
       const cacheKey = `${provider}/${modelId}:${keyTag}`;
       let team = cache.get(cacheKey);
