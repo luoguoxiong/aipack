@@ -27,9 +27,12 @@ export const BUILTIN_MODELS: Model[] = [
   { id: 'o4-mini', name: 'o4-mini', api: 'openai-completions', provider: 'openai', baseUrl: OPENAI_BASE, reasoning: true, input: ['text', 'image'], contextWindow: 200000, maxTokens: 100000 },
 
   // ── DeepSeek ────────────────────────────────────────────────────
-  { id: 'deepseek-chat', name: 'DeepSeek Chat', api: 'openai-completions', provider: 'deepseek', baseUrl: DEEPSEEK_BASE, reasoning: false, input: ['text'], contextWindow: 65536, maxTokens: 8192 },
-  { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', api: 'openai-completions', provider: 'deepseek', baseUrl: DEEPSEEK_BASE, reasoning: true, input: ['text'], contextWindow: 65536, maxTokens: 8192 },
-  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', api: 'openai-completions', provider: 'deepseek', baseUrl: DEEPSEEK_BASE, reasoning: false, input: ['text'], contextWindow: 131072, maxTokens: 8192 },
+  // reasoning 模型会把大量 output token 花在 thinking 上，
+  // maxTokens 必须开到 65536（官方上限），避免 thinking 吃掉预算后无空间生成 text/tool_call，
+  // 导致 stopReason="length" 且实际零产出、用户被迫手动「继续」。
+  { id: 'deepseek-chat', name: 'DeepSeek Chat', api: 'openai-completions', provider: 'deepseek', baseUrl: DEEPSEEK_BASE, reasoning: false, input: ['text'], contextWindow: 65536, maxTokens: 32768 },
+  { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', api: 'openai-completions', provider: 'deepseek', baseUrl: DEEPSEEK_BASE, reasoning: true, input: ['text'], contextWindow: 65536, maxTokens: 65536 },
+  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', api: 'openai-completions', provider: 'deepseek', baseUrl: DEEPSEEK_BASE, reasoning: false, input: ['text'], contextWindow: 131072, maxTokens: 32768 },
 
   // ── Anthropic ───────────────────────────────────────────────────
   { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', api: 'anthropic-messages', provider: 'anthropic', baseUrl: ANTHROPIC_BASE, reasoning: true, input: ['text', 'image'], contextWindow: 200000, maxTokens: 16384 },
@@ -41,9 +44,9 @@ export const BUILTIN_MODELS: Model[] = [
   { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant', api: 'openai-completions', provider: 'groq', baseUrl: GROQ_BASE, reasoning: false, input: ['text'], contextWindow: 131072, maxTokens: 8192 },
 
   // ── Google ──────────────────────────────────────────────────────
-  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', api: 'openai-completions', provider: 'google', baseUrl: GOOGLE_BASE, reasoning: false, input: ['text', 'image'], contextWindow: 1048576, maxTokens: 8192 },
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', api: 'openai-completions', provider: 'google', baseUrl: GOOGLE_BASE, reasoning: true, input: ['text', 'image'], contextWindow: 1048576, maxTokens: 8192 },
-  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', api: 'openai-completions', provider: 'google', baseUrl: GOOGLE_BASE, reasoning: true, input: ['text', 'image'], contextWindow: 1048576, maxTokens: 8192 },
+  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', api: 'openai-completions', provider: 'google', baseUrl: GOOGLE_BASE, reasoning: false, input: ['text', 'image'], contextWindow: 1048576, maxTokens: 32768 },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', api: 'openai-completions', provider: 'google', baseUrl: GOOGLE_BASE, reasoning: true, input: ['text', 'image'], contextWindow: 1048576, maxTokens: 65536 },
+  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', api: 'openai-completions', provider: 'google', baseUrl: GOOGLE_BASE, reasoning: true, input: ['text', 'image'], contextWindow: 1048576, maxTokens: 65536 },
 
   // ── OpenRouter ─────────────────────────────────────────────────
   { id: 'auto', name: 'Auto (OpenRouter)', api: 'openai-completions', provider: 'openrouter', baseUrl: OPENROUTER_BASE, reasoning: false, input: ['text', 'image'], contextWindow: 200000, maxTokens: 8192 },

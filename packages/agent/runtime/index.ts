@@ -1488,12 +1488,14 @@ export class AgentRuntime implements Runtime {
   /**
    * 单回合模型调用 + 上下文溢出自动恢复闭环。
    *
-   * 检测（isContextOverflow，统一传入 model.contextWindow，覆盖显式错误 /
-   * 静默溢出 / 截断溢出三模式）→ 丢弃失败的 assistant 消息 → 截断会话历史
-   * → 同回合重试（不消耗回合数，上限 OVERFLOW_RECOVERY_LIMIT）：
+   * 检测（isContextOverflow，统一传入 model.contextWindow / content / maxTokens，
+   * 覆盖显式错误 / 静默溢出 / 输入截断溢出 / 输出 thinking 耗尽 / 输出打满 五模式）
+   * → 丢弃失败的 assistant 消息 → 截断会话历史 → 同回合重试（不消耗回合数，
+   * 上限 OVERFLOW_RECOVERY_LIMIT）：
    *
-   * - 显式错误 / 零产出截断溢出：丢弃错误消息后重试；流式路径吞掉可恢复的
-   *   error chunk（消费者看不到瞬态错误），不可恢复时补发。
+   * - 显式错误 / 零产出截断溢出 / thinking 耗尽溢出 / 输出打满溢出：丢弃失败
+   *   消息后重试；流式路径吞掉可恢复的 error chunk（消费者看不到瞬态错误），
+   *   不可恢复时补发。
    * - 静默溢出（stop + 有完整产出）：保留回复，仅压缩旧上下文供后续轮次。
    * - 恢复耗尽或单请求超窗（无可丢弃）：返回最后一次错误消息，维持旧行为。
    *
@@ -1507,7 +1509,18 @@ export class AgentRuntime implements Runtime {
     stream: boolean,
   ): AsyncGenerator<ResultChunk, AssistantMessage | null> {
     const contextWindow = this._model.contextWindow;
+    const maxTokens = this._model.maxTokens;
     let recoveries = 0;
+
+    // 把 content / maxTokens 一并塞入 OverflowProbeMessage，供 isContextOverflow
+    // 识别「只有 thinking 没有有效产出」和「output 打满 maxTokens」两种可恢复截断。
+    const toProbe = (m: AssistantMessage) => ({
+      stopReason: m.stopReason,
+      errorMessage: m.errorMessage,
+      usage: m.usage,
+      content: m.content,
+      maxTokens,
+    });
 
     while (true) {
       let assistant: AssistantMessage | null = null;
@@ -1519,7 +1532,7 @@ export class AgentRuntime implements Runtime {
           const msg = event.message;
           if (
             recoveries < OVERFLOW_RECOVERY_LIMIT &&
-            isContextOverflow(msg, contextWindow)
+            isContextOverflow(toProbe(msg), contextWindow)
           ) {
             suppressed = msg; // 吞掉 error chunk，稍后恢复重试
             continue;
@@ -1537,13 +1550,31 @@ export class AgentRuntime implements Runtime {
       const final = assistant ?? suppressed;
       if (!final) return null; // 流异常中断（无 done/error 事件）
 
-      if (isContextOverflow(final, contextWindow)) {
-        const failed = final.stopReason === 'error' || (final.usage?.output ?? 0) === 0;
+      if (isContextOverflow(toProbe(final), contextWindow)) {
+        // failed：需要丢弃上轮并立即重试的场景
+        //  - stop=error 或 output=0：原有判定
+        //  - stop=length 但 content 里只有 thinking（零有效产出）：reasoning 预算耗尽
+        //    必须重跑（catalog 已给更高 maxTokens，但仍有可能碰到边界）
+        //  - stop=length 且 output 打满 maxTokens：回复被截断，丢弃并压缩后重试
+        const output = final.usage?.output ?? 0;
+        const blocks = Array.isArray(final.content) ? final.content : null;
+        const hasMeaningfulText = blocks?.some(
+          (b) => b.type === 'text' && 'text' in b && typeof b.text === 'string' && b.text.trim().length > 0,
+        );
+        const hasToolCall = blocks?.some((b) => b.type === 'toolCall');
+        const thinkingOnly = blocks
+          ? !hasMeaningfulText && !hasToolCall && blocks.some((b) => b.type === 'thinking')
+          : false;
+        const outputFull = maxTokens > 0 && output >= Math.floor(maxTokens * 0.95);
+
+        const failed = final.stopReason === 'error' || output === 0 || thinkingOnly || outputFull;
         if (failed && recoveries < OVERFLOW_RECOVERY_LIMIT) {
           recoveries += 1;
           if (await this.recoverFromOverflow(compilation, recoveries, sessionKey, signal)) {
+            const reason =
+              thinkingOnly ? 'thinking 耗尽' : outputFull ? 'output 打满' : final.stopReason;
             console.warn(
-              `[Runtime] 上下文溢出，已压缩历史（摘要或截断）并同回合重试（${recoveries}/${OVERFLOW_RECOVERY_LIMIT}）`,
+              `[Runtime] 上下文溢出（${reason}），已压缩历史并同回合重试（${recoveries}/${OVERFLOW_RECOVERY_LIMIT}）`,
             );
             await this.emitTelemetry('onRetry', {
               traceId: compilation.traceId,
