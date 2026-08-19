@@ -445,6 +445,23 @@ export default function HomePage() {
                       <Card
                         title={
                           <span>
+                            🕸️ multi-agent <Tag color="geekblue" style={{ marginLeft: 8 }}>编排</Tag>
+                          </span>
+                        }
+                        bordered
+                      >
+                        <p style={{ color: '#475569', lineHeight: 1.8, fontSize: 14 }}>
+                          声明式 AgentGraph + 5 种模板（Pipeline/Router/Supervisor/Debate/MapReduce）。Runtime 即 Agent，SharedContext 协作。
+                        </p>
+                        <Button type="link" icon={<ArrowRightOutlined />} onClick={() => navigate('/multi-agent')}>
+                          查看
+                        </Button>
+                      </Card>
+                    </Col>
+                    <Col xs={24} md={8}>
+                      <Card
+                        title={
+                          <span>
                             🧠 memory <Tag color="green" style={{ marginLeft: 8 }}>记忆</Tag>
                           </span>
                         }

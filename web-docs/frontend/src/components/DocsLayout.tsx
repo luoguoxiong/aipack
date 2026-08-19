@@ -22,6 +22,11 @@ import {
   DollarOutlined,
   CloudUploadOutlined,
   ClockCircleOutlined,
+  ApartmentOutlined,
+  ForkOutlined,
+  ShareAltOutlined,
+  DeploymentUnitOutlined,
+  BugOutlined,
 } from '@ant-design/icons';
 
 interface DocsLayoutProps {
@@ -138,6 +143,26 @@ const memoryMenu: MenuItem[] = [
   { key: '/memory#config', label: '12. 插件配置全览', icon: <SettingOutlined /> },
 ];
 
+const multiAgentMenu: MenuItem[] = [
+  { key: '/multi-agent', label: '总览', icon: <ApartmentOutlined /> },
+  { key: '/multi-agent#architecture', label: '架构总览', icon: <NodeIndexOutlined /> },
+  { key: '/multi-agent#quickstart', label: '1. 快速开始', icon: <RocketOutlined /> },
+  { key: '/multi-agent#concepts', label: '2. 核心概念', icon: <CodeOutlined /> },
+  { key: '/multi-agent#patterns', label: '3. 编排模板', icon: <ForkOutlined /> },
+  { key: '/multi-agent#pattern-pipeline', label: '3.1 Pipeline', icon: <ForkOutlined /> },
+  { key: '/multi-agent#pattern-router', label: '3.2 Router', icon: <ForkOutlined /> },
+  { key: '/multi-agent#pattern-supervisor', label: '3.3 Supervisor', icon: <ForkOutlined /> },
+  { key: '/multi-agent#pattern-debate', label: '3.4 Debate', icon: <ForkOutlined /> },
+  { key: '/multi-agent#pattern-mapreduce', label: '3.5 MapReduce', icon: <ForkOutlined /> },
+  { key: '/multi-agent#custom-graph', label: '4. 自定义图', icon: <NodeIndexOutlined /> },
+  { key: '/multi-agent#data-flow', label: '5. 数据流', icon: <ShareAltOutlined /> },
+  { key: '/multi-agent#streaming', label: '6. 流式事件', icon: <ThunderboltOutlined /> },
+  { key: '/multi-agent#mcp-bridge', label: '7. MCPBridge', icon: <DeploymentUnitOutlined /> },
+  { key: '/multi-agent#debugger', label: '8. GraphDebugger', icon: <BugOutlined /> },
+  { key: '/multi-agent#template-guide', label: '9. 模板选择', icon: <AimOutlined /> },
+  { key: '/multi-agent#result', label: '10. 运行结果', icon: <ApiOutlined /> },
+];
+
 const examplesMenu: MenuItem[] = [
   { key: '/examples', label: '最小示例', icon: <CodeOutlined /> },
   { key: '/examples#memory', label: '记忆集成', icon: <DatabaseOutlined /> },
@@ -150,6 +175,7 @@ const packagesMenu: MenuItem[] = [
   { key: '/packages#aipack', label: 'aipack（核心）', icon: <RocketOutlined /> },
   { key: '/packages#memory', label: 'aipack-memory', icon: <DatabaseOutlined /> },
   { key: '/packages#compression', label: 'aipack-compression', icon: <AimOutlined /> },
+  { key: '/packages#aipack-multi-agent', label: 'aipack-multi-agent', icon: <ApartmentOutlined /> },
   { key: '/packages#aipack-observability', label: 'aipack-observability', icon: <LineChartOutlined /> },
   { key: '/packages#aipack-observability-server', label: 'aipack-observability-server', icon: <CloudServerOutlined /> },
   { key: '/packages#cli', label: 'aipack-cli', icon: <SettingOutlined /> },
@@ -167,6 +193,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     else if (path === '/extend' || path.startsWith('/extend')) items = extendMenu;
     else if (path === '/observability' || path.startsWith('/observability')) items = observabilityMenu;
     else if (path === '/memory' || path.startsWith('/memory')) items = memoryMenu;
+    else if (path === '/multi-agent' || path.startsWith('/multi-agent')) items = multiAgentMenu;
     else if (path === '/examples' || path.startsWith('/examples')) items = examplesMenu;
     else if (path === '/packages' || path.startsWith('/packages')) items = packagesMenu;
     const selected = location.pathname + (location.hash || '');
@@ -188,6 +215,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     if (rootPath === '/extend') return extendMenu;
     if (rootPath === '/observability') return observabilityMenu;
     if (rootPath === '/memory') return memoryMenu;
+    if (rootPath === '/multi-agent') return multiAgentMenu;
     if (rootPath === '/examples') return examplesMenu;
     if (rootPath === '/packages') return packagesMenu;
     return [];
