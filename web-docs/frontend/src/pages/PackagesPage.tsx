@@ -18,6 +18,7 @@ const tagColorMap: Record<string, string> = {
   核心框架: 'blue',
   持久化记忆: 'green',
   上下文压缩: 'orange',
+  多Agent编排: 'geekblue',
   可观测性: 'cyan',
   命令行工具: 'purple',
 };
