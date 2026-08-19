@@ -100,6 +100,9 @@ importers:
       '@aipack-ai/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@aipack-ai/multi-agent':
+        specifier: workspace:*
+        version: link:../../packages/multi-agent
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -227,6 +230,22 @@ importers:
       tsx:
         specifier: ^4.16.0
         version: 4.23.5
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+
+  packages/multi-agent:
+    dependencies:
+      '@aipack-ai/agent':
+        specifier: workspace:*
+        version: link:../agent
+    devDependencies:
+      '@types/node':
+        specifier: ^20.12.0
+        version: 20.19.43
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(postcss@8.5.26)(tsx@4.23.5)(typescript@5.9.3)(yaml@2.9.0)
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
