@@ -14,7 +14,7 @@ export const packages: PackageInfo[] = [
     id: 'aipack',
     name: '@aipack-ai/agent',
     tag: '核心框架',
-    description: 'Agent 框架：Runtime + Extension + Transformer 三层架构。核心调度、会话持久化、工具执行、上下文转换均自研实现，不依赖任何外部 Agent 框架。',
+    description: 'Agent 框架：Runtime + Extension + Transformer 三层架构。核心调度、会话持久化、工具执行、上下文转换核心实现，不依赖任何外部 Agent 框架。',
     icon: '📦',
     install: 'pnpm add @aipack-ai/agent',
     features: [

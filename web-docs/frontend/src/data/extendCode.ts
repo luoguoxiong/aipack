@@ -125,7 +125,7 @@ export const extCustomExtensionCode = [
   '    hooks.done.tapPromise("metrics", async (result) => {',
   '      const cost = Date.now() - (Number(_ctx.shared.get("startAt")) || 0);',
   '      console.log(`[metrics] 耗时 ${cost}ms  tokens=${result.usage.total}`);',
-  '      // 可以把指标上报到 Prometheus / Sentry / 自研后台',
+  '      // 可以把指标上报到 Prometheus / Sentry / 自定义后台',
   '    });',
   '',
   '    hooks.failed.tapPromise("metrics", async (err, req) => {',

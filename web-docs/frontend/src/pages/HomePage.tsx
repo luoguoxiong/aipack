@@ -20,8 +20,8 @@ import CodeBlock from '../components/CodeBlock';
 const features = [
   {
     icon: '⚡',
-    title: '自研 Runtime 调度',
-    desc: '不依赖外部 Agent 框架，核心调度、会话持久化、工具执行、上下文转换全部自研实现，完全可控。',
+    title: 'Runtime 调度',
+    desc: '不依赖外部 Agent 框架，核心调度、会话持久化、工具执行、上下文转换核心实现，完全可控。',
     color: 'linear-gradient(135deg, #fef3c7, #fde68a)',
   },
   {
@@ -135,7 +135,7 @@ export default function HomePage() {
           </h1>
           <p className="hero-subtitle">
             一款轻量、可扩展、零魔法的 TypeScript Agent 框架。<br />
-            Runtime + Extension + Transformer 三层架构，自研核心调度，不依赖外部 Agent 库。
+            Runtime + Extension + Transformer 三层架构，核心调度，不依赖外部 Agent 库。
             <br />
             内置持久化记忆、上下文压缩、CLI、可观测性。
           </p>
@@ -409,7 +409,7 @@ export default function HomePage() {
                         bordered
                       >
                         <p style={{ color: '#475569', lineHeight: 1.8 }}>
-                          Runtime + Extension + Transformer 三层架构核心。自研调度、会话、工具、上下文转换。
+                          Runtime + Extension + Transformer 三层架构核心。调度、会话、工具、上下文转换。
                         </p>
                         <Button type="link" icon={<ArrowRightOutlined />} onClick={() => navigate('/packages#aipack')}>
                           查看详情
