@@ -69,7 +69,7 @@
 **目标**：从 readline 升级为组件化终端 UI。
 
 技术选型建议（二选一，Phase 4 启动时决策）：
-- **A. 自研轻量组件层**（延续零依赖风格，按需实现：diff 渲染、markdown、spinner、选择器）
+- **A. 手写轻量组件层**（延续零依赖风格，按需实现：diff 渲染、markdown、spinner、选择器）
 - **B. 引入 ink（React for CLI）**（pi 同款路线的替代，生态成熟但引入 React 依赖）
 
 最小组件集（按优先级）：`diff`（edit 工具输出）、`markdown 代码块高亮`、`footer 状态栏`（模型/会话/token）、`选择器泛化`（现有 select.ts 扩展）、`主题`（dark/light JSON + schema）。

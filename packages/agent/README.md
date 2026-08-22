@@ -1,7 +1,7 @@
 # aipack
 
 Agent 框架：`Runtime + Extension + Transformer`，配置入口 + 执行入口。
-核心调度、会话持久化、工具执行、上下文转换均自研实现，不依赖任何外部 Agent 框架。
+核心调度、会话持久化、工具执行、上下文转换核心实现，不依赖任何外部 Agent 框架。
 
 ## 特性
 

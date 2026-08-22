@@ -136,7 +136,7 @@ export default function ExtendPage() {
           <ExperimentOutlined /> 2. 自定义 Extension（生命周期钩子）
         </h2>
         <p style={{ lineHeight: 1.8, color: '#475569' }}>
-          Extension 基于自研的 Tapable 钩子系统。提供两种写法：
+          Extension 基于 Tapable 钩子系统。提供两种写法：
           继承 <code>BaseExtension</code>（在 setup 里集中 <code>.tapPromise</code>）
           或直接写对象字面量实现 <code>Extension</code> 接口的 apply 方法。
         </p>
