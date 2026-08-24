@@ -201,13 +201,17 @@ export class RedisAggregator implements Aggregator {
     const version = (await this.redis.hget(this.traceVerKey(), t.traceId)) ?? 'unknown';
 
     const p = this.redis.pipeline();
+    // 口径：requests/success/latency 只统计 run（与 MemoryAggregator 一致）。
+    // 工具调用仅计入 tool 维度桶的 requests/latency（供 groupBy=tool）与
+    // 各桶的 per-tool 统计（t:<name>:*）；global/version 桶不计 requests，
+    // 否则 successRate 分母混入工具调用、全局耗时分位数被工具耗时拉低。
     for (const [dim, key] of [
       ['global', ''],
       ['tool', t.toolName],
       ['version', version],
     ] as const) {
       this.incrBucket(p, dim, key, idx, (kp) => {
-        if (isOk || isErr) {
+        if (dim === 'tool' && (isOk || isErr)) {
           p.hincrby(kp, 'requests', 1);
           // P8 修复：member 此前用 traceId:toolName:idx，同一 trace 内同名工具的
           // 多次调用互相覆盖（ZADD 同 member 替换 score），分位数失真；改用 spanId

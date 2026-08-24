@@ -701,11 +701,12 @@ describe('版本维度聚合 /metrics/versions', () => {
 
     const filter = { since: now, until: now + 60_000 };
     const all = (await agg.summary(filter)) as any;
-    assert.equal(all.requests, 4, '全局 = 3 run + 1 tool');
+    assert.equal(all.requests, 3, '全局 = 3 run（工具调用不计入 requests，口径=run 计数）');
+    assert.equal(all.successRate, 1, '3 run 全成功 → 100%（分母不再混入工具调用）');
 
     const v1 = (await agg.summary({ ...filter, version: '1.0.0' })) as any;
-    assert.equal(v1.requests, 2, 'v1 = 1 run + 1 tool（版本口径与全局一致，工具调用计入 requests）');
-    assert.equal(v1.successRate, 0.5, 'success=1 / requests=2');
+    assert.equal(v1.requests, 1, 'v1 = 1 run（工具调用只进 per-tool 统计）');
+    assert.equal(v1.successRate, 1, 'success=1 / requests=1');
     assert.equal(v1.retryRate, 1, '1 次重试 / 1 次模型调用');
     assert.equal(v1.totalTokens, 15, 'model span tokens 10+5');
 
@@ -716,9 +717,13 @@ describe('版本维度聚合 /metrics/versions', () => {
     const unk = (await agg.summary({ ...filter, version: 'unknown' })) as any;
     assert.equal(unk.requests, 1, '缺版本归 unknown');
 
+    // groupBy=tool：工具维度桶 requests = 调用次数
+    const byTool = (await agg.summary(filter, 'tool')) as any;
+    assert.equal(byTool.echo.requests, 1, 'groupBy=tool 时 requests=调用次数');
+
     // timeseries / tools 同样支持版本过滤
     const ts = await agg.timeseries({ ...filter, version: '1.0.0' }, 60_000, 'requests');
-    assert.equal(ts[0].v, 2);
+    assert.equal(ts[0].v, 1);
     const tools = await agg.tools({ ...filter, version: '1.0.0' });
     assert.equal(tools.length, 1);
     assert.equal(tools[0].tool, 'echo');

@@ -151,16 +151,22 @@ export class Aggregator implements IAggregator {
     const isOk = t.status === 'ok';
     const isErr = t.status === 'error';
     const version = this.traceVersion.get(t.traceId)?.version ?? 'unknown';
-    for (const st of [
+    // 口径：requests/success/duration 只统计 run（types.ts「请求量 = run 计数」）。
+    // 工具调用仅计入 tool 维度桶的 requests（供 groupBy=tool 显示调用次数）与
+    // 各桶的 per-tool 统计（calls/ok/error/totalMs）；全局/version 桶不计 requests，
+    // 否则 successRate 分母混入工具调用（如 2 成功 run + 6 次工具 → 25%）、
+    // 全局耗时分位数被工具耗时拉低。
+    const buckets = [
       getOrCreate(this.global, idx),
       this.dimBucket('tool', t.toolName, idx),
       this.dimBucket('version', version, idx),
-    ]) {
-      // 工具维度桶的 requests 即调用次数（供 groupBy=tool）；version 维度桶与全局桶口径一致
-      if (isOk || isErr) {
-        st.requests += 1;
-        st.duration.insert(t.durationMs);
-      }
+    ];
+    if (isOk || isErr) {
+      const toolSt = buckets[1];
+      toolSt.requests += 1;
+      toolSt.duration.insert(t.durationMs);
+    }
+    for (const st of buckets) {
       const agg = st.tools.get(t.toolName) ?? { calls: 0, ok: 0, error: 0, totalMs: 0 };
       if (isOk || isErr) {
         agg.calls += 1;
