@@ -12,6 +12,8 @@
  * - 监控：暴露 dlqCount 指标，供告警评估器消费（Phase 3 后接 alerts/evaluator）
  */
 
+import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { MqProducer } from '../mq/types';
 import { encodeDlqMessage, type DlqMessage } from '../mq/types';
 
@@ -50,6 +52,114 @@ export async function sendToDlq(producer: MqProducer, opts: DlqSendOptions): Pro
   // 编码后的 payload 通过 producer 的 value 字段已发送（sendToDlq 内部用 encodeDlqMessage）
   // 此处 encodeDlqMessage 仅供日志/监控用，不重复发送
   void encodeDlqMessage(payload);
+}
+
+/**
+ * DLQ 兜底 outbox（D3 修复）。
+ *
+ * 问题：DLQ produce 失败时消息既未落库也未进 DLQ（offset 照常提交）→ 消息蒸发。
+ * 修复：发送失败时把 DLQ 投递任务追加到本地 JSONL 文件；worker 定期 replay()
+ * 重发到 DLQ topic，成功一条删一条。
+ *
+ * - 单文件 + 追加写：崩溃安全（每行一个 JSON，最多丢最后一次未 flush 的追加）
+ * - maxFileSize 上限：防止 DLQ 长期不可用撑爆磁盘（超限丢弃最旧并告警）
+ */
+export class DlqOutbox {
+  private filePath: string;
+  private maxFileSize: number;
+  private replaying = false;
+
+  constructor(opts: { dir?: string; maxFileSize?: number } = {}) {
+    const dir = opts.dir ?? process.env.DLQ_OUTBOX_DIR ?? '.aipack/dlq-outbox';
+    mkdirSync(dir, { recursive: true });
+    this.filePath = join(dir, 'pending.jsonl');
+    this.maxFileSize = opts.maxFileSize ?? 64 * 1024 * 1024; // 64MB
+  }
+
+  /** 追加一条待重发的 DLQ 投递任务 */
+  append(opts: DlqSendOptions): void {
+    try {
+      const line = JSON.stringify({ ...opts, queuedAt: Date.now() }) + '\n';
+      appendFileSync(this.filePath, line, 'utf8');
+      const size = this.fileSize();
+      if (size > this.maxFileSize) {
+        console.error(
+          `[DlqOutbox] 文件超限（${size} > ${this.maxFileSize}），保留最新一半条目`,
+        );
+        this.truncateToHalf();
+      }
+    } catch (err) {
+      // outbox 自身失败（磁盘满等）只能告警：此时消息无法挽回
+      console.error('[DlqOutbox] 本地落盘失败（消息将丢失）:', err);
+    }
+  }
+
+  /** 待重发条目数 */
+  pendingCount(): number {
+    return this.readLines().length;
+  }
+
+  /** 重发 outbox 中的全部条目到 DLQ；成功一条删一条（串行，避免乱序） */
+  async replay(producer: MqProducer): Promise<number> {
+    if (this.replaying) return 0;
+    this.replaying = true;
+    let sent = 0;
+    try {
+      const lines = this.readLines();
+      for (let i = 0; i < lines.length; i++) {
+        const entry = lines[i];
+        try {
+          await sendToDlq(producer, {
+            originalValue: entry.originalValue,
+            reason: entry.reason,
+            attempts: entry.attempts,
+            key: entry.key,
+          });
+          sent++;
+          // 成功一条删一条：写回剩余行（i+1 起的未处理行 + 保留当前行之前的失败行已重写过）
+          // 简化：成功后立即重写剩余未处理行
+          writeFileSync(this.filePath, lines.slice(i + 1).map((l) => JSON.stringify(l) + '\n').join(''), 'utf8');
+        } catch {
+          // DLQ 仍不可用：保留剩余行（含当前），下次再试
+          writeFileSync(this.filePath, lines.slice(i).map((l) => JSON.stringify(l) + '\n').join(''), 'utf8');
+          break;
+        }
+      }
+      if (sent > 0) {
+        console.log(`[DlqOutbox] 重发 ${sent} 条到 DLQ，剩余 ${this.pendingCount()} 条`);
+      }
+    } finally {
+      this.replaying = false;
+    }
+    return sent;
+  }
+
+  private readLines(): Array<DlqSendOptions & { queuedAt: number }> {
+    try {
+      const content = readFileSync(this.filePath, 'utf8');
+      return content
+        .split('\n')
+        .filter((l) => l.trim().length > 0)
+        .map((l) => JSON.parse(l));
+    } catch {
+      return [];
+    }
+  }
+
+  private fileSize(): number {
+    try {
+      return statSync(this.filePath).size;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** 超限时丢弃最旧一半条目（保留较新的失败上下文） */
+  private truncateToHalf(): void {
+    const lines = this.readLines();
+    const keep = lines.slice(Math.floor(lines.length / 2));
+    writeFileSync(this.filePath, keep.map((l) => JSON.stringify(l) + '\n').join(''), 'utf8');
+  }
 }
 
 /**

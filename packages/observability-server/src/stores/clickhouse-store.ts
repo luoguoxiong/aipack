@@ -73,6 +73,12 @@ export class ClickHouseStore implements TraceStore {
     return this.client.ping();
   }
 
+  /** F10 修复：/healthz 探测用，不可达时抛错 */
+  async healthCheck(): Promise<void> {
+    const ok = await this.client.ping();
+    if (!ok) throw new Error('ClickHouse ping 失败');
+  }
+
   /** 初始化：确保表存在（DDL 见 infra/clickhouse/init.sql，此处仅幂等检查） */
   async ensureSchema(): Promise<void> {
     // 表由 infra/clickhouse/init.sql 创建；此处仅 ping 验证连通
@@ -604,7 +610,7 @@ function chRowToSpan(r: Record<string, unknown>): SpanRecord {
     spanId: String(r.span_id),
     kind: chSpanKind(Number(r.kind)),
     name: String(r.name),
-    startedAt: Number(r.started_at),
+    startedAt: chDateTimeTs(r.started_at),
     durationMs: Number(r.duration_ms),
     status: chSpanStatus(Number(r.status)),
     errorClass: optStr(r.error_class),
@@ -648,7 +654,7 @@ function chRowToRetry(r: Record<string, unknown>): RetryRecord {
     errorClass: optStr(r.error_class),
     status: optNum(r.status),
     delayMs: Number(r.delay_ms),
-    timestamp: Number(r.ts),
+    timestamp: chDateTimeTs(r.ts),
   };
 }
 
@@ -743,14 +749,18 @@ function escapeChString(s: string): string {
   return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-/** CH DateTime64(3) → epoch ms；兼容已经是数字的情况 */
+/**
+ * CH DateTime64(3) → epoch ms；兼容已经是数字的情况。
+ * F3 修复：统一按 UTC 解析（列定义为 DateTime64(3,'UTC')，JSONEachRow 输出即 UTC 渲染；
+ * 此前无 Z 后缀按本地时区解析，非 UTC 时区部署会导致时间偏移）。
+ */
 function chDateTimeTs(v: unknown): number {
   if (typeof v === 'number') return v;
   if (typeof v === 'string') {
     // CH 返回格式："2025-01-01 12:00:00.000" 或秒数字符串
     if (/^\d+$/.test(v)) return Number(v);
     if (/^\d+\.\d+$/.test(v)) return Number(v);
-    const t = Date.parse(v.replace(' ', 'T'));
+    const t = Date.parse(`${v.replace(' ', 'T')}Z`);
     return Number.isFinite(t) ? t : 0;
   }
   return 0;

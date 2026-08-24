@@ -144,6 +144,17 @@ export class DualTraceStore implements TraceStore {
     return primaryPath;
   }
 
+  async healthCheck(): Promise<void> {
+    // F10 修复：以 primary 为准（读取优先 primary）；secondary 失败仅告警，
+    // 与读取回落策略一致，不判不健康
+    try {
+      await this.primary.healthCheck();
+    } catch (err) {
+      console.warn('[DualTraceStore] primary 健康检查失败，回落 secondary:', err);
+      await this.secondary.healthCheck();
+    }
+  }
+
   async close(): Promise<void> {
     await Promise.allSettled([
       this.primary.close(),

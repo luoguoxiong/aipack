@@ -140,6 +140,7 @@ export function createAggregatorFactory(
         agg = new HybridAggregator({
           l1: getL1Aggregator(key),
           l2: getRedisAggregator(key),
+          l1WindowMs,
         });
         hybridInstances.set(key, agg);
       }

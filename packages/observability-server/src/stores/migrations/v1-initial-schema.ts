@@ -21,7 +21,7 @@ export const V1_INITIAL_SCHEMA: Migration = {
       created_at    BIGINT       NOT NULL,
       PRIMARY KEY (id),
       UNIQUE INDEX uk_email (email)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
     CREATE TABLE IF NOT EXISTS projects (
       id          CHAR(26)     NOT NULL,
@@ -31,7 +31,7 @@ export const V1_INITIAL_SCHEMA: Migration = {
       PRIMARY KEY (id),
       INDEX idx_owner (owner_id),
       CONSTRAINT fk_proj_owner FOREIGN KEY (owner_id) REFERENCES users(id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
     CREATE TABLE IF NOT EXISTS project_apps (
       project_id CHAR(26)    NOT NULL,
@@ -39,7 +39,7 @@ export const V1_INITIAL_SCHEMA: Migration = {
       PRIMARY KEY (project_id, app_id),
       INDEX idx_app (app_id),
       CONSTRAINT fk_pa_proj FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
     CREATE TABLE IF NOT EXISTS apps (
       app_id       VARCHAR(128) NOT NULL,
@@ -48,7 +48,7 @@ export const V1_INITIAL_SCHEMA: Migration = {
       created_at   BIGINT       NOT NULL,
       last_seen_at BIGINT,
       PRIMARY KEY (app_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
     CREATE TABLE IF NOT EXISTS agent_definitions (
       id           CHAR(26)     NOT NULL,
@@ -65,7 +65,7 @@ export const V1_INITIAL_SCHEMA: Migration = {
       INDEX idx_project_status (project_id, status),
       CONSTRAINT fk_ad_proj FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
       CONSTRAINT fk_ad_user FOREIGN KEY (created_by) REFERENCES users(id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
     CREATE TABLE IF NOT EXISTS acl (
       user_id    CHAR(26) NOT NULL,
@@ -76,7 +76,7 @@ export const V1_INITIAL_SCHEMA: Migration = {
       PRIMARY KEY (user_id, project_id),
       CONSTRAINT fk_acl_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       CONSTRAINT fk_acl_proj FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
     CREATE TABLE IF NOT EXISTS model_prices (
       model_id           VARCHAR(100)  NOT NULL,
@@ -87,7 +87,7 @@ export const V1_INITIAL_SCHEMA: Migration = {
       currency           CHAR(3)       NOT NULL DEFAULT 'USD',
       effective_at       BIGINT        NOT NULL,
       PRIMARY KEY (model_id, effective_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `,
 };
 

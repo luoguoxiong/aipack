@@ -38,7 +38,7 @@ import { KafkaMqProducer } from '../mq/kafka-producer.js';
 import { KafkaMqConsumer } from '../mq/kafka-consumer.js';
 import type { MqMessage, IngestMessage } from '../mq/types.js';
 import { decodeIngestMessage } from '../mq/types.js';
-import { sendToDlq, DlqMonitor } from './dlq.js';
+import { sendToDlq, DlqMonitor, DlqOutbox } from './dlq.js';
 import type { SASLOptions } from 'kafkajs';
 import { createAggregatorFactory } from '../aggregator/index.js';
 import type { AggregatorFactory } from '../aggregator/interface.js';
@@ -224,6 +224,36 @@ async function main(): Promise<void> {
   });
   dlqMonitor.start();
 
+  // D3 修复：DLQ 兜底 outbox —— DLQ produce 失败时本地落盘，恢复后重放
+  const dlqOutbox = new DlqOutbox();
+  if (dlqOutbox.pendingCount() > 0) {
+    console.log(`[ingest-worker] 检测到 outbox 积压 ${dlqOutbox.pendingCount()} 条，将定期重放`);
+  }
+  const outboxReplayTimer = setInterval(() => {
+    if (dlqOutbox.pendingCount() === 0) return;
+    dlqOutbox.replay(dlqProducer).catch((err: unknown) => {
+      console.warn('[ingest-worker] DLQ outbox 重放失败:', err);
+    });
+  }, 60_000);
+  outboxReplayTimer.unref?.();
+
+  /** D3 修复：DLQ 发送包装 —— 失败落 outbox 而非静默丢弃 */
+  async function sendToDlqWithOutbox(opts: {
+    originalValue: string;
+    reason: string;
+    attempts: number;
+    key?: string;
+  }): Promise<void> {
+    try {
+      await sendToDlq(dlqProducer, opts);
+    } catch (err) {
+      console.error('[ingest-worker] DLQ 发送失败，已写入本地 outbox 待重放:', err);
+      dlqOutbox.append(opts);
+    }
+    dlqMonitor.record();
+    failed++;
+  }
+
   // 创建 consumer
   const consumer = new KafkaMqConsumer({
     brokers: cfg.brokers,
@@ -313,8 +343,10 @@ async function main(): Promise<void> {
         } catch (err) {
           lastErr = err as Error;
           console.warn(`[ingest-worker] flush 失败 (attempt ${attempt}/${cfg.maxRetries}, appId=${appId}):`, (err as Error).message);
-          // 指数退避：100ms, 200ms, 400ms...
-          await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt - 1)));
+          // D13 修复：指数退避 500ms 起步、上限 10s（此前 100/200/400ms 上限过低，
+          // CH 短暂不可用即推 DLQ；期间 kafkajs 心跳独立维持，不会 rebalance）
+          const delay = Math.min(500 * Math.pow(2, attempt - 1), 10_000);
+          await new Promise((r) => setTimeout(r, delay));
         }
       }
 
@@ -377,8 +409,13 @@ async function main(): Promise<void> {
   const shutdown = async (sig: string) => {
     console.log(`\n[${sig}] worker 正在关闭...`);
     dlqMonitor.stop();
+    clearInterval(outboxReplayTimer);
+    // 退出前 best-effort 重放 outbox 积压（不阻塞退出）
+    await dlqOutbox.replay(dlqProducer).catch(() => {});
     await consumer.close();
     await dlqProducer.close();
+    // D11 修复：关闭聚合器（flush Redis 在途写入、释放连接；此前遗漏导致丢失）
+    await aggHandle.close();
     await ts.close();
     await priceStoreHandle.close();
     process.exit(0);

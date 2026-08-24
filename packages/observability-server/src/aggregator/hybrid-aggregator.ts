@@ -49,15 +49,31 @@ export interface HybridAggregatorOptions {
   l1: MemoryAggregator;
   /** L2 Redis 聚合器（必填，由调用方创建并配置主窗口） */
   l2: RedisAggregator;
+  /** L1 微窗口长度 ms（默认 60000）。D5 修复：L2 查询窗口据此排除 L1 覆盖区 */
+  l1WindowMs?: number;
 }
 
 export class HybridAggregator implements Aggregator {
   private l1: MemoryAggregator;
   private l2: RedisAggregator;
+  private l1WindowMs: number;
 
   constructor(opts: HybridAggregatorOptions) {
     this.l1 = opts.l1;
     this.l2 = opts.l2;
+    this.l1WindowMs = opts.l1WindowMs ?? 60_000;
+  }
+
+  /**
+   * D5 修复：写入是 L1/L2 双写（L2 60min 窗口含最近 1min），读取若直接相加
+   * 会导致最近 1 分钟指标翻倍。修复为时间分区合并：
+   *   L2 查 [since, min(until, now - l1Window))，L1 查原窗口（只含最近 1min 数据）
+   * 两区不重叠不遗漏；纯历史查询（until < now - l1Window）时 L2 查全窗口、L1 为空。
+   */
+  private l2Filter(filter: SummaryFilter): SummaryFilter {
+    const l1Boundary = Date.now() - this.l1WindowMs;
+    const until = filter.until ?? Number.POSITIVE_INFINITY;
+    return until > l1Boundary ? { ...filter, until: l1Boundary } : filter;
   }
 
   // ─── 写入：L1 同步 + L2 异步（fire-and-forget） ──────────────────
@@ -103,10 +119,10 @@ export class HybridAggregator implements Aggregator {
     filter: SummaryFilter,
     groupBy?: GroupBy,
   ): Promise<AggregatedMetrics | Record<string, AggregatedMetrics>> {
-    // 并行查询 L1 + L2
+    // 并行查询 L1 + L2（D5：L2 窗口排除 L1 覆盖的最近 l1Window，避免双计）
     const [l1Res, l2Res] = await Promise.allSettled([
       this.l1.summary(filter, groupBy),
-      this.l2.summary(filter, groupBy),
+      this.l2.summary(this.l2Filter(filter), groupBy),
     ]);
     const l1Data = l1Res.status === 'fulfilled' ? l1Res.value : undefined;
     const l2Data = l2Res.status === 'fulfilled' ? l2Res.value : undefined;
@@ -136,13 +152,52 @@ export class HybridAggregator implements Aggregator {
     stepMs: number,
     metric: TimeseriesMetric,
   ): Promise<TimeseriesPoint[]> {
+    // D5：L2 窗口排除 L1 覆盖区（同 summary）；successRate 额外取 requests 序列做加权
+    const l2F = this.l2Filter(filter);
     const [l1Res, l2Res] = await Promise.allSettled([
       this.l1.timeseries(filter, stepMs, metric),
-      this.l2.timeseries(filter, stepMs, metric),
+      this.l2.timeseries(l2F, stepMs, metric),
     ]);
     const l1Points = l1Res.status === 'fulfilled' ? l1Res.value : [];
     const l2Points = l2Res.status === 'fulfilled' ? l2Res.value : [];
-    // 合并：按 t 分组，相同 t 的点求和（requests/tokens）或加权平均（successRate）
+
+    if (metric === 'successRate') {
+      // D5 修复：简单平均会稀释高低流量时段（如 L1 10 条全成功 + L2 1000 条 50%
+      // 平均得 75%，实际应为 ~50%）。改为按各源 requests 加权。
+      const [l1ReqRes, l2ReqRes] = await Promise.allSettled([
+        this.l1.timeseries(filter, stepMs, 'requests'),
+        this.l2.timeseries(l2F, stepMs, 'requests'),
+      ]);
+      const reqByT = new Map<number, { a: number; b: number }>();
+      for (const p of l1ReqRes.status === 'fulfilled' ? l1ReqRes.value : []) {
+        const e = reqByT.get(p.t) ?? { a: 0, b: 0 };
+        e.a += p.v;
+        reqByT.set(p.t, e);
+      }
+      for (const p of l2ReqRes.status === 'fulfilled' ? l2ReqRes.value : []) {
+        const e = reqByT.get(p.t) ?? { a: 0, b: 0 };
+        e.b += p.v;
+        reqByT.set(p.t, e);
+      }
+      const byT = new Map<number, { sum: number; w: number }>();
+      for (const [src, points] of [['a', l1Points], ['b', l2Points]] as const) {
+        for (const p of points) {
+          const w = reqByT.get(p.t)?.[src] ?? 0;
+          const e = byT.get(p.t) ?? { sum: 0, w: 0 };
+          e.sum += p.v * w;
+          e.w += w;
+          byT.set(p.t, e);
+        }
+      }
+      const out: TimeseriesPoint[] = [];
+      for (const [t, { sum, w }] of byT) {
+        out.push({ t, v: w > 0 ? sum / w : 0 });
+      }
+      out.sort((a, b) => a.t - b.t);
+      return out;
+    }
+
+    // 计数型指标：分区后同 t 桶至多一个源有值（边界桶例外），直接求和
     const byT = new Map<number, { sum: number; count: number }>();
     for (const p of [...l1Points, ...l2Points]) {
       const existing = byT.get(p.t) ?? { sum: 0, count: 0 };
@@ -151,17 +206,18 @@ export class HybridAggregator implements Aggregator {
       byT.set(p.t, existing);
     }
     const out: TimeseriesPoint[] = [];
-    for (const [t, { sum, count }] of byT) {
-      out.push({ t, v: metric === 'successRate' ? sum / count : sum });
+    for (const [t, { sum }] of byT) {
+      out.push({ t, v: sum });
     }
     out.sort((a, b) => a.t - b.t);
     return out;
   }
 
   async tools(filter: SummaryFilter): Promise<ToolStat[]> {
+    // D5：L2 窗口排除 L1 覆盖区
     const [l1Res, l2Res] = await Promise.allSettled([
       this.l1.tools(filter),
-      this.l2.tools(filter),
+      this.l2.tools(this.l2Filter(filter)),
     ]);
     const l1Tools = l1Res.status === 'fulfilled' ? l1Res.value : [];
     const l2Tools = l2Res.status === 'fulfilled' ? l2Res.value : [];

@@ -11,8 +11,8 @@ USE aipack;
 CREATE TABLE IF NOT EXISTS runs (
   trace_id      String,
   app_id        LowCardinality(String),
-  started_at    DateTime64(3),
-  ended_at      DateTime64(3),
+  started_at    DateTime64(3, 'UTC'),
+  ended_at      DateTime64(3, 'UTC'),
   session_key   LowCardinality(String),
   channel       LowCardinality(String),
   model         LowCardinality(String),
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS spans (
   span_id       String,
   kind          Enum('run' = 1, 'model' = 2, 'tool' = 3),
   name          LowCardinality(String),
-  started_at    DateTime64(3),
+  started_at    DateTime64(3, 'UTC'),
   duration_ms   UInt32,
   status        Enum('ok' = 1, 'error' = 2),
   error_class   LowCardinality(String),
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS tool_calls (
   status       Enum('ok' = 1, 'error' = 2, 'blocked' = 3, 'skipped' = 4),
   duration_ms  UInt32,
   error_class  LowCardinality(String),
-  started_at   DateTime64(3)                                 -- 工具调用开始时刻(由 span 推导)
+  started_at   DateTime64(3, 'UTC')                                 -- 工具调用开始时刻(由 span 推导)
 ) ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(started_at)
 ORDER BY (app_id, trace_id, tool_name, started_at)
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS events (
   session_key LowCardinality(String),
   name        LowCardinality(String),
   data        String,                                        -- JSON 字符串
-  ts          DateTime64(3)
+  ts          DateTime64(3, 'UTC')
 ) ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(ts)
 ORDER BY (app_id, trace_id, ts)
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS retry_attempts (
   error_class  LowCardinality(String),
   status       UInt16,                                       -- HTTP 状态码
   delay_ms     UInt32,
-  ts           DateTime64(3)
+  ts           DateTime64(3, 'UTC')
 ) ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(ts)
 ORDER BY (app_id, trace_id, ts)
@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS alert_events (
   threshold   Float64,
   value       Float64,
   status      Enum('fired' = 1, 'recovered' = 2),
-  created_at  DateTime64(3)
+  created_at  DateTime64(3, 'UTC')
 ) ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(created_at)
 ORDER BY (created_at, rule_id)
@@ -156,8 +156,8 @@ GROUP BY app_id, model, day;
 CREATE TABLE IF NOT EXISTS trace_archive (
   trace_id      String,
   app_id        LowCardinality(String),
-  started_at    DateTime64(3),
-  ended_at      DateTime64(3),
+  started_at    DateTime64(3, 'UTC'),
+  ended_at      DateTime64(3, 'UTC'),
   session_key   LowCardinality(String),
   channel       LowCardinality(String),
   model         LowCardinality(String),
@@ -179,3 +179,16 @@ CREATE TABLE IF NOT EXISTS trace_archive (
 -- 创建默认用户(若未通过环境变量创建)
 -- 注:CLICKHOUSE_USER 环境变量已创建用户,此处仅授权
 GRANT SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE ON aipack.* TO IF EXISTS 'aipack'@'%';
+
+-- ── F3 修复：存量库时区迁移 ─────────────────────────────────────
+-- 旧建表列为 DateTime64(3)（无时区修饰，按 CH 服务器时区解析/渲染），
+-- 新列为 DateTime64(3, 'UTC')，写入/读取统一按 UTC，不依赖服务器时区。
+-- 已有环境执行以下 ALTER（metadata 变更，不重写数据；若服务器时区非 UTC
+-- 且存量数据由旧代码写入，需运维按偏移量修正）：
+--
+-- ALTER TABLE runs    MODIFY COLUMN started_at DateTime64(3, 'UTC'),  MODIFY COLUMN ended_at DateTime64(3, 'UTC');
+-- ALTER TABLE spans   MODIFY COLUMN started_at DateTime64(3, 'UTC');
+-- ALTER TABLE events  MODIFY COLUMN ts DateTime64(3, 'UTC');
+-- ALTER TABLE retry_attempts MODIFY COLUMN ts DateTime64(3, 'UTC');
+-- ALTER TABLE tool_calls     MODIFY COLUMN started_at DateTime64(3, 'UTC');
+-- ALTER TABLE alert_events   MODIFY COLUMN created_at DateTime64(3, 'UTC');

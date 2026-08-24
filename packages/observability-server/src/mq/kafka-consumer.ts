@@ -1,14 +1,18 @@
 /**
  * Kafka Consumer — 基于 kafkajs 封装的 MqConsumer 实现。
  *
- * 批量拉取策略：
- * - 使用 kafkajs 原生 eachBatch，遍历 batch.messages
- * - 攒批缓冲：达到 maxBatchSize 或 eachBatch 结束时触发 handler
- * - 攒批超时由 setInterval 兜底（避免低流量时消息积压在缓冲）
- * - handler 成功 → resolveOffset + commitOffsetsIfNecessary；失败 → 抛错触发重投递
+ * 批量策略：
+ * - 使用 kafkajs 原生 eachBatch，按 maxBatchSize 切块交给 handler
+ * - 低流量不积压：kafkajs 每次 fetch 都回调 eachBatch（batch 天然按到达切分），
+ *   无需额外攒批定时器
+ *
+ * offset 语义（D1 修复，at-least-once）：
+ * - 显式 eachBatchAutoResolve: false（禁止 kafkajs 在 eachBatch 结束时自动提交）
+ * - 仅当前块 handler 成功后才 resolveOffset(块内最后一条) + commit
+ * - handler 失败 → 抛错，已成功的块已提交、失败块未 resolve → 重投递从失败块开始
  *
  * 错误处理：
- * - handler 抛错 → 整批不 commit，kafkajs 重投递（受 retry 配置限制）
+ * - handler 抛错 → 整块不 commit，kafkajs 重投递（受 retry 配置限制）
  * - 调用方在 handler 内捕获错误并主动 sendToDlq，避免无限重试
  *
  * 消费组语义：
@@ -46,12 +50,6 @@ export class KafkaMqConsumer implements MqConsumer {
   private fromBeginning: boolean;
   private subscribedTopic?: string;
   private running = false;
-  /** 攒批缓冲 */
-  private buffer: MqMessage[] = [];
-  private flushTimer?: NodeJS.Timeout;
-  private handler?: MqConsumeHandler;
-  /** 当前 eachBatch 的 payload（用于 resolveOffset / commit） */
-  private currentPayload?: EachBatchPayload;
 
   constructor(opts: KafkaConsumerOptions) {
     this.kafka = new Kafka({
@@ -68,6 +66,7 @@ export class KafkaMqConsumer implements MqConsumer {
       sessionTimeout: opts.sessionTimeoutMs,
     });
     this.maxBatchSize = opts.maxBatchSize ?? 500;
+    // 保留字段（兼容配置接口）：kafkajs fetch 自身管理批延迟，此值仅作为切块参考
     this.maxBatchMs = opts.maxBatchMs ?? 1000;
     this.fromBeginning = opts.fromBeginning ?? false;
   }
@@ -77,80 +76,50 @@ export class KafkaMqConsumer implements MqConsumer {
       throw new Error('consumer 已在运行，请先 stop() 再 subscribe');
     }
     this.subscribedTopic = topic;
-    this.handler = handler;
+    this.running = true;
     await this.consumer.connect();
     await this.consumer.subscribe({ topic, fromBeginning: this.fromBeginning });
 
-    // 攒批超时兜底：低流量时按 maxBatchMs flush 缓冲
-    this.flushTimer = setInterval(() => {
-      void this.flushBuffer();
-    }, this.maxBatchMs);
-    this.flushTimer.unref?.();
-
-    this.running = true;
     await this.consumer.run({
       autoCommit: false,
+      // D1 修复：显式关闭自动 resolve（默认 true 会在 eachBatch 正常结束后
+      // 自动提交最后一条 offset，与"处理成功才提交"的手动语义冲突）
+      eachBatchAutoResolve: false,
       eachBatch: async (payload: EachBatchPayload) => {
-        this.currentPayload = payload;
         const partition = payload.batch.partition;
-        for (const message of payload.batch.messages) {
-          this.buffer.push({
-            topic,
-            partition,
-            offset: message.offset,
-            key: message.key?.toString(),
-            value: message.value?.toString() ?? '',
-            timestamp: message.timestamp,
-          });
-          // 标记已接收（不等于已处理；handler 成功后才 commit）
-          payload.resolveOffset(message.offset);
-          if (this.buffer.length >= this.maxBatchSize) {
-            await this.flushBuffer();
+        const messages: MqMessage[] = payload.batch.messages.map((m) => ({
+          topic,
+          partition,
+          offset: m.offset,
+          key: m.key?.toString(),
+          value: m.value?.toString() ?? '',
+          timestamp: m.timestamp,
+        }));
+
+        // 按 maxBatchSize 切块：每块 handler 成功才 resolve 该块尾部 offset。
+        // 块 N 失败抛错时：块 1..N-1 已提交 → 重投递从块 N 开始，不重复不丢失。
+        for (let i = 0; i < messages.length; i += this.maxBatchSize) {
+          const chunk = messages.slice(i, i + this.maxBatchSize);
+          try {
+            await handler(chunk);
+          } catch (err) {
+            // 失败块不 resolve；抛错让 kafkajs 从已提交位置重投递
+            console.error('[KafkaMqConsumer] handler 失败，本块将重投递:', err);
+            throw err;
           }
+          // D1 修复：处理成功后才 resolve（kafkajs 提交全部已 resolve 的最大 offset）
+          const lastOffset = messages[i + chunk.length - 1]?.offset;
+          if (lastOffset !== undefined) payload.resolveOffset(lastOffset);
+          await payload.commitOffsetsIfNecessary();
           await payload.heartbeat();
         }
-        // eachBatch 结束时 flush 残留缓冲
-        if (this.buffer.length > 0) {
-          await this.flushBuffer();
-        }
-        this.currentPayload = undefined;
       },
     });
-  }
-
-  /** flush 缓冲：调用 handler → 成功 commit；失败抛错（kafkajs 重投递） */
-  private async flushBuffer(): Promise<void> {
-    if (this.buffer.length === 0 || !this.handler) return;
-    const messages = this.buffer.splice(0, this.buffer.length);
-    try {
-      await this.handler(messages);
-      // 成功 → commit 已 resolve 的 offset
-      if (this.currentPayload) {
-        await this.currentPayload.commitOffsetsIfNecessary();
-      }
-    } catch (err) {
-      // 失败 → 不 commit；kafkajs 会因 eachBatch 抛错而重投递
-      // 把消息放回缓冲头部，便于下次重试（仅日志分析用，实际重投递由 kafkajs 控制）
-      console.error('[KafkaMqConsumer] handler 失败，消息将重投递:', err);
-      throw err;
-    }
   }
 
   async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
-    if (this.flushTimer) {
-      clearInterval(this.flushTimer);
-      this.flushTimer = undefined;
-    }
-    // 停止前 flush 残留缓冲（best-effort，失败不阻塞）
-    if (this.buffer.length > 0) {
-      try {
-        await this.flushBuffer();
-      } catch (err) {
-        console.warn('[KafkaMqConsumer] 停止时 flush 残留失败:', err);
-      }
-    }
     await this.consumer.stop();
   }
 

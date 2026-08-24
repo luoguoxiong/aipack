@@ -61,6 +61,9 @@ export class KafkaMqProducer implements MqProducer {
     this.producer = this.kafka.producer({
       // 允许消息乱序（提高吞吐；ingest 消息无严格顺序要求）
       allowAutoTopicCreation: false,
+      // D12 修复：启用幂等（broker 按 <PID, epoch, seq> 去重，
+      // 重试/网络抖动不再产生重复消息；要求 acks=all，kafkajs 自动处理）
+      idempotent: true,
     });
     this.topic = opts.topic ?? TOPIC_INGEST;
     this.dlqTopic = opts.dlqTopic ?? TOPIC_DLQ;

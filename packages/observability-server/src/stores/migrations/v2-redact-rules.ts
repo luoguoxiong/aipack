@@ -23,6 +23,6 @@ export const V2_REDACT_RULES: Migration = {
       PRIMARY KEY (id),
       INDEX idx_redact_project (project_id),
       CONSTRAINT fk_rr_proj FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `,
 };

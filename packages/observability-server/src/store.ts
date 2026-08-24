@@ -105,6 +105,8 @@ export interface TraceStore {
   prune(before: number): Promise<number>;
   /** 全库快照备份（VACUUM INTO），返回备份文件路径 */
   backup(dir: string): Promise<string>;
+  /** F10 修复：健康检查（存储不可达时抛错），供 /healthz 探测实际 traceStore */
+  healthCheck(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -905,18 +907,20 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
   async queryErrorClassDrill(
     filter: ErrorClassFilter & { errorClass: string },
   ): Promise<ErrorClassDrillResult> {
-    const { sql, params } = buildErrorWhere(filter);
-    const allParams = [...params, filter.errorClass];
     const limit = filter.limit ?? 100;
 
+    // F1 修复：三个查询各自独立组装 WHERE 与参数（占位符参数化），
+    // 替换原先的字符串替换 hack（占位符与参数错位导致 500）与转义拼接。
+
     // 1. 最近 N 条 traces（按 startedAt DESC）
+    const w1 = buildErrorWhere(filter);
     const traceRows = this.db
       .prepare(
         `SELECT trace_id, started_at, duration_ms, model, app_id, session_key
-         FROM runs ${sql} AND error_class = ?
+         FROM runs ${w1.sql} AND error_class = ?
          ORDER BY started_at DESC LIMIT ?`,
       )
-      .all(...allParams, limit) as Array<Record<string, unknown>>;
+      .all(...w1.params, filter.errorClass, limit) as Array<Record<string, unknown>>;
 
     const recentTraces = traceRows.map((r) => ({
       traceId: String(r.trace_id),
@@ -928,14 +932,15 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
     }));
 
     // 2. 模型分布：error_class=该类的 model span JOIN runs
+    const w2 = buildErrorWhere(filter, 'r');
     const modelRows = this.db
       .prepare(
         `SELECT s.name AS m, COUNT(*) AS c FROM runs r
            JOIN spans s ON s.trace_id = r.trace_id AND s.kind = 'model'
-         ${sql.replace('r.', 'runs.').replace('WHERE ', 'WHERE r.').replace('error_class = ?', `r.error_class = ?`)}
+         ${w2.sql} AND r.error_class = ?
          GROUP BY s.name ORDER BY c DESC`,
       )
-      .all(...allParams) as Array<{ m: unknown; c: number }>;
+      .all(...w2.params, filter.errorClass) as Array<{ m: unknown; c: number }>;
     const byModel: Record<string, number> = {};
     for (const r of modelRows) {
       // s.name 格式为 "model:<id>"，去掉前缀；若解析失败保留原名
@@ -945,20 +950,26 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
     }
 
     // 3. 工具分布：error_class=该类的 tool_calls JOIN runs（status='error' 才计数）
+    const w3 = buildErrorWhere(filter, 'r');
     const toolRows = this.db
       .prepare(
         `SELECT t.tool_name AS tn, COUNT(*) AS c FROM runs r
            JOIN tool_calls t ON t.trace_id = r.trace_id
-         ${buildErrorWhereForJoin(filter)} AND r.error_class = ? AND t.status = 'error'
+         ${w3.sql} AND r.error_class = ? AND t.status = 'error'
          GROUP BY t.tool_name ORDER BY c DESC`,
       )
-      .all(...allParams) as Array<{ tn: unknown; c: number }>;
+      .all(...w3.params, filter.errorClass) as Array<{ tn: unknown; c: number }>;
     const byTool: Record<string, number> = {};
     for (const r of toolRows) {
       byTool[String(r.tn ?? 'unknown')] = Number(r.c);
     }
 
     return { errorClass: filter.errorClass, recentTraces, byModel, byTool };
+  }
+
+  async healthCheck(): Promise<void> {
+    // SQLite 本地文件：轻量探测连接可用性
+    this.db.prepare('SELECT 1').get();
   }
 
   async close(): Promise<void> {
@@ -1177,42 +1188,29 @@ function round2(n: number): number {
 
 // ─── Phase 9：错误归因查询辅助（SQL WHERE 组装）──────────────────
 
-/** 生成 runs 表范围过滤 WHERE 子句（前缀含 WHERE，条件用 AND 连接），返回 { sql, params } */
-function buildErrorWhere(filter: ErrorClassFilter): { sql: string; params: unknown[] } {
+/**
+ * 生成 runs 表范围过滤 WHERE 子句（前缀含 WHERE，条件用 AND 连接），返回 { sql, params }。
+ * F1 修复：全部占位符参数化（杜绝 SQL 注入与转义歧义）；
+ * alias 为 JOIN 场景下 runs 表的别名（如 'r'），单表查询不传。
+ */
+function buildErrorWhere(filter: ErrorClassFilter, alias?: string): { sql: string; params: unknown[] } {
+  const p = alias ? `${alias}.` : '';
   const conds: string[] = [];
   const params: unknown[] = [];
   if (filter.since !== undefined) {
-    conds.push('started_at >= ?');
+    conds.push(`${p}started_at >= ?`);
     params.push(filter.since);
   }
   if (filter.until !== undefined) {
-    conds.push('started_at < ?');
+    conds.push(`${p}started_at < ?`);
     params.push(filter.until);
   }
   if (filter.appId) {
-    conds.push('app_id = ?');
+    conds.push(`${p}app_id = ?`);
     params.push(filter.appId);
   }
   return {
     sql: conds.length ? `WHERE ${conds.join(' AND ')}` : 'WHERE 1=1',
     params,
   };
-}
-
-/** 为 JOIN 版本（runs 别名 r + tool_calls/spans）生成等价 WHERE：字段用 r.xxx */
-function buildErrorWhereForJoin(filter: ErrorClassFilter): string {
-  const conds: string[] = [];
-  if (filter.since !== undefined) conds.push(`r.started_at >= ${escapeInt(filter.since)}`);
-  if (filter.until !== undefined) conds.push(`r.started_at < ${escapeInt(filter.until)}`);
-  if (filter.appId) conds.push(`r.app_id = ${escapeStr(filter.appId)}`);
-  return conds.length ? `WHERE ${conds.join(' AND ')}` : 'WHERE 1=1';
-}
-
-// SQLite better-sqlite3 同步函数无法在 JOIN 里用参数化两次（参数已经消耗过），
-// 这里提供安全转义作为退而求其次（since/until/appId 都是受信任输入）
-function escapeInt(v: number): string {
-  return Number.isFinite(v) ? String(Math.floor(v)) : '0';
-}
-function escapeStr(s: string): string {
-  return "'" + String(s).replace(/'/g, "''") + "'";
 }

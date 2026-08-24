@@ -451,9 +451,10 @@ export function createCollector(opts: CollectorOptions): Collector {
       }
 
       // 就绪探针（P2-3）：无鉴权，DB/存储可达则 200，供容器与负载均衡探测
+      // F10 修复：查实际 traceStore（CH/dual 模式下 SQLite 可达不代表监控链路健康）
       if (req.method === 'GET' && pathname === '/healthz') {
         try {
-          await store.listApps();
+          await traceStore.healthCheck();
           return json(res, 200, { ok: true });
         } catch (err) {
           return json(res, 503, { ok: false, error: err instanceof Error ? err.message : 'unavailable' });
@@ -519,6 +520,9 @@ export function createCollector(opts: CollectorOptions): Collector {
 
 // ─── ingest ────────────────────────────────────────────────────────
 
+/** D8 修复：ingest 写入失败计数（produce/flush 失败累计，进程内指标） */
+let ingestFailCount = 0;
+
 async function handleIngest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -570,18 +574,28 @@ async function handleIngest(
   };
 
   // Phase 3：MQ 启用时 produce 到 Kafka（落盘由 worker 异步处理）；否则同步落盘
+  // D8 修复：produce/flush 失败返回 5xx（客户端 HttpReporter 对 5xx 走缓存补报），
+  // 不再 fire-and-forget 静默丢批；聚合仅在写入成功后喂（保持与存储一致）
   if (ctx.mqProducer) {
     const msg = encodeIngestMessage({ appId, batch, ingestedAt: Date.now() });
-    ctx.mqProducer.send(msg, { key: appId }).catch((err) => {
+    try {
+      await ctx.mqProducer.send(msg, { key: appId });
+    } catch (err) {
+      ingestFailCount++;
       console.error('[observability-server] Kafka produce 失败:', err);
-    });
+      return json(res, 503, { ok: false, error: 'mq produce failed' }, { 'Retry-After': '1' });
+    }
     // MQ 模式下聚合由 worker 统一喂（避免 collector 与 worker 双写聚合）
     // 注意：memory 模式 + MQ 启用时，collector 仍需本地喂聚合（worker 的 memory 实例与 collector 不共享）
   } else {
-    // 落盘（app_id 盖戳）+ 喂聚合器（全局 + 该应用），与查询互不影响
-    ctx.traceStore.flush(batch, appId).catch((err) => {
+    // 落盘（app_id 盖戳）
+    try {
+      await ctx.traceStore.flush(batch, appId);
+    } catch (err) {
+      ingestFailCount++;
       console.error('[observability-server] flush 失败:', err);
-    });
+      return json(res, 500, { ok: false, error: 'flush failed' }, { 'Retry-After': '1' });
+    }
   }
   ctx.appStore.touchApp(appId, Date.now()).catch(() => {}); // fire-and-forget：touchApp 失败不影响上报
 
