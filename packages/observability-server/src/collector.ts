@@ -470,7 +470,12 @@ export function createCollector(opts: CollectorOptions): Collector {
       }
 
       // 查询端点：需要面板会话
-      if (req.method === 'GET' && (pathname.startsWith('/metrics/') || pathname.startsWith('/traces'))) {
+      // Phase 6：model-prices 的写操作（POST/DELETE）同样走面板会话鉴权后转发到 apiHandler
+      const isMetricsOrTraces = pathname.startsWith('/metrics/') || pathname.startsWith('/traces');
+      const isModelPriceWrite =
+        pathname.startsWith('/metrics/model-prices') &&
+        (req.method === 'POST' || req.method === 'DELETE');
+      if ((req.method === 'GET' && isMetricsOrTraces) || isModelPriceWrite) {
         // 多用户模式：JWT access token（cookie 或 Bearer）
         if (isMultiUser && authCtx) {
           const auth = await authenticate(

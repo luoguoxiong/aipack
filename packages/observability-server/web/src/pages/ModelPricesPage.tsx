@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  AutoComplete,
   Button,
   Card,
   Form,
-  Input,
   InputNumber,
   message,
   Modal,
@@ -14,8 +14,8 @@ import {
   Typography,
 } from 'antd';
 import { DeleteOutlined, DollarOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
-import { createModelPrice, deleteModelPrice, fetchModelPrices } from '../api';
-import type { ModelPrice } from '../types';
+import { api, createModelPrice, deleteModelPrice, fetchModelPrices } from '../api';
+import type { ModelPrice, Summary } from '../types';
 
 const CURRENCY_OPTIONS = [
   { value: 'USD', label: 'USD' },
@@ -37,7 +37,13 @@ export default function ModelPricesPage() {
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [observedModels, setObservedModels] = useState<string[]>([]);
   const [form] = Form.useForm<PriceFormValues>();
+
+  const modelOptions = useMemo(
+    () => observedModels.map((id) => ({ value: id, label: id })),
+    [observedModels],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,6 +98,20 @@ export default function ModelPricesPage() {
     form.resetFields();
     form.setFieldsValue({ currency: 'USD' });
     setOpen(true);
+    // 拉取已观测到的模型作为候选（best-effort，失败不影响手动输入）
+    void (async () => {
+      try {
+        const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        const byModel = await api.summary<Record<string, Summary>>({
+          groupBy: 'model',
+          since,
+        });
+        const ids = Object.keys(byModel).sort();
+        if (ids.length) setObservedModels(ids);
+      } catch {
+        // 多用户模式未选应用等场景下会 403，忽略即可
+      }
+    })();
   };
 
   const columns = [
@@ -204,9 +224,16 @@ export default function ModelPricesPage() {
           <Form.Item
             name="modelId"
             label="模型 ID"
-            rules={[{ required: true, message: '请输入模型 ID' }]}
+            rules={[{ required: true, message: '请选择或输入模型 ID' }]}
           >
-            <Input placeholder="例如 gpt-4o / claude-3-5-sonnet" />
+            <AutoComplete
+              options={modelOptions}
+              placeholder="选择已观测模型或输入新 ID，例如 gpt-4o"
+              filterOption={(input, option) =>
+                (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+              allowClear
+            />
           </Form.Item>
           <Space size={12} style={{ width: '100%' }} align="start">
             <Form.Item

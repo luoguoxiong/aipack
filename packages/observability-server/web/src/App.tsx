@@ -5,6 +5,7 @@ import {
   AlertOutlined,
   AppstoreOutlined,
   DashboardOutlined,
+  DollarOutlined,
   LogoutOutlined,
   ProfileOutlined,
   ProjectOutlined,
@@ -39,6 +40,7 @@ function Shell() {
     : path.startsWith('/apps') ? 'apps'
     : path.startsWith('/traces') ? 'traces'
     : path.startsWith('/alerts') ? 'alerts'
+    : path.startsWith('/model-prices') ? 'model-prices'
     : 'dashboard';
 
   const onLogout = async () => {
@@ -63,6 +65,7 @@ function Shell() {
     { key: 'apps', icon: <AppstoreOutlined />, label: '应用管理' },
     { key: 'traces', icon: <ProfileOutlined />, label: 'Trace 列表' },
     { key: 'alerts', icon: <AlertOutlined />, label: '告警' },
+    { key: 'model-prices', icon: <DollarOutlined />, label: '模型价格' },
     ...(mode === 'multi'
       ? [
           { key: 'projects', icon: <ProjectOutlined />, label: '项目' },
