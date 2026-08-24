@@ -15,13 +15,22 @@ export default function EChart({ option, height = 300, style, onEvents }: EChart
   const chartRef = useRef<echarts.ECharts | null>(null);
 
   useEffect(() => {
-    if (!ref.current) return;
-    const chart = echarts.init(ref.current);
+    const el = ref.current;
+    if (!el) return;
+    const chart = echarts.init(el);
     chartRef.current = chart;
     const onResize = () => chart.resize();
     window.addEventListener('resize', onResize);
+    // 修复：图表常在 Drawer/Tabs 等容器内挂载，挂载瞬间容器可能尚不可见（宽度为 0），
+    // echarts.init 会以错误尺寸建画布且之后不再修正。
+    // 用 ResizeObserver 监听容器自身尺寸，容器可见/变宽后 resize 重算画布宽度。
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth > 0 && el.clientHeight > 0) chart.resize();
+    });
+    ro.observe(el);
     return () => {
       window.removeEventListener('resize', onResize);
+      ro.disconnect();
       chart.dispose();
       chartRef.current = null;
     };
