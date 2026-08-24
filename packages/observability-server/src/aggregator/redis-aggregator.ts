@@ -209,7 +209,9 @@ export class RedisAggregator implements Aggregator {
       this.incrBucket(p, dim, key, idx, (kp) => {
         if (isOk || isErr) {
           p.hincrby(kp, 'requests', 1);
-          p.zadd(this.histKey(dim, key, idx, 'latency'), t.durationMs, `${t.traceId}:${t.toolName}:${idx}`);
+          // P8 修复：member 此前用 traceId:toolName:idx，同一 trace 内同名工具的
+          // 多次调用互相覆盖（ZADD 同 member 替换 score），分位数失真；改用 spanId
+          this.addHist(p, dim, key, idx, 'latency', t.durationMs, `${t.traceId}:${t.spanId}`);
         }
         if (isOk) p.hincrby(kp, `t:${t.toolName}:ok`, 1);
         if (isErr) p.hincrby(kp, `t:${t.toolName}:error`, 1);

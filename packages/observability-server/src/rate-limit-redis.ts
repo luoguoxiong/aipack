@@ -26,20 +26,23 @@ export interface RedisRateLimiterOptions {
 
 /**
  * Lua 脚本：原子地"补充 + 扣减"。
- *
  * KEYS[1] = 限流 key（Hash，字段：tokens / lastRefill）
  * ARGV[1] = capacity（桶容量）
  * ARGV[2] = refillPerSec（每秒补充速率）
- * ARGV[3] = now（epoch ms）
- * ARGV[4] = ttl（秒，空闲清理）
+ * ARGV[3] = ttl（秒，空闲清理）
+ *
+ * P9 修复：时间戳用 redis.call('TIME') 取 Redis 服务端时钟，
+ * 不再接受客户端传入的 now（多实例时钟偏移会导致慢实例误限流）。
  *
  * 返回 1（允许）或 0（拒绝）。
  */
 const TAKE_LUA = `
 local capacity = tonumber(ARGV[1])
 local refillPerSec = tonumber(ARGV[2])
-local now = tonumber(ARGV[3])
-local ttl = tonumber(ARGV[4])
+local ttl = tonumber(ARGV[3])
+
+local t = redis.call('TIME')
+local now = t[1] * 1000 + math.floor(t[2] / 1000)
 
 local tokens = tonumber(redis.call('HGET', KEYS[1], 'tokens'))
 local lastRefill = tonumber(redis.call('HGET', KEYS[1], 'lastRefill'))
@@ -50,7 +53,7 @@ if tokens == nil then
   lastRefill = now
 end
 
--- 按 elapsed 补充（时钟回拨保护：elapsed < 0 时按 0 处理）
+-- 按 elapsed 补充（服务端单调推进，无需回拨保护）
 local elapsedSec = (now - lastRefill) / 1000
 if elapsedSec < 0 then elapsedSec = 0 end
 tokens = math.min(capacity, tokens + elapsedSec * refillPerSec)
@@ -91,14 +94,13 @@ export class RedisRateLimiter {
    */
   async take(key: string): Promise<boolean> {
     const fullKey = this.keyPrefix + key;
-    const now = Date.now();
+    // P9：不再传客户端时钟，Lua 内取 redis.call('TIME') 服务端时钟
     const allowed = await this.redis.raw.eval(
       TAKE_LUA,
       1,
       fullKey,
       this.burst,
       this.rate,
-      now,
       IDLE_TTL_SEC,
     );
     return Number(allowed) === 1;

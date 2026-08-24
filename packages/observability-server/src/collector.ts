@@ -485,7 +485,7 @@ export function createCollector(opts: CollectorOptions): Collector {
 
       // 静态文件（面板构建产物）
       if (req.method === 'GET' && opts.staticDir) {
-        return serveStatic(url.pathname, opts.staticDir, res);
+        return serveStatic(url.pathname, opts.staticDir, res, req);
       }
 
       return json(res, 404, { error: 'Not Found' });
@@ -522,6 +522,19 @@ export function createCollector(opts: CollectorOptions): Collector {
 
 /** D8 修复：ingest 写入失败计数（produce/flush 失败累计，进程内指标） */
 let ingestFailCount = 0;
+
+/**
+ * P1 优化：verifyApp 热路径缓存。
+ * - key 为 appId:secret（密钥重置后新 secret 自然 miss，旧条目 30s 内过期失效）
+ * - 仅缓存验证成功结果（失败不缓存，防止错误凭据被缓存）
+ * - MySQL 模式下省去每次 ingest 的 verifyApp 网络往返
+ */
+const verifyCache = new Map<string, number>();
+const VERIFY_CACHE_TTL_MS = 30_000;
+
+/** P1 优化：touchApp 节流（每 appId 每分钟最多写库一次，lastSeenAt 精度足够） */
+const touchThrottle = new Map<string, number>();
+const TOUCH_THROTTLE_MS = 60_000;
 
 async function handleIngest(
   req: http.IncomingMessage,
@@ -652,10 +665,12 @@ const MIME: Record<string, string> = {
   '.map': 'application/json',
 };
 
+/** P5 优化：静态文件缓存（ETag 协商 + 带内容 hash 资源长缓存） */
 async function serveStatic(
   pathname: string,
   staticDir: string,
   res: http.ServerResponse,
+  req: http.IncomingMessage,
 ): Promise<void> {
   // 安全：禁止路径穿越
   const safe = path.normalize(pathname).replace(/^(\.\.[/\\])+/, '');
@@ -671,9 +686,27 @@ async function serveStatic(
     filePath = path.join(staticDir, 'index.html');
   }
   try {
-    const data = await fs.readFile(filePath);
+    const [data, stat] = await Promise.all([fs.readFile(filePath), fs.stat(filePath)]);
     const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    // ETag = size + mtime 弱校验，命中返回 304（省去响应体传输）
+    const etag = `"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { ETag: etag });
+      res.end();
+      return;
+    }
+    const headers: Record<string, string> = {
+      'Content-Type': MIME[ext] || 'application/octet-stream',
+      ETag: etag,
+    };
+    if (safe.startsWith('/assets/')) {
+      // Vite 构建产物文件名含内容 hash，内容变即换名 → 可一年长缓存
+      headers['Cache-Control'] = 'public, max-age=31536000, immutable';
+    } else {
+      // 入口 HTML / 其他文件走协商缓存（每次校验新鲜度）
+      headers['Cache-Control'] = 'no-cache';
+    }
+    res.writeHead(200, headers);
     res.end(data);
   } catch {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -686,17 +719,21 @@ function header(req: http.IncomingMessage, name: string): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
+/** P6 修复：Buffer 数组累加再 concat；按字节数（而非 UTF-16 码元数）判上限 */
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
-    let raw = '';
+    const chunks: Buffer[] = [];
+    let size = 0;
     req.on('data', (chunk: Buffer) => {
-      raw += chunk;
-      if (raw.length > MAX_BODY) {
+      size += chunk.length;
+      if (size > MAX_BODY) {
         reject(new Error('body too large'));
         req.destroy();
+        return;
       }
+      chunks.push(chunk);
     });
-    req.on('end', () => resolve(raw));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
 }

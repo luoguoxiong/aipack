@@ -77,6 +77,8 @@ type DimName = 'model' | 'tool' | 'session' | 'version';
 export class Aggregator implements IAggregator {
   private windowBuckets: number;
   private bucketMs: number;
+  /** P4：sweep 节流时间戳（每分钟最多一次全量清理，对齐 RedisAggregator） */
+  private lastSweep = 0;
   private global = new Map<number, DimensionStats>();
   private dims: Record<DimName, Map<string, Map<number, DimensionStats>>> = {
     model: new Map(),
@@ -289,10 +291,21 @@ export class Aggregator implements IAggregator {
   }
 
   sweep(now = Date.now()): void {
+    // P4 修复：此前每条记录的 5 个 ingest* 各触发一次全量 sweep，
+    // O(维度×桶) 高频执行；节流到每分钟一次（查询结果不受影响：
+    // aggregate 按 inRange 过滤，过期桶本就不参与计算）
+    if (now - this.lastSweep < 60_000) return;
+    this.lastSweep = now;
     const minIdx = this.nowBucket(now) - this.windowBuckets;
     sweepMap(this.global, minIdx);
     for (const name of ['model', 'tool', 'session', 'version'] as const) {
-      for (const byKey of this.dims[name].values()) sweepMap(byKey, minIdx);
+      const dim = this.dims[name];
+      for (const [key, byKey] of dim) {
+        sweepMap(byKey, minIdx);
+        // P3 修复：内层桶全过期则删外层 key（sessionKey 高基数维度
+        // 的 Map key 此前永不删除 → 内存泄漏 + groupBy=session 返回大量全零分组）
+        if (byKey.size === 0) dim.delete(key);
+      }
     }
     // 清理窗口外的 trace 版本映射，避免无限增长
     for (const [traceId, { idx }] of this.traceVersion) {
@@ -303,6 +316,7 @@ export class Aggregator implements IAggregator {
   /** Phase 6 — 重置所有聚合状态（含 totalCostCents 清零） */
   reset(): void {
     this.totalCostCents = 0;
+    this.lastSweep = 0; // P4：重置节流，允许 reset 后立即清理
     this.global.clear();
     for (const name of ['model', 'tool', 'session', 'version'] as const) {
       this.dims[name].clear();

@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS model_prices (
   effective_at       INTEGER NOT NULL,
   PRIMARY KEY (model_id, effective_at)
 );
-CREATE INDEX IF NOT EXISTS idx_mp_model ON model_prices(model_id, effective_at);
+-- P7：主键 (model_id, effective_at) 已覆盖 idx_mp_model 的前缀查询，冗余索引已删
 `;
 
 export class SQLiteModelPriceStore implements ModelPriceStore {

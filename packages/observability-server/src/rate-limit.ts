@@ -23,10 +23,10 @@ export class TokenBucket {
     this.lastRefill = Date.now();
   }
 
-  /** 取 1 个令牌；不足返回 false */
+  /** 取 1 个令牌；不足返回 false（P10：NTP 回拨期间 elapsed 钳零，不误清令牌） */
   take(): boolean {
     const now = Date.now();
-    const elapsedSec = (now - this.lastRefill) / 1000;
+    const elapsedSec = Math.max(0, (now - this.lastRefill) / 1000);
     this.lastRefill = now;
     this.tokens = Math.min(this.capacity, this.tokens + elapsedSec * this.refillPerSec);
     if (this.tokens >= 1) {

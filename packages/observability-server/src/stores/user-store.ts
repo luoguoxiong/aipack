@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS users (
   name          TEXT,
   created_at    INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+-- P7：email 列的 UNIQUE 约束已自动建索引，不再另建 idx_users_email（减少写放大）
 `;
 
 export class SQLiteUserStore implements UserStore {
