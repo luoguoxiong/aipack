@@ -68,7 +68,7 @@ export class DualTraceStore implements TraceStore {
       return await this.primary.queryRuns(filter);
     } catch (err) {
       console.warn('[DualTraceStore] primary queryRuns 失败，回落 secondary:', err);
-      return this.secondary.queryRuns(filter);
+      return await this.secondary.queryRuns(filter);
     }
   }
 
@@ -79,6 +79,11 @@ export class DualTraceStore implements TraceStore {
       console.warn('[DualTraceStore] primary queryTrace 失败，回落 secondary:', err);
       return this.secondary.queryTrace(traceId);
     }
+  }
+
+  async getRunAppId(traceId: string): Promise<string | undefined> {
+    // S1 安全修复：trace 归属点查透传 primary
+    return this.primary.getRunAppId(traceId);
   }
 
   async queryVersionMetrics(filter: {

@@ -246,6 +246,15 @@ export class ClickHouseStore implements TraceStore {
     };
   }
 
+  async getRunAppId(traceId: string): Promise<string | undefined> {
+    // S1 安全修复：trace 归属 app 点查（与 queryTrace 一致查热表；chStr 转义）
+    const rows = await this.client.query<{ app_id: string }>(
+      `SELECT app_id FROM runs WHERE trace_id = ${chStr(traceId)} LIMIT 1`,
+    );
+    const v = rows[0]?.app_id;
+    return typeof v === 'string' ? v : undefined;
+  }
+
   async queryVersionMetrics(filter: {
     since?: number;
     until?: number;

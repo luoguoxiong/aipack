@@ -18,6 +18,7 @@ import {
 import { ReloadOutlined } from '@ant-design/icons';
 import type { EChartsOption } from 'echarts';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import type { AppInfo, Summary, TimeseriesPoint, ToolStat, VersionMetrics } from '../types';
 import EChart from '../components/EChart';
 import KpiCard from '../components/KpiCard';
@@ -58,6 +59,7 @@ const ERROR_CLASS_LABEL: Record<string, string> = {
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { mode } = useAuth();
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [appId, setAppId] = useState<string | undefined>(undefined);
   const [version, setVersion] = useState<string | undefined>(undefined);
@@ -83,6 +85,8 @@ export default function DashboardPage() {
   }, [appId, version, range]);
 
   const load = useCallback(async () => {
+    // S1 安全修复：多用户模式下后端要求查询必须指定 appId，未选中前不发起请求
+    if (mode === 'multi' && !appId) return;
     setLoading(true);
     try {
       const [sum, model, ts, cost, toolList, versionList] = await Promise.all([
@@ -106,7 +110,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [params, metric, range]);
+  }, [params, metric, range, mode, appId]);
 
   useEffect(() => {
     load();
@@ -115,9 +119,13 @@ export default function DashboardPage() {
   useEffect(() => {
     api
       .listApps()
-      .then(setApps)
+      .then((list) => {
+        setApps(list);
+        // S1 安全修复：多用户模式默认选中第一个应用（后端要求查询必须带 appId）
+        if (mode === 'multi' && list.length > 0) setAppId((cur) => cur ?? list[0].appId);
+      })
       .catch(() => {});
-  }, []);
+  }, [mode]);
 
   // 对比卡片缺省取最近两个有数据的版本（versions 按 lastSeenAt 倒序）
   const effA = compareA ?? versions[0]?.version;

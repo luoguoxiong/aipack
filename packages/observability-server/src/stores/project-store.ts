@@ -34,6 +34,8 @@ export interface ProjectStore {
   unlinkApp(projectId: string, appId: string): Promise<void>;
   /** 列出项目下的所有 app_id */
   listApps(projectId: string): Promise<string[]>;
+  /** S2 安全修复：列出 app 关联的所有项目 ID（app-项目多对多归属校验） */
+  listProjectIdsByApp(appId: string): Promise<string[]>;
   /** 查 app 所属项目（app 只属于一个项目时返回 project_id；多对多返回第一个） */
   getProjectByApp(appId: string): Promise<ProjectRecord | undefined>;
   close(): void;
@@ -128,6 +130,13 @@ export class SQLiteProjectStore implements ProjectStore {
     return rows.map((r) => r.app_id);
   }
 
+  async listProjectIdsByApp(appId: string): Promise<string[]> {
+    const rows = this.db
+      .prepare('SELECT project_id FROM project_apps WHERE app_id = ? ORDER BY project_id')
+      .all(appId) as Array<{ project_id: string }>;
+    return rows.map((r) => r.project_id);
+  }
+
   async getProjectByApp(appId: string): Promise<ProjectRecord | undefined> {
     const row = this.db
       .prepare(
@@ -209,6 +218,14 @@ export class MySQLProjectStore implements ProjectStore {
       [projectId],
     );
     return (rows as Array<{ app_id: string }>).map((r) => r.app_id);
+  }
+
+  async listProjectIdsByApp(appId: string): Promise<string[]> {
+    const rows = await this.pool.query(
+      'SELECT project_id FROM project_apps WHERE app_id = ? ORDER BY project_id',
+      [appId],
+    );
+    return (rows as Array<{ project_id: string }>).map((r) => r.project_id);
   }
 
   async getProjectByApp(appId: string): Promise<ProjectRecord | undefined> {

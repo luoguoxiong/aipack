@@ -321,6 +321,18 @@ async function handleLinkApp(
   if (!body || typeof body.appId !== 'string' || !body.appId) {
     return json(res, 400, { error: 'appId 为必填' });
   }
+  // 安全修复（S2）：目标 app 已关联其他项目时，仅原项目的 owner 可将其关联到新项目。
+  // 防止 editor 用自己项目的权限把他人项目的 app 挂进来进而读取 appSecret。
+  const existingPids = await deps.projectStore.listProjectIdsByApp(body.appId);
+  for (const otherPid of existingPids) {
+    if (otherPid === pid) continue; // 已关联本项目 → 幂等重放，editor 权限足够
+    const role = await deps.aclStore.getRole(auth.user.userId, otherPid);
+    if (role !== 'owner') {
+      return json(res, 403, {
+        error: '该应用已关联其他项目，仅原项目 owner 可将其关联到新项目',
+      });
+    }
+  }
   await deps.projectStore.linkApp(pid, body.appId);
   return json(res, 200, { ok: true }, authHeaders(auth));
 }

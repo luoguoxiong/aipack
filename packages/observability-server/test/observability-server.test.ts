@@ -22,6 +22,9 @@ import { Aggregator } from '../src/aggregator';
 import type { CollectorOptions } from '../src/index';
 import type { RunRecord, SpanRecord, ToolCallRecord } from '@aipack-ai/observability';
 
+// 测试豁免：mock webhook 监听 127.0.0.1，S3 安全修复默认拦截内网目标，测试显式放行
+process.env.ALERTS_WEBHOOK_ALLOW_PRIVATE = '1';
+
 // ─── mock streamFn（与 telemetry.test.ts 同手法）──────────────────
 
 function mockStreamFn(messages: Message[]): StreamFn {

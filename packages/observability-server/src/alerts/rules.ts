@@ -8,6 +8,7 @@
  * 空数据防护：成功率/平均步数/重试率/工具成功率在窗口内无数据时跳过评估，
  * 避免「空窗口 → 指标=0 → 误触发 lt 规则」。
  */
+import { checkWebhookUrlSyntax } from '../security/url-guard';
 
 export const ALERT_METRICS = [
   'successRate',

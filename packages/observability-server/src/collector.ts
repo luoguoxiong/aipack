@@ -40,7 +40,7 @@ import {
   type AgentDefinitionsHandler,
   type AgentWebhook,
 } from './api/agent-definitions';
-import { authenticate, writeAuthFailure, type AuthContext } from './middleware/auth';
+import { authenticate, writeAuthFailure, authorizeQueryAccess, type AuthContext } from './middleware/auth';
 import { createAgentWebhook } from './agent-definition/webhook';
 
 export interface RetentionOptions {

@@ -8,6 +8,7 @@
  */
 
 import type { AlertRuleRow } from '../store';
+import { assertPublicHttpUrl } from '../security/url-guard';
 
 export interface AlertNotification {
   status: 'fired' | 'recovered';
@@ -48,6 +49,16 @@ export function createNotifier(opts: NotifierOptions = {}): Notifier {
             (n.vA !== undefined && n.vB !== undefined ? ` 版本 ${n.vB} → ${n.vA}` : '') +
             ` appId=${n.rule.appId ?? '全局'}\n` +
             `  → 未配置 webhook，仅记录本地日志（设置 ALERTS_WEBHOOK_URL 或规则 webhookUrl 可推送）`,
+        );
+        return false;
+      }
+
+      // 安全修复（S3/SSRF）：发送前复核出站目标（拦截历史脏数据与 DNS rebinding；
+      // defaultWebhookUrl 为服务端配置，同样复核以阻断误配的内网地址）
+      const guard = await assertPublicHttpUrl(target);
+      if (!guard.ok) {
+        console.warn(
+          `[observability-server] 告警 webhook 目标被安全策略拦截: ${guard.error}。规则=${n.rule.name}`,
         );
         return false;
       }

@@ -28,6 +28,7 @@ import type { AppStore } from './stores/app-store';
 import type { ProjectStore } from './stores/project-store';
 import type { AlertStore, AlertRuleRow } from './store';
 import { validateRule } from './alerts/rules';
+import { assertPublicHttpUrl } from './security/url-guard';
 import type { Notifier } from './alerts/notify';
 import { authenticate, requireRole, type AuthContext, type AuthResult, writeAuthFailure } from './middleware/auth';
 import { json, readJson } from './api/helpers';
@@ -249,8 +250,13 @@ async function handleDeleteApp(
 }
 
 /**
- * 多用户模式：校验用户对某 app 的项目权限。
+ * 多用户模式：校验用户对某 app 的项目权限（app 为多对多关联，任一关联项目
+ * 满足 minRole 即放行）。
  * 单用户模式：直接放行。
+ *
+ * 安全修复（S2）：app 未关联任何项目时不再对 viewer 放行——此前未关联的 app
+ * （如 OBS_APPS 种子应用）可被任意登录用户读取 appSecret。多用户模式下此类
+ * app 必须先由项目管理员关联（POST /api/projects/:pid/apps）才可访问。
  */
 async function checkAppProjectAccess(
   deps: AdminDeps,
@@ -260,20 +266,22 @@ async function checkAppProjectAccess(
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
   if (!auth.user.isMulti) return { ok: true };
   if (!deps.projectStore) return { ok: false, status: 503, error: 'projectStore 未注入' };
-  const project = await deps.projectStore.getProjectByApp(appId);
-  if (!project) {
-    // app 未关联任何项目：仅允许 viewer 查看（已是 owner 隐式）
-    // 实际上面板创建 app 必带 projectId，此处 app 历史数据兜底
-    if (minRole === 'viewer') return { ok: true };
-    return { ok: false, status: 403, error: 'app 未关联项目，无法校验权限' };
+  const pids = await deps.projectStore.listProjectIdsByApp(appId);
+  if (pids.length === 0) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'app 未关联任何项目，请先由项目管理员将其关联到项目后再操作',
+    };
   }
-  const role = await deps.authCtx!.multi!.aclStore.getRole(auth.user.userId, project.id);
-  if (!role) return { ok: false, status: 403, error: '无该项目权限' };
   const LEVEL = { viewer: 1, editor: 2, owner: 3 };
-  if (LEVEL[role] < LEVEL[minRole]) {
-    return { ok: false, status: 403, error: `需要 ${minRole} 及以上权限` };
+  for (const pid of pids) {
+    const role = await deps.authCtx!.multi!.aclStore.getRole(auth.user.userId, pid);
+    if (role && LEVEL[role] >= LEVEL[minRole]) {
+      return { ok: true };
+    }
   }
-  return { ok: true };
+  return { ok: false, status: 403, error: `需要 ${minRole} 及以上权限` };
 }
 
 // ─── 告警端点实现 ─────────────────────────────────────────────────
@@ -312,6 +320,11 @@ async function handleUpdateAlertRule(
   const merged = { ...existing, ...patch };
   const result = validateRule(merged as never);
   if (!result.ok) return json(res, 400, { error: result.error });
+  // 安全修复（S3/SSRF）：DNS 级校验（域名解析到内网地址的拒绝入库）
+  if (result.rule.webhookUrl) {
+    const guard = await assertPublicHttpUrl(result.rule.webhookUrl);
+    if (!guard.ok) return json(res, 400, { error: `webhookUrl 不合法: ${guard.error}` });
+  }
 
   const updated = alertStore.updateAlertRule(id, { ...result.rule, id });
   return json(res, 200, updated);

@@ -11,10 +11,9 @@
  * - 多用户模式（AUTH_MODE=multi，默认）：走 JwtSessionManager
  *
  * 兼容性：
- * - verifyAny() 同时接受 access token 与旧式单用户 token（sub 字段）
- *   - 旧 token（无 type 字段）：当作单用户模式，返回 { sub, isMulti: false }
- *   - access token：返回 { sub, email, role, pid, isMulti: true }
- * - refresh token 仅 refresh 端点接受
+ * - verify() 仅接受 access token（type='access'）；refresh token 仅 refresh 端点接受
+ * - 旧式单用户 token（无 type 字段）一律拒绝（S4 安全修复）：防止 secret 复用时
+ *   单用户 token 在多用户部署中被当作已登录放行（认证混淆）
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import http from 'node:http';
@@ -241,10 +240,10 @@ export class JwtSessionManager {
         isMulti: true,
       };
     }
-    // 旧式单用户 token（无 type 字段或 type 非 'access'/'refresh'）→ 兼容为单用户
-    if (payload.type === undefined || payload.type === null) {
-      return { userId: payload.sub, isMulti: false };
-    }
+    // 安全修复（S4）：拒绝无 type 字段的旧式单用户 token。
+    // 旧 token 由单用户模式 SessionManager 签发；当 SESSION_SECRET 与 JWT_SECRET
+    // 复用时旧 token 可通过本管理器验签，若放行将获得 owner 等价权限（认证混淆）。
+    // 多用户部署只接受本管理器签发的 access token；单用户模式仍走 SessionManager。
     return null;
   }
 

@@ -18,6 +18,7 @@ import {
 } from 'antd';
 import { CopyOutlined, LinkOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import type { AppInfo, RetryAttempt, Span, TraceDetail, TraceEvent, TraceItem } from '../types';
 import TraceGantt from '../components/TraceGantt';
 
@@ -36,6 +37,7 @@ const KIND_META: Record<Span['kind'], { color: string; label: string }> = {
 };
 
 export default function TracesPage() {
+  const { mode } = useAuth();
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [appId, setAppId] = useState<string | undefined>(undefined);
   const [status, setStatus] = useState<StatusKey>('');
@@ -54,6 +56,9 @@ export default function TracesPage() {
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
+    // S1 安全修复：多用户模式下后端要求查询必须指定 appId，未选中前不发起请求
+    // （/traces/:traceId 深链接详情由后端 resolveTraceAppId 校验，不受影响）
+    if (mode === 'multi' && !appId) return;
     setLoading(true);
     try {
       const res = await api.traces({
@@ -70,7 +75,7 @@ export default function TracesPage() {
     } finally {
       setLoading(false);
     }
-  }, [appId, status, sessionKey, page, pageSize]);
+  }, [mode, appId, status, sessionKey, page, pageSize]);
 
   useEffect(() => {
     load();
@@ -79,14 +84,18 @@ export default function TracesPage() {
   useEffect(() => {
     api
       .listApps()
-      .then(setApps)
+      .then((list) => {
+        setApps(list);
+        // S1 安全修复：多用户模式默认选中第一个应用（后端要求查询必须带 appId）
+        if (mode === 'multi' && list.length > 0) setAppId((cur) => cur ?? list[0].appId);
+      })
       .catch(() => {});
     // 拉取面板元信息（日志跳转模板），失败静默（未配置则隐藏入口）
     api
       .meta()
       .then((m) => setLogStreamUrlTemplate(m.logStreamUrlTemplate))
       .catch(() => {});
-  }, []);
+  }, [mode]);
 
   // 深链接：路由带 :traceId 时自动加载并打开详情抽屉
   useEffect(() => {

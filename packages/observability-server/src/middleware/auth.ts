@@ -14,6 +14,7 @@ import type { SessionManager } from '../auth';
 import type { JwtSessionManager, VerifiedUser } from '../auth/jwt';
 import { readAccessToken } from '../auth/jwt';
 import type { AclStore, ProjectRole } from '../stores/acl-store';
+import type { ProjectStore } from '../stores/project-store';
 import type { UserStore } from '../stores/user-store';
 
 /** 单/多用户模式统一的鉴权上下文 */
@@ -27,6 +28,8 @@ export interface AuthContext {
     sessions: JwtSessionManager;
     userStore: UserStore;
     aclStore: AclStore;
+    /** S1 安全修复：查询端点按项目 ACL 校验 appId 归属时需要（collector 注入） */
+    projectStore?: ProjectStore;
   };
 }
 
@@ -71,10 +74,8 @@ export async function authenticate(
     if (!verified) {
       return { ok: false, status: 401, error: 'unauthorized: invalid or expired token' };
     }
-    if (!verified.isMulti) {
-      // 兼容旧单用户 token 落到多用户模式（不应发生）：当作已登录无项目
-      return { ok: true, user: verified };
-    }
+    // 安全修复（S4）：verify() 只返回多用户 access token（isMulti 恒为 true），
+    // 旧式单用户 token 已在验签层拒绝，此处无需兼容分支。
     // 项目上下文：若 token 的 pid 与当前请求期望 pid 不一致，重签 access token
     if (projectId && verified.projectId !== projectId) {
       const role = await ctx.multi.aclStore.getRole(verified.userId, projectId);
@@ -144,4 +145,67 @@ export function requireRole(minRole: ProjectRole): (req: http.IncomingMessage, c
 export function writeAuthFailure(res: http.ServerResponse, fail: AuthFailure): void {
   res.writeHead(fail.status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify({ error: fail.error }));
+}
+
+// ─── S1 安全修复：查询端点项目 ACL 守卫 ─────────────────────────────
+
+/** 守卫入参 */
+export interface QueryAccessOptions {
+  multi: NonNullable<AuthContext['multi']>;
+  userId: string;
+  /** 请求路径（如 /metrics/summary、/traces/xxx） */
+  pathname: string;
+  /** 请求携带的 appId（query 参数；缺省 = 全局聚合） */
+  appId?: string;
+  /** /traces/:traceId 无 appId 参数时解析归属 app 的回调（collector 注入 traceStore 实现） */
+  resolveTraceAppId?: (traceId: string) => Promise<string | undefined>;
+}
+
+/**
+ * 多用户模式下 /metrics/*、/traces* 查询端点的数据归属校验（S1 / IDOR 修复）：
+ *  - 请求带 appId：appId 必须属于用户可访问（ACL 授权）的项目，否则 403；
+ *  - /traces/:traceId：通过 resolveTraceAppId 解析 trace 归属 app 后同样校验；
+ *  - appId 缺省（全局聚合）：403 —— 多用户模式下"全局数据"等于全平台所有项目的
+ *    数据合并，任何租户都不应看到，面板需先选择具体应用；
+ *  - /metrics/model-prices*（全局资源，不含 app 级数据）跳过校验。
+ */
+export async function authorizeQueryAccess(
+  opts: QueryAccessOptions,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const { multi, userId, pathname } = opts;
+
+  // 模型价格是全局配置资源（读端点不含 app 级明细），跳过 app 归属校验
+  if (pathname.startsWith('/metrics/model-prices')) return { ok: true };
+
+  let appId = opts.appId;
+  if (!appId) {
+    const m = pathname.match(/^\/traces\/([^/]+)$/);
+    if (m && opts.resolveTraceAppId) {
+      const traceId = decodeURIComponent(m[1]);
+      const resolved = await opts.resolveTraceAppId(traceId);
+      // trace 不存在 → 404（与 handler 原生行为一致，不泄露存在性差异）
+      if (!resolved) return { ok: false, status: 404, error: 'trace not found' };
+      appId = resolved;
+    }
+  }
+  if (!appId) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'forbidden: 多用户模式下查询必须指定 appId（请先选择应用）',
+    };
+  }
+
+  const projectStore = multi.projectStore;
+  if (!projectStore) {
+    // 安全默认：无 projectStore 无法校验归属，拒绝而不是放行
+    return { ok: false, status: 503, error: 'projectStore 未注入，无法校验应用归属' };
+  }
+  // 用户可访问的项目（ACL）→ 各项目关联的 app；命中请求 appId 即放行
+  const acls = await multi.aclStore.listUserProjects(userId);
+  for (const acl of acls) {
+    const appIds = await projectStore.listApps(acl.projectId);
+    if (appIds.includes(appId)) return { ok: true };
+  }
+  return { ok: false, status: 403, error: 'forbidden: 无该应用的访问权限' };
 }

@@ -16,6 +16,7 @@ import {
 import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { EChartsOption } from 'echarts';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import { fetchErrorClassDrill, fetchErrorClasses } from '../api';
 import type { AppInfo, ErrorClassCountItem, ErrorClassDrillResult } from '../types';
 import EChart from '../components/EChart';
@@ -55,6 +56,7 @@ export default function ErrorClassDrillPage() {
 
 function ListView() {
   const navigate = useNavigate();
+  const { mode } = useAuth();
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [appId, setAppId] = useState<string | undefined>(undefined);
   const [range, setRange] = useState<RangeKey>('6h');
@@ -67,6 +69,8 @@ function ListView() {
   }, [appId, range]);
 
   const load = useCallback(async () => {
+    // S1 安全修复：多用户模式下后端要求查询必须指定 appId，未选中前不发起请求
+    if (mode === 'multi' && !appId) return;
     setLoading(true);
     try {
       setItems(await fetchErrorClasses(params));
@@ -75,15 +79,22 @@ function ListView() {
     } finally {
       setLoading(false);
     }
-  }, [params]);
+  }, [mode, appId, params]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   useEffect(() => {
-    api.listApps().then(setApps).catch(() => {});
-  }, []);
+    api
+      .listApps()
+      .then((list) => {
+        setApps(list);
+        // S1 安全修复：多用户模式默认选中第一个应用（后端要求查询必须带 appId）
+        if (mode === 'multi' && list.length > 0) setAppId((cur) => cur ?? list[0].appId);
+      })
+      .catch(() => {});
+  }, [mode]);
 
   const total = useMemo(() => items.reduce((s, it) => s + it.count, 0), [items]);
 
@@ -165,6 +176,7 @@ function ListView() {
 function DrillView({ cls }: { cls: string }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { mode } = useAuth();
   // 从列表跳转携带的次数（用于顶部展示；缺失时按 byModel 汇总回退）
   const stateCount = (location.state as { count?: number } | null)?.count;
 
@@ -180,6 +192,8 @@ function DrillView({ cls }: { cls: string }) {
   }, [appId, range]);
 
   const load = useCallback(async () => {
+    // S1 安全修复：多用户模式下后端要求查询必须指定 appId，未选中前不发起请求
+    if (mode === 'multi' && !appId) return;
     setLoading(true);
     try {
       setData(await fetchErrorClassDrill(cls, params));
@@ -188,15 +202,22 @@ function DrillView({ cls }: { cls: string }) {
     } finally {
       setLoading(false);
     }
-  }, [cls, params]);
+  }, [mode, appId, cls, params]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   useEffect(() => {
-    api.listApps().then(setApps).catch(() => {});
-  }, []);
+    api
+      .listApps()
+      .then((list) => {
+        setApps(list);
+        // S1 安全修复：多用户模式默认选中第一个应用（后端要求查询必须带 appId）
+        if (mode === 'multi' && list.length > 0) setAppId((cur) => cur ?? list[0].appId);
+      })
+      .catch(() => {});
+  }, [mode]);
 
   // 总数：优先用列表带入的 count，否则汇总 byModel，再不行回退到最近 trace 数
   const total = useMemo(() => {

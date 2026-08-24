@@ -91,6 +91,8 @@ export interface TraceStore {
   insertToolCall(t: ToolCallRecord): Promise<void>;
   queryRuns(filter: RunQueryFilter): Promise<{ total: number; items: RunListItem[] }>;
   queryTrace(traceId: string): Promise<TraceDetail | undefined>;
+  /** S1 安全修复：查 trace 归属 app（轻量点查，多用户模式查询端点做归属校验用） */
+  getRunAppId(traceId: string): Promise<string | undefined>;
   /** 按版本聚合（DB 直查，非内存窗口），返回按 lastSeenAt 倒序 */
   queryVersionMetrics(filter: { since?: number; until?: number; appId?: string }): Promise<VersionMetrics[]>;
   /** Phase 9 — 错误类 TopN 计数（面板卡片） */
@@ -538,6 +540,14 @@ export class SQLiteStore implements TraceStore, AppStore, AlertStore {
     >;
 
     return { total: c, items: rows.map((r) => rowToRun(r)) };
+  }
+
+  /** S1 安全修复：trace 归属 app 点查（多用户模式查询端点做归属校验用） */
+  async getRunAppId(traceId: string): Promise<string | undefined> {
+    const row = this.db
+      .prepare('SELECT app_id FROM runs WHERE trace_id = ?')
+      .get(traceId) as { app_id: string | null } | undefined;
+    return row?.app_id ?? undefined;
   }
 
   async queryTrace(traceId: string): Promise<TraceDetail | undefined> {
