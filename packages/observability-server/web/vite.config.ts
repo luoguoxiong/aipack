@@ -20,8 +20,27 @@ export default defineConfig({
     strictPort: false,
     proxy: {
       '/api': { target: 'http://localhost:8787', changeOrigin: true },
-      '/metrics': { target: 'http://localhost:8787', changeOrigin: true },
-      '/traces': { target: 'http://localhost:8787', changeOrigin: true },
+      // SPA 路由与查询 API 同路径（/traces、/metrics/*）：
+      // 浏览器导航（刷新/直达）不走代理，交给 vite SPA fallback 返回 index.html；
+      // 面板 fetch（非 navigate、Accept 非 text/html）正常代理到收集服务
+      '/metrics': {
+        target: 'http://localhost:8787',
+        changeOrigin: true,
+        bypass: (req) =>
+          req.headers['sec-fetch-mode'] === 'navigate' ||
+          (req.headers.accept ?? '').includes('text/html')
+            ? '/index.html'
+            : null,
+      },
+      '/traces': {
+        target: 'http://localhost:8787',
+        changeOrigin: true,
+        bypass: (req) =>
+          req.headers['sec-fetch-mode'] === 'navigate' ||
+          (req.headers.accept ?? '').includes('text/html')
+            ? '/index.html'
+            : null,
+      },
     },
   },
   build: {

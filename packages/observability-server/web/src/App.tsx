@@ -74,9 +74,20 @@ function Shell() {
       : []),
   ];
 
+  // 菜单 key → 绝对路由路径（members 依赖当前项目上下文）
+  const menuRoutes: Record<string, string> = {
+    dashboard: '/',
+    apps: '/apps',
+    traces: '/traces',
+    alerts: '/alerts',
+    projects: '/projects',
+    members: `/projects/${currentProjectId}/members`,
+    agents: '/agents',
+  };
+
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider theme="dark" width={200}>
+    <Layout style={{ height: '100vh', overflow: 'hidden' }}>
+      <Sider theme="dark" width={200} style={{ overflow: 'auto' }}>
         <div
           style={{
             height: 56,
@@ -95,11 +106,11 @@ function Shell() {
           theme="dark"
           mode="inline"
           selectedKeys={[menuKey]}
-          onClick={({ key }) => navigate(key)}
+          onClick={({ key }) => navigate(menuRoutes[key] ?? `/${key}`)}
           items={menuItems}
         />
       </Sider>
-      <Layout>
+      <Layout style={{ minWidth: 0, overflow: 'hidden' }}>
         <Header
           style={{
             background: '#fff',
@@ -135,7 +146,7 @@ function Shell() {
             </Typography.Link>
           </div>
         </Header>
-        <Content style={{ margin: 16 }}>
+        <Content style={{ margin: 16, overflow: 'auto' }}>
           {needsProject ? (
             <div style={{ display: 'grid', placeItems: 'center', minHeight: 400 }}>
               <div style={{ textAlign: 'center' }}>

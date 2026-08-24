@@ -64,6 +64,9 @@ export interface MqProduceOptions {
  * - `close`：优雅关闭（等待 in-flight 消息发完）
  */
 export interface MqProducer {
+  /** Noop 占位实现标志（true = MQ 未启用的空实现）。
+   *  collector 检测到 noop 时按"MQ 未启用"处理走同步落盘，防止宿主误注入导致数据被静默吞掉。 */
+  readonly noop?: boolean;
   /** 发送单条消息 */
   send(value: string, opts?: MqProduceOptions): Promise<void>;
   /** 批量发送（同 topic，提高吞吐） */

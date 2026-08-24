@@ -66,15 +66,20 @@ async function main(): Promise<void> {
     cfg.traceStore.backend === 'sqlite' ? undefined : traceHandle.traceStore;
 
   // ── Phase 3：MQ Producer（Kafka 解耦 ingest 与落盘） ─────────────────────
-  const mqProducer = createMqProducer({
-    enabled: cfg.mq.enabled,
-    brokers: cfg.mq.brokers,
-    clientId: cfg.mq.clientId,
-    topic: cfg.mq.topic,
-    dlqTopic: cfg.mq.dlqTopic,
-    sasl: cfg.mq.sasl as never, // 与 ingest-worker 同：config 的联合 mechanism 需对齐 kafkajs 的判别联合
-    ssl: cfg.mq.ssl,
-  });
+  // 契约：仅 MQ_ENABLED=true 时注入 collector（undefined = collector 同步落盘）。
+  // 不可注入 createMqProducer(false) 返回的 NoopMqProducer——它是 truthy 对象，
+  // collector 会误判 MQ 已启用而走 produce 分支，数据被 no-op 静默吞掉（不落盘）。
+  const mqProducer = cfg.mq.enabled
+    ? createMqProducer({
+        enabled: cfg.mq.enabled,
+        brokers: cfg.mq.brokers,
+        clientId: cfg.mq.clientId,
+        topic: cfg.mq.topic,
+        dlqTopic: cfg.mq.dlqTopic,
+        sasl: cfg.mq.sasl as never, // 与 ingest-worker 同：config 的联合 mechanism 需对齐 kafkajs 的判别联合
+        ssl: cfg.mq.ssl,
+      })
+    : undefined;
 
   // ── Phase 7：分布式聚合（memory 模式不注入，collector 自建进程内聚合，保留 appIds 探测能力） ─
   let aggregatorFactory: CollectorOptions['aggregatorFactory'];

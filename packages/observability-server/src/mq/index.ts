@@ -63,6 +63,8 @@ export function createMqProducer(opts: CreateMqProducerOptions): MqProducer {
  * - 提供 NoopMqProducer 是为了类型完整 + 测试时注入 mock
  */
 export class NoopMqProducer implements MqProducer {
+  /** 标记为 noop 占位实现：collector 检测到此标志时走同步落盘分支 */
+  readonly noop = true as const;
   async send(_value: string, _opts?: MqProduceOptions): Promise<void> {
     // no-op：MQ 关闭时 collector 不应调用此方法（走同步落盘分支）
   }

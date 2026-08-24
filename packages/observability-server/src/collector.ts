@@ -461,6 +461,14 @@ export function createCollector(opts: CollectorOptions): Collector {
         }
       }
 
+      // SPA 路由兜底：浏览器直接访问/刷新 /traces、/metrics 等前端路由时
+      // （导航请求特征：Sec-Fetch-Mode: navigate 或 Accept 含 text/html），
+      // 返回 index.html 由前端路由接管，避免与同路径查询 API 冲突；
+      // 面板 fetch / curl 等非导航请求不受影响，仍走下方 API 鉴权
+      if (req.method === 'GET' && opts.staticDir && isPageNavigation(req)) {
+        return serveStatic(url.pathname, opts.staticDir, res, req);
+      }
+
       // 查询端点：需要面板会话
       if (req.method === 'GET' && (pathname.startsWith('/metrics/') || pathname.startsWith('/traces'))) {
         // 多用户模式：JWT access token（cookie 或 Bearer）
@@ -589,10 +597,13 @@ async function handleIngest(
   // Phase 3：MQ 启用时 produce 到 Kafka（落盘由 worker 异步处理）；否则同步落盘
   // D8 修复：produce/flush 失败返回 5xx（客户端 HttpReporter 对 5xx 走缓存补报），
   // 不再 fire-and-forget 静默丢批；聚合仅在写入成功后喂（保持与存储一致）
-  if (ctx.mqProducer) {
+  // 防御：noop=true 的 NoopMqProducer 误注入时按"MQ 未启用"处理走同步落盘，
+  // 避免数据被 no-op send 静默吞掉（历史 bug：ingest 200 但 runs 永不落盘）
+  const mq = ctx.mqProducer && ctx.mqProducer.noop !== true ? ctx.mqProducer : undefined;
+  if (mq) {
     const msg = encodeIngestMessage({ appId, batch, ingestedAt: Date.now() });
     try {
-      await ctx.mqProducer.send(msg, { key: appId });
+      await mq.send(msg, { key: appId });
     } catch (err) {
       ingestFailCount++;
       console.error('[observability-server] Kafka produce 失败:', err);
@@ -616,7 +627,7 @@ async function handleIngest(
   // - 非 MQ 模式：collector 同步落盘 + 喂聚合器（单实例场景）
   // - MQ + memory 模式：collector 喂本地聚合器（worker 的 memory 不共享，需 collector 自喂）
   // - MQ + redis/hybrid 模式：由 worker 喂聚合器（collector 仅 produce Kafka，避免双写）
-  const shouldFeedAggregator = !ctx.mqProducer || !ctx.useSharedAggregator;
+  const shouldFeedAggregator = !mq || !ctx.useSharedAggregator;
   if (shouldFeedAggregator) {
     const global = ctx.aggregatorFor();
     const appAgg = ctx.aggregatorFor(appId);
@@ -650,6 +661,17 @@ async function handleIngest(
 function authenticated(req: http.IncomingMessage, sessions: SessionManager): boolean {
   const token = readBearerToken(req);
   return !!token && sessions.verify(token) !== null;
+}
+
+/**
+ * 浏览器页面导航请求（地址栏直达 / 刷新 / 跳转）。
+ * 导航请求带 Sec-Fetch-Mode: navigate（现代浏览器）且 Accept 优先 text/html；
+ * 面板 fetch / Prometheus 抓取 / curl 均不满足，故可用于区分 SPA 路由与查询 API。
+ */
+function isPageNavigation(req: http.IncomingMessage): boolean {
+  if (req.headers['sec-fetch-mode'] === 'navigate') return true;
+  const accept = req.headers.accept;
+  return typeof accept === 'string' && accept.includes('text/html');
 }
 
 const MIME: Record<string, string> = {
