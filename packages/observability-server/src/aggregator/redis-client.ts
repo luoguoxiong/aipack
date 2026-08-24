@@ -110,6 +110,36 @@ export class RedisClient {
     return this.client.zrangebyscore(key, min as string, max as string);
   }
 
+  /**
+   * ZRANGEBYSCORE WITHSCORES：返回 member+score 对。
+   * D6 修复：直方图 ZSET 的 score 才是延迟值，member 是采样 ID；
+   * 此前读 member 转数字全是 NaN，导致 p50/p95/p99 = NaN。
+   */
+  async zrangebyscoreWithScores(
+    key: string,
+    min: number | string,
+    max: number | string,
+  ): Promise<Array<{ member: string; score: number }>> {
+    const raw = await this.client.zrangebyscore(key, min as string, max as string, 'WITHSCORES');
+    const out: Array<{ member: string; score: number }> = [];
+    for (let i = 0; i + 1 < raw.length; i += 2) {
+      out.push({ member: String(raw[i]), score: Number(raw[i + 1]) });
+    }
+    return out;
+  }
+
+  /** SCAN 遍历匹配 key（D7：替代 KEYS，不阻塞 Redis 主线程） */
+  async scanKeys(pattern: string, count = 100): Promise<string[]> {
+    const out: string[] = [];
+    let cursor = '0';
+    do {
+      const [next, keys] = await this.client.scan(cursor, 'MATCH', pattern, 'COUNT', String(count));
+      cursor = next;
+      out.push(...keys);
+    } while (cursor !== '0');
+    return out;
+  }
+
   async expire(key: string, seconds: number): Promise<number> {
     return this.client.expire(key, seconds);
   }

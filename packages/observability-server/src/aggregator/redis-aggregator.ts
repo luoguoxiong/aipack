@@ -56,6 +56,9 @@ export interface RedisAggregatorOptions {
 
 type DimName = 'model' | 'tool' | 'session' | 'version';
 
+/** D7：tracever 映射按 10min 拆桶（span 在 run 后数秒内到达，2 桶覆盖足够） */
+const TRACEVER_BUCKET_MS = 10 * 60 * 1000;
+
 interface BucketCounters {
   requests: number;
   success: number;
@@ -77,6 +80,8 @@ export class RedisAggregator implements Aggregator {
   private windowBuckets: number;
   private maxHistogramSamples: number;
   private lastSweep = 0;
+  /** 桶 TTL 秒（窗口 * 2，ZSET 索引 / 桶 Hash / 直方图共用） */
+  private readonly bucketTtlSec: number;
 
   constructor(opts: RedisAggregatorOptions) {
     this.redis = opts.redis;
@@ -87,6 +92,7 @@ export class RedisAggregator implements Aggregator {
       Math.ceil((opts.windowMs ?? 60 * 60 * 1000) / this.bucketMs),
     );
     this.maxHistogramSamples = opts.maxHistogramSamples ?? 1000;
+    this.bucketTtlSec = Math.ceil((this.windowBuckets * this.bucketMs) / 1000) * 2;
   }
 
   // ─── Key 设计 ────────────────────────────────────────────────────
@@ -106,9 +112,9 @@ export class RedisAggregator implements Aggregator {
     return `${this.appId}:${dim}:${dimKey}:h:${name}:${idx}`;
   }
 
-  /** trace→version 映射 Hash key */
-  private traceVerKey(): string {
-    return `${this.appId}:tracever`;
+  /** trace→version 映射 Hash key（D7：按 10min 拆桶，配 TTL；替代无限增长的整 key） */
+  private traceVerKey(idx = Math.floor(Date.now() / TRACEVER_BUCKET_MS)): string {
+    return `${this.appId}:tracever:${idx}`;
   }
 
   private nowBucket(now = Date.now()): number {
@@ -236,7 +242,7 @@ export class RedisAggregator implements Aggregator {
     ] as const) {
       this.incrBucket(p, dim, key, idx, (kp) => {
         p.hincrby(kp, `rs:${status}`, 1);
-        p.zadd(this.histKey(dim, key, idx, 'backoff'), r.delayMs, `${r.traceId}:${idx}:${Math.random()}`);
+        this.addHist(p, dim, key, idx, 'backoff', r.delayMs, `${r.traceId}:${idx}:${Math.random()}`);
       });
     }
     await this.redis.execPipeline(p);
@@ -253,9 +259,30 @@ export class RedisAggregator implements Aggregator {
     const zset = this.zsetKey(dim, dimKey);
     const bucket = this.bucketKey(dim, dimKey, idx);
     p.zadd(zset, idx, String(idx));
-    p.expire(zset, Math.ceil((this.windowBuckets * this.bucketMs) / 1000) * 2);
-    p.expire(bucket, Math.ceil((this.windowBuckets * this.bucketMs) / 1000) * 2);
+    p.expire(zset, this.bucketTtlSec);
+    p.expire(bucket, this.bucketTtlSec);
     fill(bucket);
+  }
+
+  /**
+   * 直方图采样写入（D7 修复）：
+   * - ZADD + EXPIRE（此前直方图 key 从不设 TTL，Redis 内存随窗口滚动无限增长）
+   * - ZREMRANGEBYRANK 上限裁剪：保留 score 最高的 maxHistogramSamples 个
+   *   （高 QPS 突刺时控制单桶体积；分位数近似略偏高，注释中已声明近似语义）
+   */
+  private addHist(
+    p: ReturnType<RedisClient['pipeline']>,
+    dim: string,
+    dimKey: string,
+    idx: number,
+    name: string,
+    score: number,
+    member: string,
+  ): void {
+    const hk = this.histKey(dim, dimKey, idx, name);
+    p.zadd(hk, score, member);
+    p.expire(hk, this.bucketTtlSec);
+    p.zremrangebyrank(hk, 0, -(this.maxHistogramSamples + 1));
   }
 
   // ─── 读取 ────────────────────────────────────────────────────────
@@ -409,11 +436,15 @@ export class RedisAggregator implements Aggregator {
           retryByStatus[status] = (retryByStatus[status] ?? 0) + Number(val);
         }
       }
-      // 直方图采样（限制采样数避免内存膨胀）
-      const latencyVals = await this.redis.zrangebyscore(this.histKey(dim, key, idx, 'latency'), 0, '+inf');
-      latencySamples.push(...latencyVals.map(Number));
-      const backoffVals = await this.redis.zrangebyscore(this.histKey(dim, key, idx, 'backoff'), 0, '+inf');
-      backoffSamples.push(...backoffVals.map(Number));
+      // 直方图采样（D6 修复：WITHSCORES 取 score=延迟值；此前读 member 转数字得 NaN）
+      const latencyEntries = await this.redis.zrangebyscoreWithScores(
+        this.histKey(dim, key, idx, 'latency'), 0, '+inf',
+      );
+      latencySamples.push(...latencyEntries.map((e) => e.score));
+      const backoffEntries = await this.redis.zrangebyscoreWithScores(
+        this.histKey(dim, key, idx, 'backoff'), 0, '+inf',
+      );
+      backoffSamples.push(...backoffEntries.map((e) => e.score));
     }
 
     latencySamples.sort((a, b) => a - b);
@@ -472,16 +503,25 @@ export class RedisAggregator implements Aggregator {
     void this.sweepAsync();
   }
 
-  /** 异步清理：每 5min 一次 ZREMRANGEBYSCORE（避免每次 ingest 都清理） */
+  /**
+   * 异步清理：每 5min 一次 ZREMRANGEBYSCORE（避免每次 ingest 都清理）。
+   * D7 修复：此前仅清理 global 维度的 ZSET 索引，model/session/version/tool
+   * 的活跃 ZSET 内 member（旧桶 idx）无限累积；现 SCAN 全部索引统一清理。
+   * 失败不阻塞 ingest（下次重试）。
+   */
   private async sweepAsync(): Promise<void> {
     const now = Date.now();
     if (now - this.lastSweep < 5 * 60 * 1000) return;
     this.lastSweep = now;
     const minIdx = this.nowBucket(now) - this.windowBuckets;
-    // 仅清理 global + version 维度（其他维度靠 TTL 兜底）
-    const dims: Array<[string, string]> = [['global', '']];
-    for (const [dim, key] of dims) {
-      await this.redis.zremrangebyscore(this.zsetKey(dim, key), 0, minIdx);
+    try {
+      const pattern = `${this.redis.prefix}${this.appId}:*:buckets`;
+      const keys = await this.redis.scanKeys(pattern);
+      for (const fullKey of keys) {
+        await this.redis.zremrangebyscore(fullKey, 0, minIdx);
+      }
+    } catch (err) {
+      console.warn('[RedisAggregator] sweep 清理失败（下次重试）:', err);
     }
   }
 
@@ -500,9 +540,10 @@ function inRange(idx: number, filter: SummaryFilter, bucketMs: number): boolean 
   return true;
 }
 
-/** 计算分位数（已排序数组） */
+/** 计算分位数（已排序数组；NaN 防御兜底） */
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
   const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(p * sorted.length)));
-  return Math.round(sorted[idx] * 100) / 100;
+  const v = sorted[idx];
+  return Number.isFinite(v) ? Math.round(v * 100) / 100 : 0;
 }
