@@ -25,6 +25,8 @@
     "prebuild": "pnpm --filter @aipack-ai/observability build || true",
     "dev": "tsx src/main.ts",
     "start": "node dist/main.js",
+    "start:win": "powershell -ExecutionPolicy Bypass -File start.ps1",
+    "start:sh": "bash start.sh",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
     "test": "node --import tsx --test test/observability-server.test.ts",
     "worker": "tsx src/worker/ingest-worker.ts",

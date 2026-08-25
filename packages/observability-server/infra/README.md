@@ -7,6 +7,8 @@
 
 ## 快速开始
 
+> 只想跑起来的话用仓库的一键脚本（`pnpm start:win` / `./start.sh`，基础部署自动只起 mysql + clickhouse），本文档面向手动管理容器的场景。
+
 ```bash
 # 1. 复制环境变量(按需改密码)
 cp .env.example .env

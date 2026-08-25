@@ -23,8 +23,19 @@
 
 ## 快速开始（基础部署）
 
+一键启动（自动准备 .env → 起 MySQL + ClickHouse 容器 → 等就绪 → 前台跑 collector）：
+
 ```bash
 cd packages/observability-server
+pnpm start:win             # Windows（等价 ./start.ps1）
+./start.sh                 # macOS / Linux（等价 pnpm start:sh）
+```
+
+容器已在跑、只重启服务时：`pnpm start:win -- -NoDocker`（mac：`./start.sh --no-docker`）。
+
+手动等价步骤：
+
+```bash
 cp .env.example .env    # 按需改 ADMIN_PASS / OBS_APPS；MYSQL_URL / CLICKHOUSE_URL 必填
 docker compose -f infra/docker-compose.yml --env-file .env up -d   # 起 MySQL + ClickHouse
 pnpm --filter @aipack-ai/observability-server dev
@@ -64,6 +75,11 @@ REDIS_URL=redis://:aipackpass@localhost:6379
 ### 3. 起两个进程（各开一个终端）
 
 ```bash
+# 一键（collector 前台 + worker：Windows 新窗口 / mac 后台，随 Ctrl+C 一并停止）
+pnpm start:win -- -Full       # Windows
+./start.sh --full             # macOS / Linux
+
+# 或手动各开一个终端：
 # 终端 1：API 服务（收上报 → 投 Kafka；面板/查询同端口）
 pnpm --filter @aipack-ai/observability-server dev
 
@@ -86,6 +102,7 @@ worker 专属变量（与 collector 共用 .env）：`KAFKA_CONSUMER_BATCH`（�
 
 | 脚本 | 说明 |
 |---|---|
+| `pnpm start:win` / `pnpm start:sh` | 一键启动（容器编排 + 就绪等待 + 服务，见 [start.ps1](start.ps1) / [start.sh](start.sh)；透传参数：`-- -Full` 平台模式 / `-- -NoDocker` 跳过容器，sh 版为 `--full` / `--no-docker`） |
 | `pnpm --filter @aipack-ai/observability-server dev` | tsx 直跑 src（API 服务） |
 | `pnpm --filter @aipack-ai/observability-server worker` | tsx 直跑 ingest-worker |
 | `pnpm --filter @aipack-ai/observability-server build` | tsup 构建 + vite 构建面板（产物 dist/） |
