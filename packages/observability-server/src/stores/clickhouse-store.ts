@@ -179,15 +179,22 @@ export class ClickHouseStore implements TraceStore {
     const where = buildRunWhere(filter);
 
     // CH 用字符串插值（已转义；params 来自服务端鉴权后的过滤，非用户输入）
+    // count() 返回 UInt64，JSONEachRow 默认输出为带引号字符串，须转数字
     const countSql = `SELECT count() AS c FROM ${table} r ${where}`;
-    const countRows = await this.client.query<{ c: number }>(countSql);
-    const total = countRows[0]?.c ?? 0;
+    const countRows = await this.client.query<{ c: number | string }>(countSql);
+    const total = Number(countRows[0]?.c ?? 0);
 
+    // CH 不支持相关子查询（引用外层 r.trace_id），改用 LEFT JOIN 预聚合子查询
     const listSql = `
-      SELECT r.*,
-        (SELECT sum(greatest(s.attempts - 1, 0)) FROM spans s
-         WHERE s.trace_id = r.trace_id AND s.kind = 'model') AS retries
-      FROM ${table} r ${where}
+      SELECT r.*, ifNull(agg.retries, 0) AS retries
+      FROM ${table} r
+      LEFT JOIN (
+        SELECT trace_id, sum(greatest(attempts - 1, 0)) AS retries
+        FROM spans
+        WHERE kind = 'model'
+        GROUP BY trace_id
+      ) agg ON agg.trace_id = r.trace_id
+      ${where}
       ORDER BY r.started_at DESC
       LIMIT ${Number(filter.limit)} OFFSET ${Number(filter.offset)}
     `;
@@ -210,11 +217,17 @@ export class ClickHouseStore implements TraceStore {
     filter: RunQueryFilter,
   ): Promise<RunListItem[]> {
     const where = buildRunWhere(filter);
+    // CH 不支持相关子查询，改用 LEFT JOIN 预聚合子查询
     const listSql = `
-      SELECT r.*,
-        (SELECT sum(greatest(s.attempts - 1, 0)) FROM spans s
-         WHERE s.trace_id = r.trace_id AND s.kind = 'model') AS retries
-      FROM ${table} r ${where}
+      SELECT r.*, ifNull(agg.retries, 0) AS retries
+      FROM ${table} r
+      LEFT JOIN (
+        SELECT trace_id, sum(greatest(attempts - 1, 0)) AS retries
+        FROM spans
+        WHERE kind = 'model'
+        GROUP BY trace_id
+      ) agg ON agg.trace_id = r.trace_id
+      ${where}
       ORDER BY r.started_at DESC
     `;
     const rows = await this.client.query<Record<string, unknown>>(listSql);
@@ -280,16 +293,18 @@ export class ClickHouseStore implements TraceStore {
         quantile(0.50)(r.duration_ms) AS p50,
         quantile(0.95)(r.duration_ms) AS p95,
         quantile(0.99)(r.duration_ms) AS p99,
-        -- 重试率：Σ(max(attempts-1,0)) / 模型调用数
-        ifNull(
-          (SELECT sum(greatest(s.attempts - 1, 0)) FROM spans s
-           WHERE s.trace_id = r.trace_id AND s.kind = 'model')
-          /
-          nullIf((SELECT count() FROM spans s2
-                  WHERE s2.trace_id = r.trace_id AND s2.kind = 'model'), 0),
-          0
-        ) AS retry_rate
-      FROM runs r ${where}
+        -- 重试率：Σ(max(attempts-1,0)) / 模型调用数（CH 不支持相关子查询，改 JOIN 预聚合）
+        ifNull(sum(agg.retries) / nullIf(sum(agg.calls), 0), 0) AS retry_rate
+      FROM runs r
+      LEFT JOIN (
+        SELECT trace_id,
+               sum(greatest(attempts - 1, 0)) AS retries,
+               count() AS calls
+        FROM spans
+        WHERE kind = 'model'
+        GROUP BY trace_id
+      ) agg ON agg.trace_id = r.trace_id
+      ${where}
       GROUP BY version
       ORDER BY last_seen DESC
     `;
@@ -355,7 +370,7 @@ export class ClickHouseStore implements TraceStore {
       const requests = Number(row.requests);
       return {
         version,
-        lastSeenAt: Number(row.last_seen),
+        lastSeenAt: chDateTimeTs(row.last_seen),
         requests,
         successRate: requests > 0 ? round8(Number(row.success) / requests) : 0,
         p50Ms: Math.round(Number(row.p50)),
@@ -583,13 +598,14 @@ function chRowToRun(r: Record<string, unknown>): RunListItem {
   return {
     traceId: String(r.trace_id),
     appId: optStr(r.app_id),
-    startedAt: Number(r.started_at),
-    endedAt: Number(r.ended_at),
+    // CH JSONEachRow 将 DateTime64 输出为字符串，需用 chDateTimeTs 解析（Number() 会得到 NaN）
+    startedAt: chDateTimeTs(r.started_at),
+    endedAt: chDateTimeTs(r.ended_at),
     sessionKey: String(r.session_key),
     channel: optStr(r.channel),
     model: optStr(r.model),
     appVersion: optStr(r.version),
-    status: chRunStatus(Number(r.status)),
+    status: chRunStatus(r.status),
     errorClass: optStr(r.error_class),
     turns: Number(r.turns),
     durationMs: Number(r.duration_ms),
@@ -608,11 +624,11 @@ function chRowToSpan(r: Record<string, unknown>): SpanRecord {
   return {
     traceId: String(r.trace_id),
     spanId: String(r.span_id),
-    kind: chSpanKind(Number(r.kind)),
+    kind: chSpanKind(r.kind),
     name: String(r.name),
     startedAt: chDateTimeTs(r.started_at),
     durationMs: Number(r.duration_ms),
-    status: chSpanStatus(Number(r.status)),
+    status: chSpanStatus(r.status),
     errorClass: optStr(r.error_class),
     attempts: optNum(r.attempts),
     inputTokens: optNum(r.input_tokens),
@@ -628,7 +644,7 @@ function chRowToTool(r: Record<string, unknown>): ToolCallRecord {
     traceId: String(r.trace_id),
     spanId: String(r.span_id),
     toolName: String(r.tool_name),
-    status: chToolStatus(Number(r.status)),
+    status: chToolStatus(r.status),
     durationMs: Number(r.duration_ms),
     errorClass: optStr(r.error_class),
   };
@@ -640,7 +656,7 @@ function chRowToEvent(r: Record<string, unknown>): EventRecord {
     sessionKey: optStr(r.session_key),
     name: String(r.name),
     data: r.data === null || r.data === undefined || r.data === '' ? undefined : safeParseJson(String(r.data)),
-    timestamp: Number(r.ts),
+    timestamp: chDateTimeTs(r.ts),
   };
 }
 
@@ -658,30 +674,43 @@ function chRowToRetry(r: Record<string, unknown>): RetryRecord {
   };
 }
 
-// ─── CH Enum 索引 → 字符串 ───────────────────────────────────────
+// ─── CH Enum → 字符串 ───────────────────────────────────────────
+// 注意：CH JSONEachRow 默认将 Enum 输出为字符串名（'success'），而非数字索引；
+// 此前用 Number(enum字符串) 得到 NaN 落入 default 分支，导致所有记录都被判为 error。
+// 兼容字符串名与数字索引两种形式（后者在 output_format_json_enum_as_number=1 时出现）。
 
-function chRunStatus(idx: number): RunRecord['status'] {
-  switch (idx) {
+function chRunStatus(v: unknown): RunRecord['status'] {
+  if (typeof v === 'string') {
+    if (v === 'success' || v === 'validation' || v === 'error') return v;
+  }
+  switch (Number(v)) {
     case 1: return 'success';
     case 3: return 'validation';
     default: return 'error';
   }
 }
 
-function chSpanKind(idx: number): SpanRecord['kind'] {
-  switch (idx) {
+function chSpanKind(v: unknown): SpanRecord['kind'] {
+  if (typeof v === 'string') {
+    if (v === 'run' || v === 'model' || v === 'tool') return v;
+  }
+  switch (Number(v)) {
     case 2: return 'model';
     case 3: return 'tool';
     default: return 'run';
   }
 }
 
-function chSpanStatus(idx: number): SpanRecord['status'] {
-  return idx === 1 ? 'ok' : 'error';
+function chSpanStatus(v: unknown): SpanRecord['status'] {
+  if (typeof v === 'string' && (v === 'ok' || v === 'error')) return v;
+  return Number(v) === 1 ? 'ok' : 'error';
 }
 
-function chToolStatus(idx: number): ToolCallRecord['status'] {
-  switch (idx) {
+function chToolStatus(v: unknown): ToolCallRecord['status'] {
+  if (typeof v === 'string') {
+    if (v === 'ok' || v === 'error' || v === 'blocked' || v === 'skipped') return v;
+  }
+  switch (Number(v)) {
     case 1: return 'ok';
     case 3: return 'blocked';
     case 4: return 'skipped';
