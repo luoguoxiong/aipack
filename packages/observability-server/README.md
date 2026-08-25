@@ -36,10 +36,12 @@ pnpm start:win             # Windows（等价 ./start.ps1）
 手动等价步骤：
 
 ```bash
-cp .env.example .env    # 按需改 ADMIN_PASS / OBS_APPS；MYSQL_URL / CLICKHOUSE_URL 必填
+cp .env.basic .env      # 或用 .env.example 从零逐项配置；按需改 ADMIN_PASS / OBS_APPS
 docker compose -f infra/docker-compose.yml --env-file .env up -d   # 起 MySQL + ClickHouse
 pnpm --filter @aipack-ai/observability-server dev
 ```
+
+配置模板二选一（复制为 .env 即可）：`.env.basic`（基础部署：直写 CH、进程内聚合/限流）、`.env.platform`（平台模式：Kafka 解耦 + hybrid 聚合 + Redis 限流），完整可选项见 `.env.example`。
 
 启动后：
 
@@ -62,7 +64,7 @@ docker compose -f infra/docker-compose.yml --env-file .env up -d
 
 ### 2. 追加 .env 配置（Kafka / Redis）
 
-业务库与监控库连接已在 .env.example 默认启用，追加消息队列与分布式聚合：
+直接用平台模式模板 `cp .env.platform .env`（已含下方全部配置），或从基础 .env 手动追加消息队列与分布式聚合：
 
 ```env
 MQ_ENABLED=true
