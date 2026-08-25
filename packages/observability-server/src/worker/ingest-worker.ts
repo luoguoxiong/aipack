@@ -15,7 +15,7 @@
  *     - KAFKA_CONSUMER_WAIT   攒批超时 ms（默认 1000）
  *     - KAFKA_FROM_BEGINNING  是否从最早 offset 消费（默认 false）
  *     - KAFKA_MAX_RETRIES     失败重试上限（默认 3，超过进 DLQ）
- *     - TRACE_STORE           监控库后端（worker 端必须 clickhouse，不接受 sqlite）
+ *     - TRACE_STORE           监控库后端（clickhouse）
  *     - CLICKHOUSE_URL        CH 端点
  *     - CLICKHOUSE_DB / USER / PASSWORD
  *
@@ -29,7 +29,6 @@
  *     - 单实例吞吐：单 partition 顺序消费，批量 INSERT CH（约 5k msg/s）
  */
 
-import { createRequire } from 'node:module';
 import { loadConfig } from '../config.js';
 import type { CollectorConfig } from '../config.js';
 import { createTraceStore } from '../stores/index.js';
@@ -43,15 +42,11 @@ import type { SASLOptions } from 'kafkajs';
 import { createAggregatorFactory } from '../aggregator/index.js';
 import type { AggregatorFactory } from '../aggregator/interface.js';
 // Phase 6 — Cost 计算
-import type Database from 'better-sqlite3';
-import { SQLiteModelPriceStore, MySQLModelPriceStore } from '../stores/model-price-store.js';
+import { MySQLModelPriceStore } from '../stores/model-price-store.js';
 import type { ModelPriceStore } from '../stores/model-price-store.js';
 import { MysqlPool } from '../stores/mysql.js';
 import { createCostCalculator } from '../cost/calculator.js';
 import type { CostCalculator } from '../cost/calculator.js';
-
-// ESM（本包 type: module）下无全局 require，用 createRequire 兼容原 require('better-sqlite3') 的懒加载写法
-const require = createRequire(import.meta.url);
 
 interface WorkerConfig {
   brokers: string[];
@@ -71,9 +66,6 @@ function readWorkerConfig(): WorkerConfig {
   const cfg = loadConfig();
   if (!cfg.mq.enabled) {
     throw new Error('MQ_ENABLED=false，worker 无需启动（collector 走同步落盘）');
-  }
-  if (cfg.traceStore.backend === 'sqlite') {
-    throw new Error('TRACE_STORE=sqlite 时 worker 无意义（Kafka 解耦的目标是 CH），请配置 TRACE_STORE=clickhouse');
   }
   const batchSize = Number(process.env.KAFKA_CONSUMER_BATCH) || 500;
   const batchWaitMs = Number(process.env.KAFKA_CONSUMER_WAIT) || 1000;
@@ -95,33 +87,20 @@ function readWorkerConfig(): WorkerConfig {
 }
 
 /**
- * Phase 6 — 根据 config 创建 ModelPriceStore（SQLite / MySQL）。
+ * Phase 6 — 根据 config 创建 ModelPriceStore（MySQL）。
  * 返回 store + close 句柄（worker 退出时关闭连接）。
  */
 function createModelPriceStoreHandle(
   cfg: CollectorConfig,
 ): { store: ModelPriceStore; close: () => Promise<void> } {
-  if (cfg.businessStore.backend === 'mysql') {
-    if (!cfg.businessStore.mysqlUrl) {
-      throw new Error('BUSINESS_STORE=mysql 时必须配置 MYSQL_URL');
-    }
-    const pool = new MysqlPool(cfg.businessStore.mysqlUrl);
-    return {
-      store: new MySQLModelPriceStore(pool),
-      close: async () => {
-        await pool.close();
-      },
-    };
+  if (!cfg.businessStore.mysqlUrl) {
+    throw new Error('必须配置 MYSQL_URL（如 mysql://user:pass@host:3306/db）');
   }
-  // SQLite（零依赖默认）
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require('better-sqlite3');
-  const db: Database.Database = new Database(cfg.dbPath);
-  db.pragma('journal_mode = WAL');
+  const pool = new MysqlPool(cfg.businessStore.mysqlUrl);
   return {
-    store: new SQLiteModelPriceStore(db),
+    store: new MySQLModelPriceStore(pool),
     close: async () => {
-      db.close();
+      await pool.close();
     },
   };
 }
@@ -172,8 +151,6 @@ async function main(): Promise<void> {
   // 创建 TraceStore（worker 端只支持 CH）
   const tsConfig = loadConfig();
   const ts = await createTraceStore({
-    traceStore: tsConfig.traceStore.backend,
-    sqliteDbPath: tsConfig.dbPath,
     clickhouseUrl: tsConfig.traceStore.clickhouseUrl,
     clickhouseDatabase: tsConfig.traceStore.clickhouseDatabase,
     clickhouseUsername: tsConfig.traceStore.clickhouseUsername,

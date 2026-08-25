@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS runs (
 ) ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(started_at)
 ORDER BY (app_id, started_at, trace_id)
-TTL started_at + INTERVAL 90 DAY
+TTL toDateTime(started_at) + INTERVAL 90 DAY
 SETTINGS index_granularity = 8192;
 
 -- ── spans ─────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS spans (
 ) ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(started_at)
 ORDER BY (app_id, trace_id, started_at, span_id)
-TTL started_at + INTERVAL 90 DAY
+TTL toDateTime(started_at) + INTERVAL 90 DAY
 SETTINGS index_granularity = 8192;
 
 -- ── tool_calls ────────────────────────────────────────────────
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS tool_calls (
 ) ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(started_at)
 ORDER BY (app_id, trace_id, tool_name, started_at)
-TTL started_at + INTERVAL 90 DAY
+TTL toDateTime(started_at) + INTERVAL 90 DAY
 SETTINGS index_granularity = 8192;
 
 -- ── events (自定义业务事件) ───────────────────────────────────
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS events (
 ) ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(ts)
 ORDER BY (app_id, trace_id, ts)
-TTL ts + INTERVAL 90 DAY
+TTL toDateTime(ts) + INTERVAL 90 DAY
 SETTINGS index_granularity = 8192;
 
 -- ── retry_attempts ────────────────────────────────────────────
@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS retry_attempts (
 ) ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(ts)
 ORDER BY (app_id, trace_id, ts)
-TTL ts + INTERVAL 90 DAY
+TTL toDateTime(ts) + INTERVAL 90 DAY
 SETTINGS index_granularity = 8192;
 
 -- ── alert_events (告警触发/恢复历史,Phase 1 也写 MySQL,CH 侧用于长周期分析) ──
@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS alert_events (
 ) ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(created_at)
 ORDER BY (created_at, rule_id)
-TTL created_at + INTERVAL 365 DAY                            -- 告警历史留 1 年
+TTL toDateTime(created_at) + INTERVAL 365 DAY                -- 告警历史留 1 年
 SETTINGS index_granularity = 8192;
 
 -- ── 物化视图:按应用+模型预聚合(可选,优化 dashboard 查询) ─────

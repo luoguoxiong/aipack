@@ -2,7 +2,7 @@
  * @aipack-ai/observability-server — aipack 可观测性收集服务。
  *
  * 接收各应用 SDK（@aipack-ai/observability）的埋点上报，统一完成：
- *   - SQLite 落盘（runs / spans / tool_calls，事务批量）
+ *   - ClickHouse 落盘（runs / spans / tool_calls，批量写入）
  *   - 内存聚合（滑动窗口 + 在线直方图，p50/p95/p99）
  *   - REST 查询 API（/metrics/*、/traces/*）
  * 上报鉴权：appId + appSecret（OBS_APPS 白名单）。
@@ -22,7 +22,6 @@ export type {
 } from './collector';
 export { Aggregator } from './aggregator';
 export type { AggregatorOptions } from './aggregator';
-export { SQLiteStore } from './store';
 export type {
   AlertRuleRow,
   AlertEventRow,
@@ -74,32 +73,25 @@ export type { WebhookOptions } from './agent-definition/webhook';
 export { validateAgentName, validateAgentSpec } from './agent-definition/schema';
 
 // Phase 1: 业务库 Store（用户/项目/Agent定义/ACL）+ MySQL 适配
-// Phase 2: 监控库 Store（ClickHouse / Dual）+ TraceStore 异步接口
+// Phase 2: 监控库 Store（ClickHouse）+ TraceStore 异步接口
 export { hashPassword, verifyPassword, isScryptHash } from './auth/password';
 export {
   createBusinessStores,
   createTraceStore,
-  SQLiteAppStore,
   MySQLAppStore,
-  SQLiteUserStore,
   MySQLUserStore,
-  SQLiteProjectStore,
   MySQLProjectStore,
-  SQLiteAgentDefinitionStore,
   MySQLAgentDefinitionStore,
-  SQLiteAclStore,
   MySQLAclStore,
-  SQLiteModelPriceStore,
   MySQLModelPriceStore,
-  SQLiteRedactRuleStore,
   MySQLRedactRuleStore,
+  MySQLAlertStore,
   MysqlPool,
   runMigrations,
   ALL_MIGRATIONS,
   ulid,
   ClickHouseStore,
   ClickHouseClient,
-  DualTraceStore,
 } from './stores';
 export type {
   BusinessStores,

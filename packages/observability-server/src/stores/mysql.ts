@@ -3,7 +3,7 @@
  *
  * - 连接池：mysql2/promise，Pool 可复用
  * - 迁移：编号化 SQL 文件，applied 记录在 schema_migrations 表
- * - 动态导入 mysql2：BUSINESS_STORE=sqlite 时不加载，保持零依赖
+ * - 动态 require mysql2：延迟加载，避免未使用时打包进产物
  *
  * 连接串示例：mysql://aipack:aipackpass@localhost:3306/aipack
  */
@@ -25,7 +25,7 @@ export class MysqlPool {
   private closed = false;
 
   constructor(uri: string, opts?: Partial<PoolOptions>) {
-    // 动态 require mysql2（避免 BUSINESS_STORE=sqlite 时打包报错）
+    // 动态 require mysql2（延迟加载，避免打包器静态分析报错）
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mysql = require('mysql2/promise') as typeof import('mysql2/promise');
     this.pool = mysql.createPool({
@@ -143,7 +143,7 @@ export async function runMigrations(pool: MysqlPool, migrations: Migration[]): P
   }
 }
 
-/** better-sqlite3 不接受 undefined 参数，MySQL 同样需要统一转 null */
+/** MySQL 参数绑定不接受 undefined，需统一转 null */
 export function toNull(v: unknown): unknown {
   return v === undefined ? null : v;
 }

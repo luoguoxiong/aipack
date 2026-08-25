@@ -69,7 +69,7 @@ export interface VersionToolStat {
   errors: number;
 }
 
-/** /metrics/versions 单版本聚合（SQLite 直查，非内存窗口；口径对齐 AggregatedMetrics） */
+/** /metrics/versions 单版本聚合（DB 直查，非内存窗口；口径对齐 AggregatedMetrics） */
 export interface VersionMetrics {
   version: string;
   /** 最近一次该版本上报时间（epoch ms，供面板按"最近版本"排序） */

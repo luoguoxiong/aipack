@@ -7,7 +7,7 @@
  * - 鉴权：HTTP Basic（user:password）
  *
  * 批量写入策略：
- * - ClickHouse 单次 INSERT 即批量（与 SQLite 逐行不同）
+ * - ClickHouse 单次 INSERT 即批量
  * - SDK 已批量上报，collector 直接把 batch 转为 JSONEachRow 一次 INSERT
  * - 无需内存再攒批（避免宕机丢数据）
  *

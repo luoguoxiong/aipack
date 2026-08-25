@@ -8,6 +8,7 @@
 
 import type { Migration } from '../mysql';
 import { V2_REDACT_RULES } from './v2-redact-rules';
+import { V3_ALERT_TABLES } from './v3-alert-tables';
 
 export const V1_INITIAL_SCHEMA: Migration = {
   version: 1,
@@ -91,4 +92,4 @@ export const V1_INITIAL_SCHEMA: Migration = {
   `,
 };
 
-export const ALL_MIGRATIONS: Migration[] = [V1_INITIAL_SCHEMA, V2_REDACT_RULES];
+export const ALL_MIGRATIONS: Migration[] = [V1_INITIAL_SCHEMA, V2_REDACT_RULES, V3_ALERT_TABLES];

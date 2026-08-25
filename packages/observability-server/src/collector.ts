@@ -21,7 +21,7 @@ import { createApiHandler, type ApiHandler } from './server';
 import { createAdminHandler, type AdminHandler } from './admin';
 import { SessionManager, readBearerToken } from './auth';
 import { JwtSessionManager } from './auth/jwt';
-import { SQLiteStore } from './store';
+import type { AlertStore } from './store';
 import { createAlertEvaluator, type AlertEvaluator } from './alerts/evaluator';
 import { createNotifier } from './alerts/notify';
 import { renderPrometheusMetrics } from './prometheus';
@@ -50,9 +50,9 @@ export interface RetentionOptions {
   intervalMs?: number;
   /** 启动时先清理一次，默认 true */
   atStartup?: boolean;
-  /** 清理前 VACUUM INTO 快照备份，默认 false */
+  /** 清理前快照备份，默认 false（ClickHouse 备份由运维侧 BACKUP 策略承担，no-op） */
   backup?: boolean;
-  /** 备份目录，默认 <db 所在目录>/backup */
+  /** 备份目录，默认 ./.aipack/backup */
   backupDir?: string;
 }
 
@@ -64,8 +64,6 @@ export interface AlertOptions {
 }
 
 export interface CollectorOptions {
-  /** SQLite 文件路径（必填） */
-  dbPath: string;
   /** 启动时种入的静态白名单（appId -> appSecret，OBS_APPS），已存在则跳过 */
   apps?: Record<string, string>;
   /** 面板登录凭证（observability-web 用）；缺省时不开启登录端点 */
@@ -87,19 +85,22 @@ export interface CollectorOptions {
   /** 面板 Trace 详情"查看日志"跳转模板（%s 替换为 traceId），如 Loki/ELK 查询地址 */
   logStreamUrlTemplate?: string;
   /**
-   * 业务 Store 集合（Phase 1）：注入后 app/user/project/agentDefinition/acl
-   * 全部走此组 Store（SQLite 或 MySQL）；缺省时 appStore 回落到 SQLiteStore。
+   * 业务 Store 集合（Phase 1）：app/user/project/agentDefinition/acl/alert 全部走此组 Store（MySQL）。
    *
    * 由 宿主应用 通过 createBusinessStores() 创建后注入；测试也可直接注入 mock。
    */
-  businessStores?: BusinessStores;
+  businessStores: BusinessStores;
   /**
-   * 监控 Store（Phase 2）：注入后 runs/spans/tool_calls/events/retries
-   * 走此 Store（SQLite / ClickHouse / Dual）；缺省时回落内部 SQLiteStore。
+   * 监控 Store（Phase 2）：runs/spans/tool_calls/events/retries 走此 Store（ClickHouse）。
    *
    * 由 宿主应用 通过 createTraceStore() 创建后注入；测试也可直接注入 mock。
    */
-  traceStore?: TraceStore;
+  traceStore: TraceStore;
+  /**
+   * 告警 Store（alert_rules / alert_events）：注入后告警规则与事件走此 Store。
+   * 缺省回落 businessStores.alertStore。
+   */
+  alertStore?: AlertStore;
   /**
    * MQ Producer（Phase 3）：注入后 ingest 不再同步落盘，而是 produce 到 Kafka，
    * 由独立 worker 消费 → TraceStore.flush。
@@ -189,14 +190,13 @@ export function createCollectorServer(collector: Collector, tls?: TlsOptions): h
 const MAX_BODY = 10 * 1024 * 1024; // ingest 单次上限 10MB
 
 export function createCollector(opts: CollectorOptions): Collector {
-  const store = new SQLiteStore(opts.dbPath);
-  // 业务 Store：注入的 businessStores 优先；缺省回落 SQLiteStore（兼容旧行为）
-  const appStore: AppStore = opts.businessStores?.appStore ?? store;
-  // 监控 Store：注入的 traceStore 优先；缺省回落 SQLiteStore（兼容旧行为）
-  // 注意：注入 traceStore 时，store 仅用于 alert_rules 表（SQLiteStore 仍持有连接）
-  const traceStore: TraceStore = opts.traceStore ?? store;
+  // 三个 Store 均由外部注入（MySQL 业务库 + ClickHouse 监控库 + MySQL 告警库），
+  // collector 不再内置任何本地存储实现。
+  const appStore: AppStore = opts.businessStores.appStore;
+  const traceStore: TraceStore = opts.traceStore;
+  const alertStore: AlertStore = opts.alertStore ?? opts.businessStores.alertStore;
   if (opts.apps) {
-    // seedApps 走注入的 appStore（MySQL 模式下种入 MySQL；SQLite 模式种入同库）
+    // seedApps 走注入的 appStore（MySQL）
     // fire-and-forget：createCollector 是同步函数，seedApps 失败仅打日志不阻塞启动
     appStore.seedApps(opts.apps).catch((err) =>
       console.error('[observability-server] seedApps 失败:', err),
@@ -338,8 +338,8 @@ export function createCollector(opts: CollectorOptions): Collector {
     notifier = createNotifier({ defaultWebhookUrl: opts.alerts.defaultWebhookUrl });
     alertEvaluator = createAlertEvaluator({
       aggregatorFor,
-      store: traceStore, // Phase 2：监控查询走 traceStore（CH/dual 模式下走 CH）
-      alertStore: store, // 告警规则/事件仍存 SQLiteStore（与业务库分离）
+      store: traceStore, // Phase 2：监控查询走 traceStore（ClickHouse）
+      alertStore, // 告警规则/事件：走注入的 alertStore（MySQL）
       notifier,
       intervalMs: opts.alerts.evaluateIntervalMs,
     });
@@ -354,7 +354,7 @@ export function createCollector(opts: CollectorOptions): Collector {
       ? createAdminHandler({
           sessions: isMultiUser ? undefined : sessions,
           appStore,
-          alertStore: store,
+          alertStore,
           authCtx,
           projectStore: opts.auth?.projectStore,
           notifier,
@@ -451,7 +451,7 @@ export function createCollector(opts: CollectorOptions): Collector {
       }
 
       // 就绪探针（P2-3）：无鉴权，DB/存储可达则 200，供容器与负载均衡探测
-      // F10 修复：查实际 traceStore（CH/dual 模式下 SQLite 可达不代表监控链路健康）
+      // F10 修复：查实际 traceStore（ClickHouse 可达才代表监控链路健康）
       if (req.method === 'GET' && pathname === '/healthz') {
         try {
           await traceStore.healthCheck();
@@ -513,11 +513,9 @@ export function createCollector(opts: CollectorOptions): Collector {
     close: async () => {
       if (pruneTimer) clearInterval(pruneTimer);
       alertEvaluator?.stop();
-      await opts.businessStores?.close();
-      // 关闭注入的 traceStore（与 store 同实例时避免重复关闭）
-      if (opts.traceStore && opts.traceStore !== store) {
-        await opts.traceStore.close();
-      }
+      await opts.businessStores.close();
+      // 关闭注入的 traceStore（ClickHouse）
+      await traceStore.close();
       // 关闭 MQ producer（Phase 3）
       if (opts.mqProducer) {
         await opts.mqProducer.close();
@@ -526,7 +524,6 @@ export function createCollector(opts: CollectorOptions): Collector {
       if (closeAggregator) {
         await closeAggregator();
       }
-      await store.close();
     },
   };
 }

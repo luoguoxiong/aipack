@@ -14,8 +14,7 @@
  * 配置项见 .env.example 与 src/config.ts 顶部注释。
  */
 
-import { readFile, mkdir } from 'node:fs/promises';
-import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { loadConfig, type CollectorConfig, type TlsConfig } from './config.js';
 import {
   createCollector,
@@ -26,44 +25,32 @@ import {
   createAggregatorFactory,
   JwtSessionManager,
   createAgentWebhook,
-  SQLiteModelPriceStore,
   MySQLModelPriceStore,
   MysqlPool,
 } from './index.js';
-import type { CollectorOptions, TraceStore, ModelPriceStore } from './index.js';
+import type { CollectorOptions, ModelPriceStore } from './index.js';
 
 /** 退出清理句柄（按注册逆序执行；collector.close 已含 businessStores/traceStore/mqProducer/aggregator，此处仅补 collector 未托管的资源） */
 const cleanup: Array<() => Promise<void>> = [];
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
-  // 确保 SQLite 文件所在目录存在（:memory: 无目录）：createBusinessStores/priceStore 早于
-  // collector 内部 SQLiteStore 打开连接，此处先行建目录避免 "directory does not exist"
-  if (cfg.dbPath !== ':memory:') {
-    await mkdir(path.dirname(cfg.dbPath) || '.', { recursive: true });
-  }
   const tls = await readTlsCerts(cfg.tls);
 
-  // ── Phase 1：业务库（app / user / project / agentDefinition / acl） ──────────
+  // ── Phase 1：业务库（app / user / project / agentDefinition / acl / alert） ──
   const businessStores = await createBusinessStores({
-    businessStore: cfg.businessStore.backend,
-    sqliteDbPath: cfg.dbPath,
     mysqlUrl: cfg.businessStore.mysqlUrl,
     autoMigrate: cfg.businessStore.autoMigrate,
   });
 
-  // ── Phase 2：监控库（runs / spans / tool_calls） ──────────────────────────
-  //   sqlite 后端 createTraceStore 返回 undefined → collector 回落内部 SQLiteStore
+  // ── Phase 2：监控库（runs / spans / tool_calls → ClickHouse） ─────────────
   const traceHandle = await createTraceStore({
-    traceStore: cfg.traceStore.backend,
-    sqliteDbPath: cfg.dbPath,
     clickhouseUrl: cfg.traceStore.clickhouseUrl,
     clickhouseDatabase: cfg.traceStore.clickhouseDatabase,
     clickhouseUsername: cfg.traceStore.clickhouseUsername,
     clickhousePassword: cfg.traceStore.clickhousePassword,
   });
-  const traceStore: TraceStore | undefined =
-    cfg.traceStore.backend === 'sqlite' ? undefined : traceHandle.traceStore;
+  const traceStore = traceHandle.traceStore;
 
   // ── Phase 3：MQ Producer（Kafka 解耦 ingest 与落盘） ─────────────────────
   // 契约：仅 MQ_ENABLED=true 时注入 collector（undefined = collector 同步落盘）。
@@ -136,7 +123,6 @@ async function main(): Promise<void> {
 
   // ── 组装 CollectorOptions ───────────────────────────────────────────────
   const opts: CollectorOptions = {
-    dbPath: cfg.dbPath,
     apps: cfg.seedApps,
     admin: cfg.admin,
     sessionSecret: cfg.sessionSecret,
@@ -192,30 +178,18 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
 
-/** 创建模型价格库（Phase 6）；返回 store + close。MySQL 模式不加载 better-sqlite3 原生模块。 */
+/** 创建模型价格库（Phase 6，MySQL）；返回 store + close。 */
 async function createModelPriceStoreHandle(
   cfg: CollectorConfig,
 ): Promise<{ store: ModelPriceStore; close: () => Promise<void> }> {
-  if (cfg.businessStore.backend === 'mysql') {
-    if (!cfg.businessStore.mysqlUrl) {
-      throw new Error('BUSINESS_STORE=mysql 时必须配置 MYSQL_URL');
-    }
-    const pool = new MysqlPool(cfg.businessStore.mysqlUrl);
-    return {
-      store: new MySQLModelPriceStore(pool),
-      close: async () => {
-        await pool.close();
-      },
-    };
+  if (!cfg.businessStore.mysqlUrl) {
+    throw new Error('必须配置 MYSQL_URL（如 mysql://user:pass@host:3306/db）');
   }
-  // SQLite 模式：懒加载 better-sqlite3（MySQL-only 部署无需编译原生模块）
-  const { default: Database } = await import('better-sqlite3');
-  const db = new Database(cfg.dbPath);
-  db.pragma('journal_mode = WAL');
+  const pool = new MysqlPool(cfg.businessStore.mysqlUrl);
   return {
-    store: new SQLiteModelPriceStore(db),
+    store: new MySQLModelPriceStore(pool),
     close: async () => {
-      db.close();
+      await pool.close();
     },
   };
 }

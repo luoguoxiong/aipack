@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS project_apps (
   CONSTRAINT fk_pa_proj FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- ── apps (从 SQLite 迁移,字段对齐) ────────────────────────────
+-- ── apps ─────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS apps (
   app_id       VARCHAR(64)  NOT NULL,
   app_secret   VARCHAR(128) NOT NULL,

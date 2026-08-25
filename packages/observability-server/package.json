@@ -1,7 +1,7 @@
 {
   "name": "@aipack-ai/observability-server",
   "version": "0.0.2",
-  "description": "aipack 可观测性收集服务(S2)：接收 SDK 埋点上报,SQLite 落盘 + 内存聚合 + REST 查询",
+  "description": "aipack 可观测性收集服务(S2)：接收 SDK 埋点上报,MySQL/ClickHouse 落盘 + 内存聚合 + REST 查询",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -36,7 +36,6 @@
     "telemetry",
     "metrics",
     "trace",
-    "sqlite",
     "dashboard"
   ],
   "license": "MIT",
@@ -45,7 +44,6 @@
   },
   "dependencies": {
     "@aipack-ai/observability": "workspace:*",
-    "better-sqlite3": "^11.10.0",
     "ioredis": "^5.4.1",
     "kafkajs": "^2.2.4",
     "mysql2": "^3.11.0"
@@ -53,7 +51,6 @@
   "devDependencies": {
     "@aipack-ai/agent": "workspace:*",
     "@ant-design/icons": "^5.4.0",
-    "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^20.12.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

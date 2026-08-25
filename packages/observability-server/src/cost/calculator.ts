@@ -68,7 +68,7 @@ const PRICE_CACHE_TTL_MS = 5 * 60 * 1000;
 /**
  * 创建 CostCalculator。
  *
- * @param priceStore 模型价格存储（SQLite / MySQL）
+ * @param priceStore 模型价格存储（MySQL）
  */
 export function createCostCalculator(priceStore: ModelPriceStore): CostCalculator {
   // modelId -> 缓存条目；缺省/未命中价格也缓存（避免重复查 DB）

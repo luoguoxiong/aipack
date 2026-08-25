@@ -1,5 +1,5 @@
 /**
- * AclStore 接口 + 双实现（SQLite / MySQL）。
+ * AclStore 接口 + MySQL 实现。
  *
  * Phase 4：项目成员授权（user × project × role）。
  * 角色：
@@ -8,7 +8,6 @@
  * - viewer：只读，只能查看面板
  */
 
-import type Database from 'better-sqlite3';
 import type { MysqlPool } from './mysql';
 
 export type ProjectRole = 'owner' | 'editor' | 'viewer';
@@ -50,75 +49,6 @@ const ROLE_LEVEL: Record<ProjectRole, number> = {
   editor: 2,
   owner: 3,
 };
-
-// ─── SQLite 实现 ──────────────────────────────────────────────────
-
-const SQLITE_DDL = `
-CREATE TABLE IF NOT EXISTS acl (
-  user_id    TEXT NOT NULL,
-  project_id TEXT NOT NULL,
-  role       TEXT NOT NULL,
-  granted_at INTEGER NOT NULL,
-  granted_by TEXT,
-  PRIMARY KEY (user_id, project_id)
-);
-CREATE INDEX IF NOT EXISTS idx_acl_project ON acl(project_id);
-CREATE INDEX IF NOT EXISTS idx_acl_user ON acl(user_id);
-`;
-
-export class SQLiteAclStore implements AclStore {
-  constructor(private db: Database.Database) {
-    this.db.exec(SQLITE_DDL);
-  }
-
-  async grant(input: GrantAclInput): Promise<AclRecord> {
-    const now = Date.now();
-    this.db
-      .prepare(
-        `INSERT INTO acl (user_id, project_id, role, granted_at, granted_by)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(user_id, project_id) DO UPDATE SET role = excluded.role, granted_at = excluded.granted_at, granted_by = excluded.granted_by`,
-      )
-      .run(input.userId, input.projectId, input.role, now, input.grantedBy);
-    return { ...input, grantedAt: now };
-  }
-
-  async revoke(userId: string, projectId: string): Promise<boolean> {
-    const result = this.db
-      .prepare('DELETE FROM acl WHERE user_id = ? AND project_id = ?')
-      .run(userId, projectId);
-    return result.changes > 0;
-  }
-
-  async getRole(userId: string, projectId: string): Promise<ProjectRole | undefined> {
-    const row = this.db
-      .prepare('SELECT role FROM acl WHERE user_id = ? AND project_id = ?')
-      .get(userId, projectId) as { role: string } | undefined;
-    return row ? (row.role as ProjectRole) : undefined;
-  }
-
-  async listMembers(projectId: string): Promise<AclRecord[]> {
-    const rows = this.db
-      .prepare('SELECT * FROM acl WHERE project_id = ? ORDER BY role DESC, granted_at ASC')
-      .all(projectId) as Array<Record<string, unknown>>;
-    return rows.map(rowToAcl);
-  }
-
-  async listUserProjects(userId: string): Promise<AclRecord[]> {
-    const rows = this.db
-      .prepare('SELECT * FROM acl WHERE user_id = ? ORDER BY granted_at DESC')
-      .all(userId) as Array<Record<string, unknown>>;
-    return rows.map(rowToAcl);
-  }
-
-  async hasRole(userId: string, projectId: string, minRole: ProjectRole): Promise<boolean> {
-    const role = await this.getRole(userId, projectId);
-    if (!role) return false;
-    return ROLE_LEVEL[role] >= ROLE_LEVEL[minRole];
-  }
-
-  close(): void {}
-}
 
 // ─── MySQL 实现 ───────────────────────────────────────────────────
 

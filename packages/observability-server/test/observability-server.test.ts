@@ -2,6 +2,9 @@
  * 收集服务端到端验收（@aipack-ai/observability-server，observability-s2.md §9）：
  * 起真实收集服务（createCollector + http server）→ SDK 埋点上报 → 查询 /metrics、/traces 断言。
  * 附加用例：鉴权失败丢弃、上报失败本地缓存补报。
+ *
+ * 存储层用内存 mock（MemoryTraceStore / MemoryAppStore / MemoryAlertStore）替代真实
+ * MySQL/ClickHouse，验证 collector 的组装与查询链路；SQL 聚合语义由集成环境覆盖。
  */
 import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,15 +15,28 @@ import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { createRuntime, createRequest } from '@aipack-ai/agent';
 import type { StreamFn, StreamEvent, Message, AssistantMessage, Tool } from '@aipack-ai/agent';
 import { createObservability, HttpReporter, ObservabilityTelemetry } from '@aipack-ai/observability';
-import type { EventBatch } from '@aipack-ai/observability';
-import Database from 'better-sqlite3';
-import { createCollector, createCollectorServer, SQLiteStore } from '../src/index';
+import type { EventBatch, RunRecord, SpanRecord, ToolCallRecord, EventRecord, RetryRecord } from '@aipack-ai/observability';
+import { createCollector, createCollectorServer } from '../src/index';
 import { Aggregator } from '../src/aggregator';
-import type { CollectorOptions } from '../src/index';
-import type { RunRecord, SpanRecord, ToolCallRecord } from '@aipack-ai/observability';
+import type {
+  CollectorOptions,
+  BusinessStores,
+  TraceStore,
+  TraceDetail,
+  RunQueryFilter,
+  RunListItem,
+  VersionMetrics,
+  VersionToolStat,
+  AppStore,
+  AppRecord,
+  AlertStore,
+  AlertRuleRow,
+  AlertEventRow,
+} from '../src/index';
 
 // 测试豁免：mock webhook 监听 127.0.0.1，S3 安全修复默认拦截内网目标，测试显式放行
 process.env.ALERTS_WEBHOOK_ALLOW_PRIVATE = '1';
@@ -106,22 +122,419 @@ function tempDir(prefix: string): string {
   return dir;
 }
 
-function tempDb(): string {
-  return path.join(tempDir('obs-db'), 'obs.db');
+// ─── 内存 mock Store（替代真实 MySQL / ClickHouse）────────────────
+
+/** 线性插值分位（对齐原直查版聚合口径） */
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0];
+  const rank = (sorted.length - 1) * p;
+  const lo = Math.floor(rank);
+  const hi = Math.ceil(rank);
+  return sorted[lo] + (rank - lo) * (sorted[hi] - sorted[lo]);
 }
 
-/** 启动真实收集服务，返回 baseUrl + 面板 token + dbPath + collector */
+/** TraceStore 内存实现：runs/spans/toolCalls/events/retries 全量留存，语义对齐 DB 直查 */
+class MemoryTraceStore implements TraceStore {
+  runs: RunRecord[] = [];
+  spans: SpanRecord[] = [];
+  toolCalls: ToolCallRecord[] = [];
+  events: EventRecord[] = [];
+  retries: RetryRecord[] = [];
+  /** traceId → appId（flush 时盖戳） */
+  appIds = new Map<string, string>();
+
+  async insertRun(r: RunRecord): Promise<void> {
+    this.runs.push({ ...r });
+  }
+
+  async insertSpan(s: SpanRecord): Promise<void> {
+    this.spans.push({ ...s });
+  }
+
+  async insertToolCall(t: ToolCallRecord): Promise<void> {
+    this.toolCalls.push({ ...t });
+  }
+
+  async queryRuns(filter: RunQueryFilter): Promise<{ total: number; items: RunListItem[] }> {
+    const toolTraceIds = filter.tool
+      ? new Set(this.toolCalls.filter((t) => t.toolName === filter.tool).map((t) => t.traceId))
+      : undefined;
+    const matched = this.runs
+      .filter((r) => {
+        if (filter.since !== undefined && r.startedAt < filter.since) return false;
+        if (filter.until !== undefined && r.startedAt > filter.until) return false;
+        if (filter.status && r.status !== filter.status) return false;
+        if (filter.model && r.model !== filter.model) return false;
+        if (filter.sessionKey && r.sessionKey !== filter.sessionKey) return false;
+        if (filter.version && (r.appVersion ?? 'unknown') !== filter.version) return false;
+        if (filter.appId && this.appIds.get(r.traceId) !== filter.appId) return false;
+        if (toolTraceIds && !toolTraceIds.has(r.traceId)) return false;
+        return true;
+      })
+      .sort((a, b) => b.startedAt - a.startedAt);
+    const items: RunListItem[] = matched
+      .slice(filter.offset, filter.offset + filter.limit)
+      .map((r) => ({
+        ...r,
+        appId: this.appIds.get(r.traceId),
+        retries: this.retries.filter((rt) => rt.traceId === r.traceId).length,
+      }));
+    return { total: matched.length, items };
+  }
+
+  async queryTrace(traceId: string): Promise<TraceDetail | undefined> {
+    const run = this.runs.find((r) => r.traceId === traceId);
+    if (!run) return undefined;
+    return {
+      run,
+      spans: this.spans.filter((s) => s.traceId === traceId).sort((a, b) => a.startedAt - b.startedAt),
+      tools: this.toolCalls.filter((t) => t.traceId === traceId),
+      events: this.events.filter((e) => e.traceId === traceId).sort((a, b) => a.timestamp - b.timestamp),
+      retries: this.retries.filter((r) => r.traceId === traceId).sort((a, b) => a.timestamp - b.timestamp),
+    };
+  }
+
+  async getRunAppId(traceId: string): Promise<string | undefined> {
+    return this.appIds.get(traceId);
+  }
+
+  /** 按版本聚合（口径对齐 /metrics/versions）：lastSeenAt 倒序 */
+  async queryVersionMetrics(filter: {
+    since?: number;
+    until?: number;
+    appId?: string;
+  }): Promise<VersionMetrics[]> {
+    const runs = this.runs.filter((r) => {
+      if (filter.since !== undefined && r.startedAt < filter.since) return false;
+      if (filter.until !== undefined && r.startedAt > filter.until) return false;
+      if (filter.appId && this.appIds.get(r.traceId) !== filter.appId) return false;
+      return true;
+    });
+    const groups = new Map<string, RunRecord[]>();
+    for (const r of runs) {
+      const v = r.appVersion ?? 'unknown';
+      const list = groups.get(v) ?? [];
+      list.push(r);
+      groups.set(v, list);
+    }
+    const items: VersionMetrics[] = [];
+    for (const [version, rs] of groups) {
+      const traceIds = new Set(rs.map((r) => r.traceId));
+      const spans = this.spans.filter((s) => traceIds.has(s.traceId));
+      const tools = this.toolCalls.filter((t) => traceIds.has(t.traceId));
+      const durations = rs.map((r) => r.durationMs ?? 0).sort((a, b) => a - b);
+      const successes = rs.filter((r) => r.status === 'success').length;
+      const errorClasses: Record<string, number> = {};
+      for (const r of rs) {
+        if (r.status !== 'success' && r.errorClass) {
+          errorClasses[r.errorClass] = (errorClasses[r.errorClass] ?? 0) + 1;
+        }
+      }
+      const acc: Record<string, { calls: number; errors: number; msSum: number }> = {};
+      for (const t of tools) {
+        const st = acc[t.toolName] ?? { calls: 0, errors: 0, msSum: 0 };
+        st.calls += 1;
+        st.msSum += t.durationMs ?? 0;
+        if (t.status === 'error') st.errors += 1;
+        acc[t.toolName] = st;
+      }
+      const toolStats: Record<string, VersionToolStat> = {};
+      for (const [name, st] of Object.entries(acc)) {
+        toolStats[name] = {
+          calls: st.calls,
+          successRate: st.calls > 0 ? (st.calls - st.errors) / st.calls : 0,
+          avgMs: st.calls > 0 ? st.msSum / st.calls : 0,
+          errors: st.errors,
+        };
+      }
+      items.push({
+        version,
+        lastSeenAt: Math.max(...rs.map((r) => r.startedAt)),
+        requests: rs.length,
+        successRate: rs.length > 0 ? successes / rs.length : 0,
+        p50Ms: percentile(durations, 0.5),
+        p95Ms: percentile(durations, 0.95),
+        p99Ms: percentile(durations, 0.99),
+        totalTokens: rs.reduce((sum, r) => sum + (r.inputTokens ?? 0) + (r.outputTokens ?? 0), 0),
+        avgTurns: rs.length > 0 ? rs.reduce((s, r) => s + (r.turns ?? 0), 0) / rs.length : 0,
+        retryRate:
+          spans.length > 0
+            ? spans.reduce((s, x) => s + Math.max(0, (x.attempts ?? 1) - 1), 0) / spans.length
+            : 0,
+        errorClasses,
+        tools: toolStats,
+      });
+    }
+    return items.sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+  }
+
+  async queryErrorClassCounts(filter: {
+    since?: number;
+    until?: number;
+    appId?: string;
+    limit?: number;
+  }): Promise<Array<{ errorClass: string; count: number }>> {
+    const counts = new Map<string, number>();
+    for (const r of this.runs) {
+      if (filter.since !== undefined && r.startedAt < filter.since) continue;
+      if (filter.until !== undefined && r.startedAt > filter.until) continue;
+      if (filter.appId && this.appIds.get(r.traceId) !== filter.appId) continue;
+      if (r.errorClass) counts.set(r.errorClass, (counts.get(r.errorClass) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([errorClass, count]) => ({ errorClass, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, filter.limit ?? 10);
+  }
+
+  async queryErrorClassDrill(filter: {
+    since?: number;
+    until?: number;
+    appId?: string;
+    errorClass: string;
+  }): Promise<{
+    errorClass: string;
+    recentTraces: Array<{
+      traceId: string;
+      startedAt: number;
+      durationMs: number;
+      model?: string;
+      appId?: string;
+      sessionKey?: string;
+    }>;
+    byModel: Record<string, number>;
+    byTool: Record<string, number>;
+  }> {
+    const runs = this.runs.filter((r) => r.errorClass === filter.errorClass);
+    const traceIds = new Set(runs.map((r) => r.traceId));
+    const byModel: Record<string, number> = {};
+    for (const r of runs) {
+      if (r.model) byModel[r.model] = (byModel[r.model] ?? 0) + 1;
+    }
+    const byTool: Record<string, number> = {};
+    for (const t of this.toolCalls) {
+      if (traceIds.has(t.traceId) && t.status === 'error') {
+        byTool[t.toolName] = (byTool[t.toolName] ?? 0) + 1;
+      }
+    }
+    return {
+      errorClass: filter.errorClass,
+      recentTraces: runs.slice(-10).map((r) => ({
+        traceId: r.traceId,
+        startedAt: r.startedAt,
+        durationMs: r.durationMs ?? 0,
+        model: r.model,
+        appId: this.appIds.get(r.traceId),
+        sessionKey: r.sessionKey,
+      })),
+      byModel,
+      byTool,
+    };
+  }
+
+  async flush(batch: EventBatch, appId: string): Promise<void> {
+    for (const r of batch.runs) {
+      this.runs.push({ ...r });
+      this.appIds.set(r.traceId, appId);
+    }
+    for (const s of batch.spans) this.spans.push({ ...s });
+    for (const t of batch.toolCalls) this.toolCalls.push({ ...t });
+    for (const e of batch.events) this.events.push({ ...e });
+    for (const rt of batch.retries) this.retries.push({ ...rt });
+  }
+
+  async prune(before: number): Promise<number> {
+    const oldTraceIds = new Set(this.runs.filter((r) => r.startedAt < before).map((r) => r.traceId));
+    const removedSpans = this.spans.filter((s) => oldTraceIds.has(s.traceId)).length;
+    const removedTools = this.toolCalls.filter((t) => oldTraceIds.has(t.traceId)).length;
+    const removedEvents = this.events.filter((e) => e.traceId !== undefined && oldTraceIds.has(e.traceId)).length;
+    const removedRetries = this.retries.filter((r) => oldTraceIds.has(r.traceId)).length;
+    const removedRuns = this.runs.length - this.runs.filter((r) => !oldTraceIds.has(r.traceId)).length;
+    this.runs = this.runs.filter((r) => !oldTraceIds.has(r.traceId));
+    this.spans = this.spans.filter((s) => !oldTraceIds.has(s.traceId));
+    this.toolCalls = this.toolCalls.filter((t) => !oldTraceIds.has(t.traceId));
+    this.events = this.events.filter((e) => e.traceId === undefined || !oldTraceIds.has(e.traceId));
+    this.retries = this.retries.filter((r) => !oldTraceIds.has(r.traceId));
+    return removedRuns + removedSpans + removedTools + removedEvents + removedRetries;
+  }
+
+  async backup(dir: string): Promise<string> {
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `backup-${Date.now()}.json`);
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        runs: this.runs,
+        spans: this.spans,
+        toolCalls: this.toolCalls,
+        events: this.events,
+        retries: this.retries,
+      }),
+    );
+    return file;
+  }
+
+  async healthCheck(): Promise<void> {}
+
+  async close(): Promise<void> {}
+}
+
+/** AppStore 内存实现（appId/appSecret 动态管理） */
+class MemoryAppStore implements AppStore {
+  private apps = new Map<string, AppRecord>();
+
+  async createApp(name: string): Promise<AppRecord> {
+    const rec: AppRecord = {
+      appId: `app_${randomBytes(4).toString('hex')}`,
+      appSecret: `sk_${randomBytes(12).toString('hex')}`,
+      name,
+      createdAt: Date.now(),
+    };
+    this.apps.set(rec.appId, rec);
+    return rec;
+  }
+
+  async listApps(): Promise<AppRecord[]> {
+    return [...this.apps.values()].sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  async deleteApp(appId: string): Promise<boolean> {
+    return this.apps.delete(appId);
+  }
+
+  async getApp(appId: string): Promise<AppRecord | undefined> {
+    return this.apps.get(appId);
+  }
+
+  async verifyApp(appId: string, appSecret: string): Promise<boolean> {
+    const app = this.apps.get(appId);
+    return !!app && app.appSecret === appSecret;
+  }
+
+  async regenerateSecret(appId: string): Promise<string | undefined> {
+    const app = this.apps.get(appId);
+    if (!app) return undefined;
+    app.appSecret = `sk_${randomBytes(12).toString('hex')}`;
+    return app.appSecret;
+  }
+
+  async touchApp(appId: string, ts: number): Promise<void> {
+    const app = this.apps.get(appId);
+    if (app) app.lastSeenAt = ts;
+  }
+
+  async seedApps(apps: Record<string, string>): Promise<void> {
+    for (const [appId, secret] of Object.entries(apps)) {
+      if (!this.apps.has(appId)) {
+        this.apps.set(appId, { appId, appSecret: secret, name: appId, createdAt: Date.now() });
+      }
+    }
+  }
+
+  async close(): Promise<void> {}
+}
+
+/** AlertStore 内存实现（alert_rules / alert_events CRUD） */
+class MemoryAlertStore implements AlertStore {
+  private rules = new Map<string, AlertRuleRow>();
+  private events: AlertEventRow[] = [];
+  private nextEventId = 1;
+
+  async listAlertRules(): Promise<AlertRuleRow[]> {
+    return [...this.rules.values()].sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  async getAlertRule(id: string): Promise<AlertRuleRow | undefined> {
+    return this.rules.get(id);
+  }
+
+  async createAlertRule(rule: AlertRuleRow): Promise<void> {
+    this.rules.set(rule.id, { ...rule });
+  }
+
+  async updateAlertRule(id: string, patch: Partial<AlertRuleRow>): Promise<AlertRuleRow | undefined> {
+    const existing = this.rules.get(id);
+    if (!existing) return undefined;
+    const updated: AlertRuleRow = { ...existing, ...patch, id };
+    this.rules.set(id, updated);
+    return updated;
+  }
+
+  async deleteAlertRule(id: string): Promise<boolean> {
+    return this.rules.delete(id);
+  }
+
+  async insertAlertEvent(ev: Omit<AlertEventRow, 'id'>): Promise<void> {
+    this.events.push({ ...ev, id: this.nextEventId++ });
+  }
+
+  async listAlertEvents(opts: {
+    offset: number;
+    limit: number;
+    status?: string;
+  }): Promise<{ total: number; items: AlertEventRow[] }> {
+    const filtered = (opts.status ? this.events.filter((e) => e.status === opts.status) : [...this.events])
+      .sort((a, b) => b.createdAt - a.createdAt || b.id - a.id);
+    return { total: filtered.length, items: filtered.slice(opts.offset, opts.offset + opts.limit) };
+  }
+}
+
+/** 单用户模式不使用的多用户 store（误用时抛错） */
+function notUsedStore(): never {
+  return new Proxy(
+    {},
+    {
+      get() {
+        throw new Error('单用户模式不应调用此 store');
+      },
+    },
+  ) as never;
+}
+
+/** 组装一组内存 Store（traceStore / appStore / alertStore + BusinessStores） */
+function buildStores(): {
+  traceStore: MemoryTraceStore;
+  appStore: MemoryAppStore;
+  alertStore: MemoryAlertStore;
+  businessStores: BusinessStores;
+} {
+  const traceStore = new MemoryTraceStore();
+  const appStore = new MemoryAppStore();
+  const alertStore = new MemoryAlertStore();
+  const businessStores: BusinessStores = {
+    appStore,
+    alertStore,
+    userStore: notUsedStore(),
+    projectStore: notUsedStore(),
+    agentDefinitionStore: notUsedStore(),
+    aclStore: notUsedStore(),
+    close: async () => {},
+  };
+  return { traceStore, appStore, alertStore, businessStores };
+}
+
+/** 启动真实收集服务，返回 baseUrl + 面板 token + mock stores + collector */
 async function startCollector(
   apps: Record<string, string> = { [APP_ID]: APP_SECRET },
-  extraOpts: Omit<CollectorOptions, 'dbPath' | 'apps' | 'admin'> = {},
+  extraOpts: Partial<CollectorOptions> = {},
+  reuse?: ReturnType<typeof buildStores>,
 ): Promise<{
   baseUrl: string;
-  dbPath: string;
   token: string;
   collector: ReturnType<typeof createCollector>;
+  traceStore: MemoryTraceStore;
+  appStore: MemoryAppStore;
+  alertStore: MemoryAlertStore;
 }> {
-  const dbPath = tempDb();
-  const collector = createCollector({ dbPath, apps, admin: ADMIN, ...extraOpts });
+  const stores = reuse ?? buildStores();
+  const collector = createCollector({
+    apps,
+    admin: ADMIN,
+    businessStores: stores.businessStores,
+    traceStore: stores.traceStore,
+    ...extraOpts,
+  });
   const server = http.createServer((req, res) => void collector.handler(req, res));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as AddressInfo).port;
@@ -131,7 +544,14 @@ async function startCollector(
   });
   const baseUrl = `http://127.0.0.1:${port}`;
   const token = await login(baseUrl);
-  return { baseUrl, dbPath, token, collector };
+  return {
+    baseUrl,
+    token,
+    collector,
+    traceStore: stores.traceStore,
+    appStore: stores.appStore,
+    alertStore: stores.alertStore,
+  };
 }
 
 /** 面板登录，返回 Bearer token */
@@ -204,7 +624,7 @@ afterEach(() => {
 
 describe('S2 收集服务端到端', () => {
   it('run 成功：summary.requests=1、successRate=1，trace 含 run + model span', async () => {
-    const { baseUrl, dbPath, token } = await startCollector();
+    const { baseUrl, token, traceStore } = await startCollector();
     const obs = createObservability({ appId: APP_ID, appSecret: APP_SECRET, endpoint: baseUrl, cacheDir: tempDir('obs-cache') });
     const result = await runOnce(obs.telemetry);
     assert.equal(result.success, true);
@@ -222,10 +642,8 @@ describe('S2 收集服务端到端', () => {
     assert.ok(kinds.includes('run'));
     assert.ok(kinds.includes('model'));
 
-    // 落盘持久化：关闭收集端后重开 db，trace 仍在
-    const store = new SQLiteStore(dbPath);
-    assert.ok(await store.queryTrace(String(result.metadata.traceId)), 'trace 应已持久化');
-    await store.close();
+    // 落盘持久化：trace 已写入 traceStore，可直接查询
+    assert.ok(await traceStore.queryTrace(String(result.metadata.traceId)), 'trace 应已持久化');
   });
 
   it('工具循环 2 轮：avgTurns=2，/metrics/tools 工具 successRate=1', async () => {
@@ -630,8 +1048,7 @@ describe('版本维度聚合 /metrics/versions', () => {
   });
 
   it('queryVersionMetrics 精确聚合：tokens/分位/错误分类/工具成功率/重试率，version NULL 归 unknown', async () => {
-    const dbPath = tempDb();
-    const store = new SQLiteStore(dbPath);
+    const store = new MemoryTraceStore();
     const now = Date.now();
     await store.insertRun({ ...makeRun('r1', now), appVersion: '1.0.0', durationMs: 100, inputTokens: 10, outputTokens: 5, status: 'success' });
     await store.insertRun({ ...makeRun('r2', now + 1), appVersion: '1.0.0', durationMs: 300, inputTokens: 100, outputTokens: 50, status: 'error', errorClass: 'rate_limit' });
@@ -664,27 +1081,6 @@ describe('版本维度聚合 /metrics/versions', () => {
     assert.equal(unk.requests, 1);
     assert.equal(unk.successRate, 1);
     assert.equal(unk.totalTokens, 15);
-    await store.close();
-  });
-
-  it('存量库迁移：旧 runs 表无 version 列 → 打开后自动 ALTER 补齐并可聚合', async () => {
-    const dbPath = tempDb();
-    const raw = new Database(dbPath);
-    raw.exec(`CREATE TABLE runs (
-      trace_id TEXT PRIMARY KEY, app_id TEXT, started_at INTEGER, ended_at INTEGER,
-      session_key TEXT, channel TEXT, model TEXT, status TEXT, error_class TEXT,
-      turns INTEGER, duration_ms INTEGER, active_ms INTEGER, queued_ms INTEGER,
-      ttft_ms INTEGER, input_tokens INTEGER, output_tokens INTEGER,
-      cache_read INTEGER, cache_write INTEGER
-    )`);
-    raw.close();
-
-    const store = new SQLiteStore(dbPath);
-    await store.insertRun({ ...makeRun('mig', Date.now()), appVersion: '0.9.0' });
-    const items = await store.queryVersionMetrics({});
-    assert.equal(items.length, 1);
-    assert.equal(items[0].version, '0.9.0', 'ALTER 补齐后版本列可用');
-    await store.close();
   });
 
   it('聚合器 version 维度：run/model span/tool call 按 traceId 归入版本；缺版本归 unknown；不污染全局', async () => {
@@ -755,34 +1151,30 @@ describe('版本维度聚合 /metrics/versions', () => {
 
 describe('P0 retention 数据保留', () => {
   it('prune 只删除过期明细（runs/spans/tool_calls），备份快照可生成', async () => {
-    const dbPath = tempDb();
-    const store = new SQLiteStore(dbPath);
+    const store = new MemoryTraceStore();
     const now = Date.now();
     await store.insertRun(makeRun('old', now - 40 * 86400_000));
     await store.insertSpan(makeSpan('old', now - 40 * 86400_000));
     await store.insertToolCall(makeTool('old'));
     await store.insertRun(makeRun('new', now));
 
-    const backupDir = path.join(path.dirname(dbPath), 'backup');
+    const backupDir = tempDir('obs-backup');
     const backupFile = await store.backup(backupDir);
-    assert.ok(fs.existsSync(backupFile), 'VACUUM INTO 备份文件应存在');
+    assert.ok(fs.existsSync(backupFile), '备份快照文件应存在');
 
     const cleared = await store.prune(now - 10 * 86400_000); // 保留 10 天
     assert.equal(cleared, 3, '应删除 3 条过期记录');
     assert.equal(await store.queryTrace('old'), undefined, '过期 trace 应被删除');
     assert.ok(await store.queryTrace('new'), '新 trace 应保留');
-    await store.close();
   });
 
   it('collector 定时清理：过期数据被 prune，startup 清理不误删', async () => {
     // days 极小 → before≈now，过期数据（1h 前）立即被清
-    const { baseUrl, dbPath, token } = await startCollector(
+    const { baseUrl, traceStore, token } = await startCollector(
       { [APP_ID]: APP_SECRET },
       { retention: { days: 0.000001, intervalMs: 20 } },
     );
-    const writer = new SQLiteStore(dbPath);
-    await writer.insertRun(makeRun('old', Date.now() - 3600_000));
-    await writer.close();
+    await traceStore.insertRun(makeRun('old', Date.now() - 3600_000));
 
     await sleep(150);
     const list = await getJson(baseUrl, '/traces', token);
@@ -1197,8 +1589,13 @@ describe('P1-1 面板元信息 /api/meta', () => {
 
 describe('P1-3 TLS（HTTPS 传输）', () => {
   it('createCollectorServer：无 tls → http；带 tls → https，且 HTTPS 上报/查询可用', async () => {
-    const dbPath = tempDb();
-    const collector = createCollector({ dbPath, apps: { [APP_ID]: APP_SECRET }, admin: ADMIN });
+    const stores = buildStores();
+    const collector = createCollector({
+      apps: { [APP_ID]: APP_SECRET },
+      admin: ADMIN,
+      businessStores: stores.businessStores,
+      traceStore: stores.traceStore,
+    });
 
     // 无 tls → http.Server
     const plain = createCollectorServer(collector);
@@ -1339,9 +1736,15 @@ describe('P2 自定义事件与重试明细', () => {
 });
 
 describe('P2-3 会话持久化（SESSION_SECRET 无状态签名 token）', () => {
-  /** 以同一 dbPath 启动 collector，返回 baseUrl + 关闭函数（模拟服务重启） */
-  async function startWith(dbPath: string, opts: { sessionSecret?: string }) {
-    const collector = createCollector({ dbPath, apps: { [APP_ID]: APP_SECRET }, admin: ADMIN, ...opts });
+  /** 以同一组 store 启动 collector，返回 baseUrl + 关闭函数（模拟服务重启） */
+  async function startWith(stores: ReturnType<typeof buildStores>, opts: { sessionSecret?: string }) {
+    const collector = createCollector({
+      apps: { [APP_ID]: APP_SECRET },
+      admin: ADMIN,
+      businessStores: stores.businessStores,
+      traceStore: stores.traceStore,
+      ...opts,
+    });
     const server = http.createServer((req, res) => void collector.handler(req, res));
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const port = (server.address() as AddressInfo).port;
@@ -1353,9 +1756,9 @@ describe('P2-3 会话持久化（SESSION_SECRET 无状态签名 token）', () =>
   }
 
   it('配置 sessionSecret：重启后旧 token 仍有效（无需重新登录），篡改 token 被拒', async () => {
-    const dbPath = tempDb();
+    const stores = buildStores();
     const secret = 'test-session-secret-0123456789abcdef';
-    const a = await startWith(dbPath, { sessionSecret: secret });
+    const a = await startWith(stores, { sessionSecret: secret });
     const loginRes = await fetch(`${a.baseUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1366,8 +1769,8 @@ describe('P2-3 会话持久化（SESSION_SECRET 无状态签名 token）', () =>
     assert.equal((await getJson(a.baseUrl, '/api/auth/me', token)).status, 200, '签名 token 登录后应可用');
     await a.close();
 
-    // 重启（同一 dbPath + 同一 secret）
-    const b = await startWith(dbPath, { sessionSecret: secret });
+    // 重启（同一组 store + 同一 secret）
+    const b = await startWith(stores, { sessionSecret: secret });
     cleanup.push(() => b.close());
     const me = await getJson(b.baseUrl, '/api/auth/me', token);
     assert.equal(me.status, 200, '无状态签名 token 重启后应仍有效');
@@ -1379,8 +1782,8 @@ describe('P2-3 会话持久化（SESSION_SECRET 无状态签名 token）', () =>
   });
 
   it('未配置 sessionSecret：内存会话，重启后 token 失效（P1 行为回归）', async () => {
-    const dbPath = tempDb();
-    const a = await startWith(dbPath, {});
+    const stores = buildStores();
+    const a = await startWith(stores, {});
     const loginRes = await fetch(`${a.baseUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1389,7 +1792,7 @@ describe('P2-3 会话持久化（SESSION_SECRET 无状态签名 token）', () =>
     const token = ((await loginRes.json()) as { token: string }).token;
     await a.close();
 
-    const b = await startWith(dbPath, {});
+    const b = await startWith(stores, {});
     cleanup.push(() => b.close());
     assert.equal((await getJson(b.baseUrl, '/api/auth/me', token)).status, 401, '内存会话重启后应失效');
   });
@@ -1397,8 +1800,7 @@ describe('P2-3 会话持久化（SESSION_SECRET 无状态签名 token）', () =>
 
 describe('P2 retention 覆盖新表（events/retry_attempts）', () => {
   it('prune 删除过期 events/retries，保留新明细', async () => {
-    const dbPath = tempDb();
-    const store = new SQLiteStore(dbPath);
+    const store = new MemoryTraceStore();
     const now = Date.now();
     await store.flush(
       {
@@ -1428,6 +1830,5 @@ describe('P2 retention 覆盖新表（events/retry_attempts）', () => {
     assert.equal(kept.events[0].name, 'evt-new');
     assert.equal(kept.retries.length, 1, '新 trace 的 retries 应保留');
     assert.equal(kept.retries[0].status, 429);
-    await store.close();
   });
 });

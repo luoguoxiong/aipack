@@ -1,19 +1,16 @@
 /**
- * ModelPriceStore 接口 + 双实现（SQLite / MySQL）。
+ * ModelPriceStore 接口 + MySQL 实现。
  *
  * Phase 6：模型价格管理，支撑 worker 端 CostCalculator 按 model span 计算成本（分）。
  *
- * 表结构：
- * - MySQL：DDL 见 src/stores/migrations/v1-initial-schema.ts（model_prices 表，由迁移自动建表）
- * - SQLite：构造时 CREATE IF NOT EXISTS（与 collector 同库，零依赖）
+ * 表结构：MySQL DDL 见 src/stores/migrations/v1-initial-schema.ts（model_prices 表，由迁移自动建表）
  *
  * 主键：(model_id, effective_at) — 同 modelId 不同 effectiveAt 表示历史价格档，
  *       getLatestPrice 按 effective_at <= at 取最新生效价。
  *
- * upsert 语义：同 (modelId, effectiveAt) 覆盖（SQLite INSERT OR REPLACE / MySQL ON DUPLICATE KEY UPDATE）。
+ * upsert 语义：同 (modelId, effectiveAt) 覆盖（MySQL ON DUPLICATE KEY UPDATE）。
  */
 
-import type Database from 'better-sqlite3';
 import type { MysqlPool } from './mysql';
 
 /** 模型价格（$/1M tokens，按 effectiveAt 生效） */
@@ -44,7 +41,7 @@ export interface UpsertModelPriceInput {
   effectiveAt: number;
 }
 
-/** 模型价格存储接口 — 异步，兼容 SQLite/MySQL */
+/** 模型价格存储接口 — 异步 */
 export interface ModelPriceStore {
   /** 取某 modelId 在 at（默认 now）时刻的最新生效价 */
   getLatestPrice(modelId: string, at?: number): Promise<ModelPrice | undefined>;
@@ -55,75 +52,6 @@ export interface ModelPriceStore {
   /** 删除指定 (modelId, effectiveAt) 行 */
   delete(modelId: string, effectiveAt: number): Promise<boolean>;
   close(): Promise<void>;
-}
-
-// ─── SQLite 实现（零依赖默认） ──────────────────────────────────
-
-const SQLITE_DDL = `
-CREATE TABLE IF NOT EXISTS model_prices (
-  model_id           TEXT    NOT NULL,
-  input_per_1m       REAL    NOT NULL,
-  output_per_1m      REAL    NOT NULL,
-  cache_read_per_1m  REAL    NOT NULL DEFAULT 0,
-  cache_write_per_1m REAL    NOT NULL DEFAULT 0,
-  currency           TEXT    NOT NULL DEFAULT 'USD',
-  effective_at       INTEGER NOT NULL,
-  PRIMARY KEY (model_id, effective_at)
-);
--- P7：主键 (model_id, effective_at) 已覆盖 idx_mp_model 的前缀查询，冗余索引已删
-`;
-
-export class SQLiteModelPriceStore implements ModelPriceStore {
-  constructor(private db: Database.Database) {
-    this.db.exec(SQLITE_DDL);
-  }
-
-  async getLatestPrice(modelId: string, at: number = Date.now()): Promise<ModelPrice | undefined> {
-    const row = this.db
-      .prepare(
-        `SELECT * FROM model_prices
-         WHERE model_id = ? AND effective_at <= ?
-         ORDER BY effective_at DESC LIMIT 1`,
-      )
-      .get(modelId, at) as Record<string, unknown> | undefined;
-    return row ? rowToModelPrice(row) : undefined;
-  }
-
-  async list(): Promise<ModelPrice[]> {
-    const rows = this.db
-      .prepare('SELECT * FROM model_prices ORDER BY model_id ASC, effective_at ASC')
-      .all() as Array<Record<string, unknown>>;
-    return rows.map(rowToModelPrice);
-  }
-
-  async upsert(input: UpsertModelPriceInput): Promise<ModelPrice> {
-    const record = normalizeInput(input);
-    this.db
-      .prepare(
-        `INSERT OR REPLACE INTO model_prices
-         (model_id, input_per_1m, output_per_1m, cache_read_per_1m, cache_write_per_1m, currency, effective_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        record.modelId,
-        record.inputPer1m,
-        record.outputPer1m,
-        record.cacheReadPer1m,
-        record.cacheWritePer1m,
-        record.currency,
-        record.effectiveAt,
-      );
-    return record;
-  }
-
-  async delete(modelId: string, effectiveAt: number): Promise<boolean> {
-    const result = this.db
-      .prepare('DELETE FROM model_prices WHERE model_id = ? AND effective_at = ?')
-      .run(modelId, effectiveAt);
-    return result.changes > 0;
-  }
-
-  async close(): Promise<void> {}
 }
 
 // ─── MySQL 实现 ──────────────────────────────────────────────────
@@ -200,7 +128,7 @@ function normalizeInput(input: UpsertModelPriceInput): ModelPrice {
   };
 }
 
-/** DB 行 → ModelPrice（兼容 SQLite REAL / MySQL DECIMAL，统一转 Number） */
+/** DB 行 → ModelPrice（MySQL DECIMAL 统一转 Number） */
 function rowToModelPrice(r: Record<string, unknown>): ModelPrice {
   return {
     modelId: String(r.model_id),

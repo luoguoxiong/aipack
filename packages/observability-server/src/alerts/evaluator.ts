@@ -18,7 +18,7 @@ export interface EvaluatorDeps {
   aggregatorFor(appId?: string): Aggregator;
   /** 监控查询（version 回归分析）；Phase 2 起为 TraceStore（可能 ClickHouse） */
   store: TraceStore;
-  /** 告警规则/事件存储（仍为 SQLiteStore，与监控库分离） */
+  /** 告警规则/事件存储（异步：MySQL 实现） */
   alertStore: AlertStore;
   notifier: Notifier;
   /** 评估周期（ms），默认 60s */
@@ -134,7 +134,7 @@ export function createAlertEvaluator(deps: EvaluatorDeps): AlertEvaluator {
     ctx?: { vA?: string; vB?: string },
   ): Promise<void> {
     const now = Date.now();
-    deps.alertStore.insertAlertEvent({
+    await deps.alertStore.insertAlertEvent({
       ruleId: rule.id,
       ruleName: rule.name,
       appId: rule.appId,
@@ -152,7 +152,7 @@ export function createAlertEvaluator(deps: EvaluatorDeps): AlertEvaluator {
   }
 
   async function evaluateOnce(): Promise<number> {
-    const rules = deps.alertStore.listAlertRules();
+    const rules = await deps.alertStore.listAlertRules();
     let transitions = 0;
     for (const rule of rules) {
       if (!rule.enabled) continue;

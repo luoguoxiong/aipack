@@ -4,16 +4,16 @@
 
 ## 两种运行模式
 
-| | 简单模式（默认） | 平台模式 |
+| | 基础部署 | 平台模式（生产） |
 |---|---|---|
-| 落盘 | SQLite 同步写 | Kafka 解耦 → worker 批量写 ClickHouse |
+| 落盘 | collector 直写 ClickHouse | Kafka 解耦 → worker 批量写 ClickHouse |
 | 聚合 | 进程内 memory | Redis / hybrid（L1+L2，多实例共享） |
-| 业务库 | SQLite | MySQL（多用户 RBAC / 项目 / Agent 定义 / 价格库） |
-| 依赖 | 零依赖 | Docker 起 MySQL/CH/Kafka/Redis（见 [infra/README.md](infra/README.md)） |
+| 业务库 | MySQL（多用户 RBAC / 项目 / Agent 定义 / 价格库） | MySQL（同左） |
+| 依赖 | Docker 起 MySQL + ClickHouse | Docker 起 MySQL/CH/Kafka/Redis（见 [infra/README.md](infra/README.md)） |
 | 适用 | 本地开发、单实例 | 生产、横向扩展 |
 
 ```
-简单模式:  SDK ──► collector(HTTP :8787) ──► SQLite
+基础部署:  SDK ──► collector(HTTP :8787) ──► ClickHouse
 
 平台模式:  SDK ──► collector ──► Kafka(aipack.ingest) ──► ingest-worker ──► ClickHouse
                                           (削峰解耦)        │
@@ -21,11 +21,12 @@
                                                             └─ 喂聚合器(Phase 7, Redis)
 ```
 
-## 快速开始（简单模式）
+## 快速开始（基础部署）
 
 ```bash
 cd packages/observability-server
-cp .env.example .env    # 可选：改 ADMIN_PASS / OBS_APPS
+cp .env.example .env    # 按需改 ADMIN_PASS / OBS_APPS；MYSQL_URL / CLICKHOUSE_URL 必填
+docker compose -f infra/docker-compose.yml --env-file .env up -d   # 起 MySQL + ClickHouse
 pnpm --filter @aipack-ai/observability-server dev
 ```
 
@@ -34,7 +35,7 @@ pnpm --filter @aipack-ai/observability-server dev
 - **面板**：http://localhost:8787 （登录 `ADMIN_USER` / `ADMIN_PASS`，默认 admin/admin123）
 - **上报**：`POST http://localhost:8787/api/v1/ingest`
 - **健康检查**：`GET /healthz`
-- 数据落在 `./.aipack/collector.db`（由 `DB_PATH` 控制）
+- 明细数据落在 ClickHouse，业务数据（应用/用户/规则/价格）落在 MySQL
 
 > 带面板的构建产物：`pnpm --filter @aipack-ai/observability-server build && pnpm --filter @aipack-ai/observability-server start`（`GET /` 直接返回面板，无需另起前端）。
 
@@ -48,22 +49,16 @@ docker compose -f infra/docker-compose.yml --env-file .env up -d
 # 验证：docker compose -f infra/docker-compose.yml ps  → 5 容器 healthy
 ```
 
-### 2. 切换 .env 配置
+### 2. 追加 .env 配置（Kafka / Redis）
 
-取消"应用连接配置"段对应注释：
+业务库与监控库连接已在 .env.example 默认启用，追加消息队列与分布式聚合：
 
 ```env
-TRACE_STORE=clickhouse
-CLICKHOUSE_URL=http://localhost:8123
-
 MQ_ENABLED=true
 KAFKA_BROKERS=localhost:9094
 
 AGGREGATOR=hybrid                       # 推荐：L1 内存 + L2 Redis
 REDIS_URL=redis://:aipackpass@localhost:6379
-
-BUSINESS_STORE=mysql                    # 可选：多用户 RBAC
-MYSQL_URL=mysql://aipack:aipackpass@localhost:3306/aipack
 ```
 
 ### 3. 起两个进程（各开一个终端）
@@ -83,7 +78,7 @@ pnpm --filter @aipack-ai/observability-server worker
 - **职责**：消费 Kafka topic `aipack.ingest` → 按 appId 合并 batch → 成本计算 → `TraceStore.flush` 批量写 CH → 喂聚合器
 - **容错链**：单条解析失败（毒丸）直接进 DLQ；flush 失败指数退避重试（500ms 起步、上限 10s，`KAFKA_MAX_RETRIES` 默认 3 次）→ 整批进 DLQ；DLQ 发送失败落本地 outbox（JSONL）定期重放；DLQ 速率超 10 条/60s 告警日志
 - **横向扩展**：多实例共用 `KAFKA_GROUP_ID`，Kafka 自动 rebalance 分配 partition（topic 默认 6 分区 = 并发上限）
-- **前置条件**：`MQ_ENABLED=true` 且 `TRACE_STORE=clickhouse`，否则启动即报错退出（SQLite 模式 collector 同步落盘，worker 无意义）
+- **前置条件**：`MQ_ENABLED=true` 且 `TRACE_STORE=clickhouse`，否则启动即报错退出（未启用 MQ 时 collector 直写 ClickHouse，worker 无意义）
 
 worker 专属变量（与 collector 共用 .env）：`KAFKA_CONSUMER_BATCH`（单批最大消息数，默认 500）、`KAFKA_CONSUMER_WAIT`（攒批超时 ms，默认 1000）、`KAFKA_FROM_BEGINNING`、`KAFKA_MAX_RETRIES`。
 
@@ -148,7 +143,6 @@ createRuntime({ ..., telemetry: obs.telemetry });
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `PORT` | `8787` | 监听端口 |
-| `DB_PATH` | `.aipack/collector.db` | SQLite 文件（简单模式） |
 | `ADMIN_USER` / `ADMIN_PASS` | admin / 自动生成 | 面板登录凭证 |
 | `SESSION_SECRET` | 派生 | 面板会话签名（推荐显式配置） |
 | `OBS_APPS` | 可选 | 启动种入的 appId:appSecret 白名单，逗号分隔 |
@@ -156,7 +150,8 @@ createRuntime({ ..., telemetry: obs.telemetry });
 | `ALERTS_ENABLED` | `true` | 告警评估器（`ALERTS_WEBHOOK_URL` 配通知） |
 | `INGEST_RATE` | `100` | 每应用上报限流（个/秒，<=0 关闭） |
 | `TLS_KEY` / `TLS_CERT` | - | 都配置时启用 HTTPS |
-| `TRACE_STORE` | `sqlite` | `sqlite` / `clickhouse` / `dual`（双写灰度迁移） |
+| `TRACE_STORE` | `clickhouse` | 仅支持 `clickhouse`（SQLite 后端已移除） |
+| `BUSINESS_STORE` | `mysql` | 仅支持 `mysql`（SQLite 后端已移除） |
 | `MQ_ENABLED` | `false` | true 走 Kafka 解耦（需另起 worker） |
 | `AGGREGATOR` | `memory` | `memory` / `redis` / `hybrid` |
 | `AUTH_MODE` | `multi` | 多用户 RBAC（JWT access/refresh + Cookie） |

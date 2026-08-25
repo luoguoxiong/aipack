@@ -1,11 +1,10 @@
 /**
- * ProjectStore 接口 + 双实现（SQLite / MySQL）。
+ * ProjectStore 接口 + MySQL 实现。
  *
  * Phase 1：项目管理（创建/查询/成员关联）。
  * 项目 ↔ app 多对多关系通过 project_apps 表维护。
  */
 
-import type Database from 'better-sqlite3';
 import type { MysqlPool } from './mysql';
 import { ulid } from './ulid';
 
@@ -39,116 +38,6 @@ export interface ProjectStore {
   /** 查 app 所属项目（app 只属于一个项目时返回 project_id；多对多返回第一个） */
   getProjectByApp(appId: string): Promise<ProjectRecord | undefined>;
   close(): void;
-}
-
-// ─── SQLite 实现 ──────────────────────────────────────────────────
-
-const SQLITE_DDL = `
-CREATE TABLE IF NOT EXISTS projects (
-  id         TEXT PRIMARY KEY,
-  name       TEXT NOT NULL,
-  owner_id   TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  FOREIGN KEY (owner_id) REFERENCES users(id)
-);
-CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_id);
-
-CREATE TABLE IF NOT EXISTS project_apps (
-  project_id TEXT NOT NULL,
-  app_id     TEXT NOT NULL,
-  PRIMARY KEY (project_id, app_id),
-  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_project_apps_app ON project_apps(app_id);
-`;
-
-export class SQLiteProjectStore implements ProjectStore {
-  constructor(private db: Database.Database) {
-    this.db.exec(SQLITE_DDL);
-  }
-
-  async createProject(input: CreateProjectInput): Promise<ProjectRecord> {
-    const id = ulid();
-    const now = Date.now();
-    this.db
-      .prepare('INSERT INTO projects (id, name, owner_id, created_at) VALUES (?, ?, ?, ?)')
-      .run(id, input.name, input.ownerId, now);
-    return { id, name: input.name, ownerId: input.ownerId, createdAt: now };
-  }
-
-  async getProject(id: string): Promise<ProjectRecord | undefined> {
-    const row = this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as
-      | Record<string, unknown>
-      | undefined;
-    return row ? rowToProject(row) : undefined;
-  }
-
-  async listProjectsByUser(userId: string): Promise<ProjectRecord[]> {
-    // owner 的项目 + ACL 授权的项目
-    const rows = this.db
-      .prepare(
-        `SELECT p.* FROM projects p
-         WHERE p.owner_id = ?
-         UNION
-         SELECT p.* FROM projects p
-         JOIN acl a ON a.project_id = p.id
-         WHERE a.user_id = ?
-         ORDER BY created_at DESC`,
-      )
-      .all(userId, userId) as Array<Record<string, unknown>>;
-    return rows.map(rowToProject);
-  }
-
-  async updateProject(id: string, patch: { name?: string }): Promise<ProjectRecord | undefined> {
-    if (patch.name !== undefined) {
-      this.db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(patch.name, id);
-    }
-    return this.getProject(id);
-  }
-
-  async deleteProject(id: string): Promise<boolean> {
-    const result = this.db.prepare('DELETE FROM projects WHERE id = ?').run(id);
-    return result.changes > 0;
-  }
-
-  async linkApp(projectId: string, appId: string): Promise<void> {
-    this.db
-      .prepare('INSERT OR IGNORE INTO project_apps (project_id, app_id) VALUES (?, ?)')
-      .run(projectId, appId);
-  }
-
-  async unlinkApp(projectId: string, appId: string): Promise<void> {
-    this.db
-      .prepare('DELETE FROM project_apps WHERE project_id = ? AND app_id = ?')
-      .run(projectId, appId);
-  }
-
-  async listApps(projectId: string): Promise<string[]> {
-    const rows = this.db
-      .prepare('SELECT app_id FROM project_apps WHERE project_id = ?')
-      .all(projectId) as Array<{ app_id: string }>;
-    return rows.map((r) => r.app_id);
-  }
-
-  async listProjectIdsByApp(appId: string): Promise<string[]> {
-    const rows = this.db
-      .prepare('SELECT project_id FROM project_apps WHERE app_id = ? ORDER BY project_id')
-      .all(appId) as Array<{ project_id: string }>;
-    return rows.map((r) => r.project_id);
-  }
-
-  async getProjectByApp(appId: string): Promise<ProjectRecord | undefined> {
-    const row = this.db
-      .prepare(
-        `SELECT p.* FROM projects p
-         JOIN project_apps pa ON pa.project_id = p.id
-         WHERE pa.app_id = ? LIMIT 1`,
-      )
-      .get(appId) as Record<string, unknown> | undefined;
-    return row ? rowToProject(row) : undefined;
-  }
-
-  close(): void {}
 }
 
 // ─── MySQL 实现 ───────────────────────────────────────────────────

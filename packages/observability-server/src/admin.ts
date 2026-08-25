@@ -36,9 +36,9 @@ import { json, readJson } from './api/helpers';
 export interface AdminDeps {
   /** 单用户模式会话（多用户模式为 undefined） */
   sessions?: SessionManager;
-  /** 应用存储（异步接口；多用户模式从 businessStores 注入，单用户模式为 SQLiteStore） */
+  /** 应用存储（异步接口；由 businessStores 注入，MySQL 实现） */
   appStore: AppStore;
-  /** 告警存储（同步接口；始终为 SQLiteStore-backed） */
+  /** 告警存储（异步接口；MySQL 实现） */
   alertStore: AlertStore;
   /** 多用户模式鉴权上下文（含 JWT 会话 + userStore + aclStore） */
   authCtx?: AuthContext;
@@ -117,7 +117,7 @@ export function createAdminHandler(deps: AdminDeps): AdminHandler {
 
       // ── 告警规则 / 事件 ─────────────────────────────────────
       if (path === '/api/alerts/rules') {
-        if (method === 'GET') return json(res, 200, deps.alertStore.listAlertRules());
+        if (method === 'GET') return json(res, 200, await deps.alertStore.listAlertRules());
         if (method === 'POST') return handleCreateAlertRule(req, res, deps.alertStore);
       }
       if (path === '/api/alerts/events') {
@@ -125,7 +125,7 @@ export function createAdminHandler(deps: AdminDeps): AdminHandler {
       }
       const alertTestMatch = path.match(/^\/api\/alerts\/rules\/([^/]+)\/test$/);
       if (alertTestMatch && method === 'POST') {
-        const rule = deps.alertStore.getAlertRule(decodeURIComponent(alertTestMatch[1]));
+        const rule = await deps.alertStore.getAlertRule(decodeURIComponent(alertTestMatch[1]));
         if (!rule) return json(res, 404, { error: 'rule not found' });
         return handleTestAlertRule(res, deps.notifier, rule);
       }
@@ -134,7 +134,7 @@ export function createAdminHandler(deps: AdminDeps): AdminHandler {
         const id = decodeURIComponent(alertRuleMatch[1]);
         if (method === 'PUT') return handleUpdateAlertRule(req, res, deps.alertStore, id);
         if (method === 'DELETE') {
-          const deleted = deps.alertStore.deleteAlertRule(id);
+          const deleted = await deps.alertStore.deleteAlertRule(id);
           return json(res, deleted ? 200 : 404, deleted ? { ok: true } : { error: 'rule not found' });
         }
       }
@@ -301,7 +301,7 @@ async function handleCreateAlertRule(
     createdAt: now,
     updatedAt: now,
   };
-  alertStore.createAlertRule(rule);
+  await alertStore.createAlertRule(rule);
   return json(res, 201, rule);
 }
 
@@ -311,7 +311,7 @@ async function handleUpdateAlertRule(
   alertStore: AlertStore,
   id: string,
 ): Promise<void> {
-  const existing = alertStore.getAlertRule(id);
+  const existing = await alertStore.getAlertRule(id);
   if (!existing) return json(res, 404, { error: 'rule not found' });
   const patch = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
   if (!patch || typeof patch !== 'object') return json(res, 400, { error: '请求体不能为空' });
@@ -326,7 +326,7 @@ async function handleUpdateAlertRule(
     if (!guard.ok) return json(res, 400, { error: `webhookUrl 不合法: ${guard.error}` });
   }
 
-  const updated = alertStore.updateAlertRule(id, { ...result.rule, id });
+  const updated = await alertStore.updateAlertRule(id, { ...result.rule, id });
   return json(res, 200, updated);
 }
 
@@ -338,7 +338,7 @@ async function handleListAlertEvents(
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
   const offset = Math.max(Number(url.searchParams.get('offset')) || 0, 0);
   const status = url.searchParams.get('status') || undefined;
-  return json(res, 200, alertStore.listAlertEvents({ limit, offset, status }));
+  return json(res, 200, await alertStore.listAlertEvents({ limit, offset, status }));
 }
 
 async function handleTestAlertRule(

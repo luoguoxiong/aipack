@@ -3,7 +3,6 @@
  *
  * 环境变量解析:
  *   PORT        收集服务监听端口(默认 8787)
- *   DB_PATH     SQLite 文件路径(默认 ./.aipack/collector.db)
  *   OBS_APPS    可选:启动时种入的 app 白名单,格式 appId:appSecret,多应用逗号分隔
  *               (已存在则跳过;后续应用改由面板动态创建)
  *   ADMIN_USER  面板登录用户名(默认 admin)
@@ -17,19 +16,16 @@
  *               存在则 GET / 直接返回面板
  *
  * 业务库（Phase 1）:
- *   BUSINESS_STORE  业务数据存储后端(默认 sqlite;可选 mysql)
- *                    - sqlite: 零依赖,users/projects/agent_definitions/acl 复用 DB_PATH 同库
+ *   BUSINESS_STORE  业务数据存储后端(固定 mysql)
  *                    - mysql:  走 MySQL 连接池,需配置 MYSQL_URL
- *   MYSQL_URL       MySQL 连接串(BUSINESS_STORE=mysql 时必填)
+ *   MYSQL_URL       MySQL 连接串(必填)
  *                    如 mysql://aipack:aipackpass@localhost:3306/aipack
  *   MYSQL_AUTO_MIGRATE  启动时自动运行 schema 迁移(默认 true;false 则需手动执行)
  *
  * 监控库（Phase 2）:
- *   TRACE_STORE     监控事件存储后端(默认 sqlite;可选 clickhouse|dual)
- *                    - sqlite:    零依赖,runs/spans/tool_calls 复用 DB_PATH 同库
+ *   TRACE_STORE     监控事件存储后端(固定 clickhouse)
  *                    - clickhouse: 走 ClickHouse 列式存储,需配置 CLICKHOUSE_URL
- *                    - dual:      SQLite + ClickHouse 双写(迁移期用),读取优先 CH
- *   CLICKHOUSE_URL   ClickHouse HTTP 端点(TRACE_STORE=clickhouse|dual 时必填)
+ *   CLICKHOUSE_URL   ClickHouse HTTP 端点(必填)
  *                    如 http://localhost:8123
  *   CLICKHOUSE_DB    数据库名(默认 aipack)
  *   CLICKHOUSE_USER  用户名(可选)
@@ -79,8 +75,8 @@
  *   RETENTION_DAYS         明细保留天数(默认 30;<=0 表示禁用清理)
  *   PRUNE_INTERVAL_MS      清理周期 ms(默认 1h)
  *   PRUNE_AT_STARTUP       启动时先清理一次(默认 true)
- *   PRUNE_BACKUP           清理前 VACUUM INTO 快照到备份目录(默认 false)
- *   PRUNE_BACKUP_DIR       备份目录(默认 <DB 所在目录>/backup)
+ *   PRUNE_BACKUP           清理前快照备份(默认 false;ClickHouse 由运维侧 BACKUP 策略承担)
+ *   PRUNE_BACKUP_DIR       备份目录(默认 ./.aipack/backup)
  *
  * 告警（alerting）:
  *   ALERTS_ENABLED             启用告警评估器(默认 true;false 关闭)
@@ -97,7 +93,6 @@
 import './loadEnv.js'; // 副作用:最先加载 .env(必须在读取 process.env 之前)
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export interface RetentionConfig {
@@ -122,7 +117,6 @@ export interface TlsConfig {
 
 export interface CollectorConfig {
   port: number;
-  dbPath: string;
   /** 启动时种入的静态白名单（appId -> appSecret），可为空 */
   seedApps: Record<string, string>;
   /** 面板登录凭证（面板开启条件） */
@@ -188,10 +182,10 @@ export interface AgentConfig {
 
 /** 监控库配置（Phase 2） */
 export interface TraceStoreConfig {
-  /** 后端类型：'sqlite'（默认，零依赖）/ 'clickhouse' / 'dual' */
-  backend: 'sqlite' | 'clickhouse' | 'dual';
-  /** ClickHouse HTTP 端点（backend='clickhouse'|'dual' 时必填） */
-  clickhouseUrl?: string;
+  /** 后端类型：'clickhouse'（ClickHouse 列式存储） */
+  backend: 'clickhouse';
+  /** ClickHouse HTTP 端点（loadConfig 校验必填，缺失即抛错） */
+  clickhouseUrl: string;
   /** ClickHouse 数据库名（默认 aipack） */
   clickhouseDatabase?: string;
   /** ClickHouse 用户名（可选） */
@@ -202,10 +196,10 @@ export interface TraceStoreConfig {
 
 /** 业务库配置（Phase 1） */
 export interface BusinessStoreConfig {
-  /** 后端类型：'sqlite'（默认，零依赖）或 'mysql' */
-  backend: 'sqlite' | 'mysql';
-  /** MySQL 连接串（backend='mysql' 时必填） */
-  mysqlUrl?: string;
+  /** 后端类型：'mysql'（MySQL 连接池） */
+  backend: 'mysql';
+  /** MySQL 连接串（loadConfig 校验必填，缺失即抛错） */
+  mysqlUrl: string;
   /** 启动时自动运行 MySQL 迁移（默认 true） */
   autoMigrate: boolean;
 }
@@ -246,7 +240,6 @@ export interface AggregatorRuntimeConfig {
 
 export function loadConfig(): CollectorConfig {
   const port = Number(process.env.PORT) || 8787;
-  const dbPath = process.env.DB_PATH || '.aipack/collector.db';
   const seedApps = parseApps(process.env.OBS_APPS || '');
   const staticDir = process.env.STATIC_DIR || defaultStaticDir();
   const admin = resolveAdmin();
@@ -259,12 +252,11 @@ export function loadConfig(): CollectorConfig {
   }
   return {
     port,
-    dbPath,
     seedApps,
     admin,
     sessionSecret: resolveSessionSecret(),
     staticDir,
-    retention: resolveRetention(dbPath),
+    retention: resolveRetention(),
     alerts: resolveAlerts(),
     tls: resolveTls(),
     rateLimit: resolveRateLimit(),
@@ -383,13 +375,13 @@ function resolveMq(): MqConfig {
 
 /** 解析监控库配置（TRACE_STORE / CLICKHOUSE_URL 等） */
 function resolveTraceStore(): TraceStoreConfig {
-  const backend = (process.env.TRACE_STORE ?? 'sqlite').toLowerCase();
-  if (backend !== 'sqlite' && backend !== 'clickhouse' && backend !== 'dual') {
-    throw new Error(`TRACE_STORE 仅支持 'sqlite' / 'clickhouse' / 'dual'，当前值: ${backend}`);
+  const backend = (process.env.TRACE_STORE ?? 'clickhouse').toLowerCase();
+  if (backend !== 'clickhouse') {
+    throw new Error(`TRACE_STORE 仅支持 'clickhouse'（SQLite 后端已移除），当前值: ${backend}`);
   }
   const clickhouseUrl = process.env.CLICKHOUSE_URL?.trim();
-  if ((backend === 'clickhouse' || backend === 'dual') && !clickhouseUrl) {
-    throw new Error(`TRACE_STORE=${backend} 时必须配置 CLICKHOUSE_URL（如 http://localhost:8123）`);
+  if (!clickhouseUrl) {
+    throw new Error('TRACE_STORE=clickhouse 时必须配置 CLICKHOUSE_URL（如 http://localhost:8123）');
   }
   return {
     backend,
@@ -402,13 +394,13 @@ function resolveTraceStore(): TraceStoreConfig {
 
 /** 解析业务库配置（BUSINESS_STORE / MYSQL_URL / MYSQL_AUTO_MIGRATE） */
 function resolveBusinessStore(): BusinessStoreConfig {
-  const backend = (process.env.BUSINESS_STORE ?? 'sqlite').toLowerCase();
-  if (backend !== 'sqlite' && backend !== 'mysql') {
-    throw new Error(`BUSINESS_STORE 仅支持 'sqlite' 或 'mysql'，当前值: ${backend}`);
+  const backend = (process.env.BUSINESS_STORE ?? 'mysql').toLowerCase();
+  if (backend !== 'mysql') {
+    throw new Error(`BUSINESS_STORE 仅支持 'mysql'（SQLite 后端已移除），当前值: ${backend}`);
   }
   const mysqlUrl = process.env.MYSQL_URL?.trim();
-  if (backend === 'mysql' && !mysqlUrl) {
-    throw new Error('BUSINESS_STORE=mysql 时必须配置 MYSQL_URL（如 mysql://user:pass@host:3306/db）');
+  if (!mysqlUrl) {
+    throw new Error('必须配置 MYSQL_URL（如 mysql://user:pass@host:3306/db）');
   }
   const autoMigrate = (process.env.MYSQL_AUTO_MIGRATE ?? 'true').toLowerCase() !== 'false';
   return { backend, mysqlUrl, autoMigrate };
@@ -474,16 +466,14 @@ export function parseApps(raw: string): Record<string, string> {
 }
 
 /** 解析数据保留配置（RETENTION_*） */
-function resolveRetention(dbPath: string): RetentionConfig {
+function resolveRetention(): RetentionConfig {
   const days = Number(process.env.RETENTION_DAYS);
   return {
     days: Number.isFinite(days) ? days : 30,
     intervalMs: Number(process.env.PRUNE_INTERVAL_MS) || 3_600_000,
     atStartup: (process.env.PRUNE_AT_STARTUP ?? 'true').toLowerCase() !== 'false',
     backup: (process.env.PRUNE_BACKUP ?? 'false').toLowerCase() === 'true',
-    backupDir:
-      process.env.PRUNE_BACKUP_DIR ||
-      (dbPath === ':memory:' ? '.aipack/backup' : path.join(path.dirname(dbPath), 'backup')),
+    backupDir: process.env.PRUNE_BACKUP_DIR || '.aipack/backup',
   };
 }
 

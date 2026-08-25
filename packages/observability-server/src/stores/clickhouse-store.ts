@@ -7,7 +7,7 @@
  * - TTL：表级 90 天自动清理（DDL 含，无需 prune）
  * - 备份：CH 自身 BACKUP 命令（此实现 no-op，由运维侧配置）
  *
- * 与 SQLiteStore 的差异：
+ * 实现要点：
  * - 所有方法异步（CH 是远程 HTTP 调用）
  * - queryVersionMetrics 用 CH quantile() 直查，无 JS 排序
  * - prune 走 ALTER TABLE DELETE（CH 异步 mutation）
