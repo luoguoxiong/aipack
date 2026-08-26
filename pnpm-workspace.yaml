@@ -1,6 +1,5 @@
 packages:
   - packages/*
-  - apps/*
   - web-docs
 
 onlyBuiltDependencies:

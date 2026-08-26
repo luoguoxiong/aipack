@@ -4,10 +4,10 @@
 
 [build]
   # 基础目录 (Monorepo 必需配置): 告诉 Netlify 这是唯一要构建的项目根,
-  # 避免自动扫描 packages/* apps/* 下的 package.json 触发 "Projects detected" 错误。
+  # 避免自动扫描 packages/* 下的 package.json 触发 "Projects detected" 错误。
   base = "web-docs"
   # 构建命令 (注意: 因为 base=web-docs, 命令在 web-docs 目录下执行)
-  # web-docs 不在根 pnpm-workspace.yaml 成员列表中 (只有 packages/* 和 apps/*),
+  # web-docs 不在根 pnpm-workspace.yaml 成员列表中 (只有 packages/*),
   # 但 pnpm 会向上查找发现根 workspace,导致安装根子项目而非 web-docs 依赖。
   # --ignore-workspace 让 pnpm 把 web-docs 当独立项目安装。
   command = "pnpm install --frozen-lockfile --ignore-workspace && pnpm build"

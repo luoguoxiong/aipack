@@ -39,12 +39,6 @@ aipack/
 │   ├── compression/            # 多级上下文压缩插件
 │   ├── observability/          # 可观测性上报 SDK
 │   └── observability-server/   # 可观测性收集服务 + Dashboard
-├── apps/                        # 示例应用
-│   ├── ai_blog_to_podcast_agent/   # AI 博客转播客 Agent
-│   ├── ai_office_agent/             # AI 办公助手（Tauri 桌面端）
-│   ├── ai_rag_database_routing/     # AI RAG 数据库路由
-│   ├── ai_teaching_agent_team/      # AI 教学 Agent 团队
-│   └── ai_travel_agent/             # AI 旅行助手
 ├── examples/                    # 代码示例
 │   ├── deepseek.ts             # DeepSeek 模型接入示例
 │   ├── agent-memory.ts         # Agent 记忆插件示例
@@ -219,15 +213,17 @@ aipack approvals list           # 跨进程审批单管理
 
 ---
 
-## 💡 示例应用 (apps)
+## 💡 示例应用
 
-| 应用                                                        | 说明            | 亮点                                      |
-| ----------------------------------------------------------- | --------------- | ----------------------------------------- |
-| [ai_blog_to_podcast_agent](./apps/ai_blog_to_podcast_agent) | AI 博客转播客   | 网页抓取 → 内容改写 → TTS 语音合成        |
-| [ai_office_agent](./apps/ai_office_agent)                   | AI 办公助手     | Tauri 桌面端 + Office 文档操作 + 文件工具 |
-| [ai_rag_database_routing](./apps/ai_rag_database_routing)   | RAG 数据库路由  | 向量数据库 + 智能路由搜索                 |
-| [ai_teaching_agent_team](./apps/ai_teaching_agent_team)     | 教学 Agent 团队 | 多 Agent 协作教学 + 前端交互面板          |
-| [ai_travel_agent](./apps/ai_travel_agent)                   | AI 旅行助手     | 行程规划 + 联网搜索 + 流式输出            |
+示例应用已迁移至独立仓库 **[llm-awesome-apps](https://github.com/luoguoxiong/llm-awesome-apps)**——基于 aipack 构建的 LLM 示例应用合集，通过 npm 包 `@aipack-ai/agent` 等接入框架：
+
+| 应用 | 说明 | 亮点 |
+| ---- | ---- | ---- |
+| ai_blog_to_podcast_agent | AI 博客转播客 | 网页抓取 → 内容改写 → TTS 语音合成 |
+| ai_office_agent | AI 办公助手 | Tauri 桌面端 + Office 文档操作 + 文件工具 |
+| ai_rag_database_routing | RAG 数据库路由 | 向量数据库 + 智能路由搜索 |
+| ai_teaching_agent_team | 教学 Agent 团队 | 多 Agent 协作教学 + 前端交互面板 |
+| ai_travel_agent | AI 旅行助手 | 行程规划 + 联网搜索 + 流式输出 |
 
 ---
 
