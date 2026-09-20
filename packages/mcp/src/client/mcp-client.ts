@@ -20,8 +20,8 @@ import { HttpMcpTransport } from './http-transport';
 import type { McpTransportConfig } from '../types';
 import * as jsonrpc from './jsonrpc';
 import {
-  createInitializeRequest,
   createInitializedNotification,
+  buildInitializeParams,
   createListToolsRequest,
   createCallToolRequest,
   createPingRequest,
@@ -34,11 +34,15 @@ import {
   MCP_PROTOCOL_VERSION,
   MCP_BASELINE_VERSION,
   isListChangedNotification,
+  parseCreateMessageParams,
+  buildCreateMessageResult,
   type McpClientInfo,
   type McpToolInfo,
   type McpToolCallResult,
   type McpInitializeResult,
   type McpServerCapabilities,
+  type McpCreateMessageParams,
+  type McpCreateMessageResult,
 } from './protocol';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
@@ -53,6 +57,12 @@ export interface McpClientOptions {
   transport: McpTransport;
   clientInfo: McpClientInfo;
   requestTimeoutMs?: number;
+  /**
+   * 处理外部 server 发起的 sampling/createMessage 请求（server 请求本客户端用其
+   * LLM 生成补全）。设置后客户端在 initialize 中宣告 sampling 能力并应答该方法；
+   * 未设置时 sampling/createMessage 回 -32601（fail-safe，server 知悉不支持）。
+   */
+  onSampling?: (params: McpCreateMessageParams) => Promise<McpCreateMessageResult>;
 }
 
 export interface CallToolOptions {
@@ -85,11 +95,13 @@ export class McpClient implements McpClientLike {
   private capabilities?: McpServerCapabilities;
   private disposed = false;
   private onListChanged?: () => void;
+  private onSampling?: (params: McpCreateMessageParams) => Promise<McpCreateMessageResult>;
 
   constructor(opts: McpClientOptions) {
     this.transport = opts.transport;
     this.clientInfo = opts.clientInfo;
     this.requestTimeoutMs = opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.onSampling = opts.onSampling;
     this.transport.onMessage((m) => this.handleMessage(m));
     this.transport.onError((err) => this.failAll(err));
   }
@@ -108,6 +120,15 @@ export class McpClient implements McpClientLike {
 
   setOnListChanged(cb: () => void): void {
     this.onListChanged = cb;
+  }
+
+  /** 运行期注入 / 替换 sampling 处理器（connect 前调用以纳入能力宣告） */
+  setOnSampling(cb: (params: McpCreateMessageParams) => Promise<McpCreateMessageResult>): void {
+    this.onSampling = cb;
+  }
+
+  getOnSampling(): ((params: McpCreateMessageParams) => Promise<McpCreateMessageResult>) | undefined {
+    return this.onSampling;
   }
 
   // ─── 请求 / 通知原语 ───────────────────────────────────────
@@ -137,7 +158,10 @@ export class McpClient implements McpClientLike {
     if (this.initialized) return this.initResult!;
     // 握手前启动传输层（HTTP legacy SSE 需先开 GET 流取 endpoint）
     await this.transport.start?.();
-    const raw = await this.sendRequest('initialize', undefined).catch((err) => {
+    // 宣告 sampling 能力（当配置 onSampling 时），供 server 决定是否发起补全请求
+    const capabilities: Record<string, unknown> = {};
+    if (this.onSampling) capabilities.sampling = {};
+    const raw = await this.sendRequest('initialize', buildInitializeParams(this.clientInfo, capabilities)).catch((err) => {
       throw new Error(`initialize failed: ${err.message}`);
     });
     // sendRequest 返回的是 result 字段（响应被 handleMessage 拆解后 resolve(result)）
@@ -253,6 +277,24 @@ export class McpClient implements McpClientLike {
     // 至少应答 ping，否则官方 SDK server 会断连；未知方法回 -32601
     if (m.method === 'ping') {
       this.transport.send(jsonrpc.createSuccessResponse(m.id, {}));
+      return;
+    }
+    if (m.method === 'sampling/createMessage') {
+      if (!this.onSampling) {
+        this.transport.send(
+          jsonrpc.createErrorResponse(m.id, jsonrpc.METHOD_NOT_FOUND, 'sampling not supported'),
+        );
+        return;
+      }
+      const params = parseCreateMessageParams(m.params);
+      this.onSampling(params)
+        .then((result) => {
+          this.transport.send(jsonrpc.createSuccessResponse(m.id, buildCreateMessageResult(result)));
+        })
+        .catch((err) => {
+          const message = err instanceof Error ? err.message : String(err);
+          this.transport.send(jsonrpc.createErrorResponse(m.id, jsonrpc.INTERNAL_ERROR, `sampling failed: ${message}`));
+        });
       return;
     }
     this.transport.send(

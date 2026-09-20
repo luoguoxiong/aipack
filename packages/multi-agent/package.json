@@ -33,7 +33,8 @@
     "node": ">=18.19.0"
   },
   "dependencies": {
-    "@aipack-ai/agent": "workspace:*"
+    "@aipack-ai/agent": "workspace:*",
+    "@aipack-ai/mcp": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.12.0",

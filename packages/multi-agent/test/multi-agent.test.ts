@@ -17,6 +17,7 @@ import {
   createDebate,
   createMapReduce,
   createMCPBridge,
+  createMultiAgentMcpServerHost,
   createDebugger,
   createSharedContext,
   SimpleEventBus,
@@ -908,6 +909,93 @@ describe('MCPBridge', () => {
     const info = bridge.getServerInfo();
     assert.equal(info.name, 'test-server');
     assert.equal(info.version, '2.0.0');
+  });
+
+  // ─── M3：asTools / toMcpServerHost（统一 @aipack-ai/mcp 传输路径）────
+
+  it('asTools 返回 JSON Schema 参数的 Tool[]', () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'test');
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+    const bridge = createMCPBridge(graph, { toolPrefix: 'ma_' });
+
+    const tools = bridge.asTools();
+    assert.equal(tools.length, 2);
+    const run = tools.find((t) => t.name === 'ma_run');
+    assert.ok(run);
+    assert.deepEqual(run!.parameters, {
+      type: 'object',
+      properties: { input: { type: 'string', description: '用户输入文本' } },
+      required: ['input'],
+    });
+    assert.equal(run!.permissions?.length, 0);
+  });
+
+  it('asTools run execute 与 handleCall 语义一致', async () => {
+    const nodeA = makeNode('a', 'AgentA', (input) => `result: ${input}`);
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+    const bridge = createMCPBridge(graph);
+
+    const run = bridge.asTools().find((t) => t.name === 'run')!;
+    const r = await run.execute('mcp', { input: 'hello' });
+    const text = (r.content[0] as { text?: string }).text!;
+    assert.ok(text.includes('result: hello'));
+    assert.ok(text.includes('"success": true'));
+    assert.equal(r.details, undefined, '成功时无 details.error');
+  });
+
+  it('asTools run 缺 input → details.error', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'test');
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+    const bridge = createMCPBridge(graph);
+
+    const run = bridge.asTools().find((t) => t.name === 'run')!;
+    const r = await run.execute('mcp', {});
+    assert.ok((r.details as { error?: string } | undefined)?.error);
+    assert.match((r.details as { error: string }).error, /缺少/);
+  });
+
+  it('toMcpServerHost 处理 initialize / tools/list / tools/call / ping', async () => {
+    const nodeA = makeNode('a', 'AgentA', (input) => `result: ${input}`);
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+    const bridge = createMCPBridge(graph, { serverName: 'ma-test' });
+    const host = bridge.toMcpServerHost();
+
+    // initialize
+    const init = await host.handleRequest({
+      jsonrpc: '2.0', id: 1, method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1.0.0' } },
+    }) as { result: { protocolVersion: string; serverInfo: { name: string }; capabilities: { tools?: unknown } } };
+    assert.equal(init.result.protocolVersion, '2025-06-18');
+    assert.equal(init.result.serverInfo.name, 'ma-test');
+    assert.ok(init.result.capabilities.tools !== undefined);
+
+    // tools/list
+    const list = await host.handleRequest({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) as { result: { tools: Array<{ name: string }> } };
+    assert.ok(list.result.tools.some((t) => t.name === 'run'));
+    assert.ok(list.result.tools.some((t) => t.name === 'status'));
+
+    // tools/call run
+    const call = await host.handleRequest({
+      jsonrpc: '2.0', id: 3, method: 'tools/call',
+      params: { name: 'run', arguments: { input: 'hi' } },
+    }) as { result: { content: Array<{ text: string }>; isError?: boolean } };
+    assert.equal(call.result.isError, undefined);
+    assert.match(call.result.content[0].text, /result: hi/);
+
+    // ping
+    const ping = await host.handleRequest({ jsonrpc: '2.0', id: 4, method: 'ping' }) as { result: unknown };
+    assert.deepEqual(ping.result, {});
+
+    // 通知 → null
+    assert.equal(await host.handleRequest({ jsonrpc: '2.0', method: 'notifications/initialized' }), null);
+  });
+
+  it('createMultiAgentMcpServerHost 工厂等价于 bridge.toMcpServerHost', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'test');
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+    const host = createMultiAgentMcpServerHost(graph, { serverName: 'fac' });
+    const init = await host.handleRequest({ jsonrpc: '2.0', id: 1, method: 'initialize' }) as { result: { serverInfo: { name: string } } };
+    assert.equal(init.result.serverInfo.name, 'fac');
   });
 });
 

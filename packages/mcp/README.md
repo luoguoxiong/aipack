@@ -2,7 +2,7 @@
 
 连接外部 MCP Server，把远端工具包装为 aipack 原生 `Tool`，零成本接入 MCP 工具生态。一经包装即获得 runtime 全套能力（权限审批 / 超时 / 钩子 / telemetry / 并行调用）。零运行时依赖：自研 JSON-RPC 2.0 编解码 + MCP 核心协议子集。
 
-> 已完成：客户端方向（stdio / Streamable HTTP / legacy SSE 传输 + `.mcp.json` 加载器 + 热刷新）与服务端方向（M3：`McpServerHost` 把 aipack 工具反向暴露为 MCP Server + stdio 进程入口 + resources/prompts 协议支持）。resources/prompts 全量 / sampling 留待后续。
+> 已完成：客户端方向（stdio / Streamable HTTP / legacy SSE 传输 + `.mcp.json` 加载器 + 热刷新）与服务端方向（M3：`McpServerHost` 把 aipack 工具反向暴露为 MCP Server + stdio 进程入口 + resources/prompts 协议支持 + sampling 双向）。`multi-agent/MCPBridge` 已统一（`asTools()` / `toMcpServerHost()`）。
 
 ## 安装
 
@@ -67,6 +67,9 @@ await mcp.ready(); // 可选预热；不调用则首次 run 时 beforeRun 懒连
 - 服务端主动消息：应答入站 `ping` 请求（否则官方 SDK server 会断连）；订阅 `notifications/tools/list_changed` 自动 re-list。
 - content 容错：`resource` / `audio` / 未知类型降级为文本摘要；JSON-RPC 错误统一转 `isError` → `details.error`。
 - env 展开：`env` 值支持 `${VAR}`；变量未定义则该 server 记 error 诊断并跳过（不静默传空串）。
+- **sampling（server ↔ client LLM 补全）**：
+  - 客户端方向：外部 server 发 `sampling/createMessage` → 经 `McpClientOptions.onSampling`（或 `setOnSampling`）应答；设置后客户端在 `initialize` 宣告 `sampling` 能力；未配置回 `-32601`（fail-safe）。
+  - 服务端方向：`createMcpServerHost({ ..., sampling: true })` 宣告 sampling 能力；`host.sampleLLM(params)` 经传输层出站通道向 client 请求补全，`stdio-runner` 自动注入出站请求/响应关联。`stdio-entry` 内置 `ask_llm` 演示工具。
 
 ## 分层
 

@@ -36,12 +36,15 @@ import {
   parseToolCallParams,
   parseResourceReadParams,
   parsePromptGetParams,
+  parseCreateMessageResult,
   createListChangedNotification,
   type McpServerCapabilities,
   type McpContentBlock,
   type McpResource,
   type McpPrompt,
   type McpServerInfoLike,
+  type McpCreateMessageParams,
+  type McpCreateMessageResult,
 } from '../client/protocol';
 
 // ─── 反向 content 映射（agent ContentBlock → MCP content block）──────────
@@ -125,6 +128,17 @@ export interface McpServerHostOptions {
   authorize?: McpAuthorizeFn;
   /** 单次工具调用超时（默认不设，交由工具自身/runtime） */
   toolTimeoutMs?: number;
+  /**
+   * 启用 sampling 能力：advertise `sampling` capability，并提供 `sampleLLM()`
+   * 供工具经传输层出站通道向外部 client 请求 LLM 补全。出站通道由传输层
+   * （stdio-runner）经 `setOutboundRequest` 注入；未注入时 `sampleLLM` 抛错。
+   */
+  sampling?: boolean;
+  /**
+   * 直接注入出站请求通道（高级用例；stdio-runner 会自动注入，通常无需手填）。
+   * 提供时同样会 advertise sampling 能力。
+   */
+  onOutboundRequest?: (method: string, params?: unknown) => Promise<unknown>;
   /** 服务端主动发出的通知（如 tools/list_changed）落点；stdio-entry 用以写 stdout */
   onNotification?: (msg: jsonrpc.JsonRpcNotification) => void;
 }
@@ -148,6 +162,8 @@ export class McpServerHost {
   private authorize?: McpAuthorizeFn;
   private toolTimeoutMs?: number;
   private onNotification?: (msg: jsonrpc.JsonRpcNotification) => void;
+  private samplingEnabled: boolean;
+  private outboundRequest?: (method: string, params?: unknown) => Promise<unknown>;
   private capabilities: McpServerCapabilities;
 
   constructor(options: McpServerHostOptions) {
@@ -168,6 +184,8 @@ export class McpServerHost {
     this.authorize = options.authorize;
     this.toolTimeoutMs = options.toolTimeoutMs;
     this.onNotification = options.onNotification;
+    this.outboundRequest = options.onOutboundRequest;
+    this.samplingEnabled = options.sampling === true || !!options.onOutboundRequest;
     this.capabilities = this.computeCapabilities();
   }
 
@@ -183,12 +201,37 @@ export class McpServerHost {
     const caps: Record<string, unknown> = { tools: {} };
     if (this.resourcesResolver) caps.resources = {};
     if (this.promptsResolver) caps.prompts = {};
+    if (this.samplingEnabled) caps.sampling = {};
     return caps as McpServerCapabilities;
   }
 
   /** 主动通知客户端工具列表已变更 */
   notifyToolsListChanged(): void {
     this.onNotification?.(createListChangedNotification());
+  }
+
+  /**
+   * 注入出站请求通道（由传输层如 stdio-runner 调用）：写入 JSON-RPC 请求
+   * 并关联响应。注入后 `sampleLLM` 可向外部 client 请求 LLM 补全。
+   */
+  setOutboundRequest(fn: (method: string, params?: unknown) => Promise<unknown>): void {
+    this.outboundRequest = fn;
+    if (!this.samplingEnabled) {
+      this.samplingEnabled = true;
+      this.capabilities = this.computeCapabilities();
+    }
+  }
+
+  /**
+   * 经出站通道向外部 client 请求 LLM 补全（sampling/createMessage）。
+   * 需传输层（stdio-runner）已注入出站通道；未注入则抛错。
+   */
+  async sampleLLM(params: McpCreateMessageParams): Promise<McpCreateMessageResult> {
+    if (!this.outboundRequest) {
+      throw new Error('sampling unavailable: outbound request channel not attached');
+    }
+    const raw = await this.outboundRequest('sampling/createMessage', params);
+    return parseCreateMessageResult(raw);
   }
 
   /**

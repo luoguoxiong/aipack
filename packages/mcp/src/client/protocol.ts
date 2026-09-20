@@ -96,12 +96,21 @@ export function negotiateProtocol(
 export function createInitializeRequest(
   id: number | string,
   client: McpClientInfo,
+  capabilities?: Record<string, unknown>,
 ): JsonRpcRequest {
-  return createRequest(id, 'initialize', {
+  return createRequest(id, 'initialize', buildInitializeParams(client, capabilities));
+}
+
+/** 构造 initialize 请求 params（协议版本 + 能力 + 客户端信息） */
+export function buildInitializeParams(
+  client: McpClientInfo,
+  capabilities?: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
     protocolVersion: MCP_PROTOCOL_VERSION,
-    capabilities: {},
+    capabilities: capabilities ?? {},
     clientInfo: client,
-  });
+  };
 }
 
 export function createInitializedNotification(): JsonRpcNotification {
@@ -385,6 +394,101 @@ export function buildPromptsListResult(prompts: McpPrompt[], nextCursor?: string
 /** 服务端 prompts/get 响应 result */
 export function buildPromptGetResult(messages: McpPromptMessage[]): unknown {
   return { messages: messages ?? [] };
+}
+
+// ─── sampling（server ↔ client LLM 补全请求，2025-06-18）──────────
+// server 经 sampling/createMessage 请求 client 用其 LLM 生成补全；双向：
+//  - 客户端方向：外部 server 发起 → 本库 McpClient 应答（onSampling 钩子）
+//  - 服务端方向：McpServerHost 发起 → 外部 client 应答（host.sampleLLM，
+//    经传输层出站通道；stdio-runner 自动接线请求/响应关联）
+
+export interface McpSamplingContentBlock {
+  type: 'text' | 'image';
+  text?: string;        // type=text
+  data?: string;        // type=image (base64)
+  mimeType?: string;   // type=image
+}
+
+export interface McpSamplingMessage {
+  role: 'user' | 'assistant';
+  content: McpSamplingContentBlock | McpSamplingContentBlock[];
+}
+
+export interface McpModelPreferences {
+  hints?: Array<'cost' | 'speed' | 'intelligence' | 'quality'>;
+  costPriority?: number;
+  speedPriority?: number;
+  intelligencePriority?: number;
+  qualityPriority?: number;
+  [key: string]: unknown;
+}
+
+export interface McpCreateMessageParams {
+  messages: McpSamplingMessage[];
+  modelPreferences?: McpModelPreferences;
+  systemPrompt?: string;
+  includeContext?: 'none' | 'thisServer' | 'allServers';
+  maxTokens?: number;
+  stopSequences?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface McpCreateMessageResult {
+  role: 'assistant';
+  content: McpSamplingContentBlock;
+  model: string;
+  stopReason?: 'endTurn' | 'stopSequence' | 'maxTokens' | 'other';
+  stopSequence?: string;
+  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+}
+
+/** 构造 sampling/createMessage 请求（服务端方向发起；id 由调用方分配） */
+export function createSamplingRequest(
+  id: number | string,
+  params: McpCreateMessageParams,
+): JsonRpcRequest {
+  return createRequest(id, 'sampling/createMessage', params);
+}
+
+/** 解析入站 sampling/createMessage 请求 params（客户端方向应答用）；容错：缺 messages 返回空数组 */
+export function parseCreateMessageParams(payload: unknown): McpCreateMessageParams {
+  const p = (payload ?? {}) as Record<string, unknown>;
+  const messages = Array.isArray(p.messages) ? (p.messages as McpSamplingMessage[]) : [];
+  const out: McpCreateMessageParams = { messages };
+  if (p.systemPrompt !== undefined) out.systemPrompt = p.systemPrompt as string;
+  if (p.includeContext !== undefined) out.includeContext = p.includeContext as McpCreateMessageParams['includeContext'];
+  if (p.maxTokens !== undefined) out.maxTokens = p.maxTokens as number;
+  if (p.modelPreferences !== undefined) out.modelPreferences = p.modelPreferences as McpModelPreferences;
+  if (p.stopSequences !== undefined) out.stopSequences = p.stopSequences as string[];
+  if (p.metadata !== undefined) out.metadata = p.metadata as Record<string, unknown>;
+  return out;
+}
+
+/** 构造 sampling/createMessage 响应 result（客户端方向应答用） */
+export function buildCreateMessageResult(result: McpCreateMessageResult): unknown {
+  const out: Record<string, unknown> = {
+    role: 'assistant',
+    content: result.content,
+    model: result.model,
+  };
+  if (result.stopReason !== undefined) out.stopReason = result.stopReason;
+  if (result.stopSequence !== undefined) out.stopSequence = result.stopSequence;
+  if (result.usage !== undefined) out.usage = result.usage;
+  return out;
+}
+
+/** 解析 sampling/createMessage 响应 result（服务端方向发起后解析应答）；容错：缺省字段给默认 */
+export function parseCreateMessageResult(payload: unknown): McpCreateMessageResult {
+  const r = (payload ?? {}) as Record<string, unknown>;
+  const content = (r.content ?? { type: 'text', text: '' }) as McpSamplingContentBlock;
+  return {
+    role: 'assistant',
+    content: typeof content.type === 'string' ? content : { type: 'text', text: '' },
+    model: typeof r.model === 'string' ? r.model : 'unknown',
+    stopReason: r.stopReason as McpCreateMessageResult['stopReason'],
+    stopSequence: typeof r.stopSequence === 'string' ? r.stopSequence : undefined,
+    usage: r.usage as McpCreateMessageResult['usage'],
+  };
 }
 
 export { isErrorResponse };

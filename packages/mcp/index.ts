@@ -125,17 +125,22 @@ export { mapAgentContentToMcp, toolResultToMcpCallResult } from './src/server/ho
 // ─── 服务端协议（纯函数：响应构造 + 入站 params 解析 + resources/prompts）──
 export {
   createInitializeResult,
+  buildInitializeParams,
   buildToolsListResult,
   buildToolCallResult,
   buildResourcesListResult,
   buildResourceReadResult,
   buildPromptsListResult,
   buildPromptGetResult,
+  buildCreateMessageResult,
   parseInitializeParams,
   parseToolCallParams,
   parseListToolsParams,
   parseResourceReadParams,
   parsePromptGetParams,
+  parseCreateMessageParams,
+  parseCreateMessageResult,
+  createSamplingRequest,
 } from './src/client/protocol';
 export type {
   McpResource,
@@ -143,6 +148,11 @@ export type {
   McpPromptMessage,
   McpPrompt,
   McpServerInfoLike,
+  McpSamplingContentBlock,
+  McpSamplingMessage,
+  McpModelPreferences,
+  McpCreateMessageParams,
+  McpCreateMessageResult,
 } from './src/client/protocol';
 
 // ─── 配置 / 诊断类型 ────────────────────────────────────────────

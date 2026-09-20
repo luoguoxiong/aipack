@@ -5,6 +5,7 @@ import {
   MCP_BASELINE_VERSION,
   negotiateProtocol,
   createInitializeRequest,
+  buildInitializeParams,
   parseInitializeResult,
   createInitializedNotification,
   createListToolsRequest,
@@ -15,6 +16,10 @@ import {
   createPingRequest,
   createCancelledNotification,
   isListChangedNotification,
+  createSamplingRequest,
+  parseCreateMessageParams,
+  buildCreateMessageResult,
+  parseCreateMessageResult,
 } from '../src/client/protocol';
 
 describe('negotiateProtocol', () => {
@@ -147,5 +152,83 @@ describe('ping / notifications', () => {
   });
   test('baseline 常量存在', () => {
     assert.ok(MCP_BASELINE_VERSION);
+  });
+});
+
+describe('sampling', () => {
+  test('createSamplingRequest 带 method 与 params', () => {
+    const r = createSamplingRequest(9, {
+      messages: [{ role: 'user', content: { type: 'text', text: 'hi' } }],
+      maxTokens: 64,
+    });
+    assert.equal(r.method, 'sampling/createMessage');
+    const p = (r as { params: { messages: unknown[]; maxTokens: number } }).params;
+    assert.equal(p.maxTokens, 64);
+    assert.equal(p.messages.length, 1);
+  });
+  test('parseCreateMessageParams 容错缺 messages', () => {
+    const p = parseCreateMessageParams({});
+    assert.deepEqual(p.messages, []);
+    assert.equal(p.systemPrompt, undefined);
+  });
+  test('parseCreateMessageParams 透传可选字段', () => {
+    const p = parseCreateMessageParams({
+      messages: [{ role: 'user', content: { type: 'text', text: 'q' } }],
+      systemPrompt: 'sys',
+      includeContext: 'thisServer',
+      maxTokens: 100,
+      stopSequences: ['\n'],
+      metadata: { x: 1 },
+    });
+    assert.equal(p.systemPrompt, 'sys');
+    assert.equal(p.includeContext, 'thisServer');
+    assert.equal(p.maxTokens, 100);
+    assert.deepEqual(p.stopSequences, ['\n']);
+    assert.deepEqual(p.metadata, { x: 1 });
+  });
+  test('buildCreateMessageResult 含 role/content/model + 可选字段', () => {
+    const r = buildCreateMessageResult({
+      role: 'assistant',
+      content: { type: 'text', text: 'answer' },
+      model: 'demo',
+      stopReason: 'endTurn',
+      usage: { inputTokens: 5, outputTokens: 3 },
+    });
+    const o = r as Record<string, unknown>;
+    assert.equal(o.role, 'assistant');
+    assert.equal(o.model, 'demo');
+    assert.equal(o.stopReason, 'endTurn');
+    assert.deepEqual(o.usage, { inputTokens: 5, outputTokens: 3 });
+  });
+  test('parseCreateMessageResult 容错缺省字段给默认', () => {
+    const r = parseCreateMessageResult({ content: { type: 'text', text: 'a' } });
+    assert.equal(r.role, 'assistant');
+    assert.equal(r.model, 'unknown');
+    assert.equal(r.content.text, 'a');
+    assert.equal(r.stopReason, undefined);
+  });
+  test('parseCreateMessageResult 缺 content 兜底空文本', () => {
+    const r = parseCreateMessageResult({});
+    assert.equal(r.content.type, 'text');
+    assert.equal(r.content.text, '');
+  });
+});
+
+describe('initialize capabilities', () => {
+  test('createInitializeRequest 默认 capabilities 为空对象', () => {
+    const r = createInitializeRequest(1, { name: 'c', version: '1.0.0' });
+    const p = (r as { params: { capabilities: Record<string, unknown> } }).params;
+    assert.deepEqual(p.capabilities, {});
+  });
+  test('createInitializeRequest 传入 sampling 能力', () => {
+    const r = createInitializeRequest(1, { name: 'c', version: '1.0.0' }, { sampling: {} });
+    const p = (r as { params: { capabilities: { sampling?: unknown } } }).params;
+    assert.ok(p.capabilities.sampling !== undefined);
+  });
+  test('buildInitializeParams 组合协议字段', () => {
+    const p = buildInitializeParams({ name: 'c', version: '1.0.0' }, { sampling: {} });
+    assert.equal(p.protocolVersion, MCP_PROTOCOL_VERSION);
+    assert.deepEqual(p.clientInfo, { name: 'c', version: '1.0.0' });
+    assert.ok(p.capabilities.sampling !== undefined);
   });
 });

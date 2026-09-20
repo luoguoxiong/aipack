@@ -144,6 +144,9 @@ importers:
       '@aipack-ai/agent':
         specifier: workspace:*
         version: link:../agent
+      '@aipack-ai/mcp':
+        specifier: workspace:*
+        version: link:../mcp
     devDependencies:
       '@types/node':
         specifier: ^20.12.0

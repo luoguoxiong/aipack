@@ -352,3 +352,59 @@ describe('McpServerHost.handleRequest', () => {
     assert.equal(got[0].method, 'notifications/tools/list_changed');
   });
 });
+
+describe('McpServerHost sampling（服务端方向）', () => {
+  test('sampling: true → capabilities 含 sampling', async () => {
+    const host = createMcpServerHost({ name: 'h', tools: [], sampling: true });
+    const resp = await host.handleRequest(req(1, 'initialize'));
+    const r = asSuccess(resp).result as { capabilities: { sampling?: unknown } };
+    assert.ok(r.capabilities.sampling !== undefined);
+  });
+
+  test('未启用 sampling → capabilities 无 sampling', async () => {
+    const host = createMcpServerHost({ name: 'h', tools: [] });
+    const resp = await host.handleRequest(req(1, 'initialize'));
+    const r = asSuccess(resp).result as { capabilities: { sampling?: unknown } };
+    assert.equal(r.capabilities.sampling, undefined);
+  });
+
+  test('setOutboundRequest 后追加 sampling 能力', async () => {
+    const host = createMcpServerHost({ name: 'h', tools: [] });
+    assert.equal(host.getCapabilities().sampling, undefined);
+    host.setOutboundRequest(async () => ({}));
+    assert.ok(host.getCapabilities().sampling !== undefined);
+  });
+
+  test('sampleLLM 经出站通道请求并解析响应', async () => {
+    let captured: { method: string; params: unknown } | undefined;
+    const host = createMcpServerHost({ name: 'h', tools: [] });
+    host.setOutboundRequest(async (method, params) => {
+      captured = { method, params };
+      return {
+        role: 'assistant',
+        content: { type: 'text', text: 'hello from client llm' },
+        model: 'client-model',
+        stopReason: 'endTurn',
+      };
+    });
+    const res = await host.sampleLLM({
+      messages: [{ role: 'user', content: { type: 'text', text: 'hi' } }],
+    });
+    assert.equal(captured?.method, 'sampling/createMessage');
+    assert.equal(res.role, 'assistant');
+    assert.equal(res.content.text, 'hello from client llm');
+    assert.equal(res.model, 'client-model');
+    assert.equal(res.stopReason, 'endTurn');
+  });
+
+  test('sampleLLM 出站通道 reject → 错误透传', async () => {
+    const host = createMcpServerHost({ name: 'h', tools: [] });
+    host.setOutboundRequest(async () => { throw new Error('client refused'); });
+    await assert.rejects(() => host.sampleLLM({ messages: [] }), /client refused/);
+  });
+
+  test('sampleLLM 未注入出站通道 → 抛错', async () => {
+    const host = createMcpServerHost({ name: 'h', tools: [], sampling: true });
+    await assert.rejects(() => host.sampleLLM({ messages: [] }), /outbound request channel not attached/);
+  });
+});

@@ -215,17 +215,21 @@ aipack approvals list           # 跨进程审批单管理
 - **告警**：自定义规则 + 通知
 - **导出**：Prometheus `/metrics` 端点
 
-### 6. `@aipack-ai/mcp` — MCP 客户端插件
+### 6. `@aipack-ai/mcp` — MCP 插件（客户端 + 服务端）
 
 **包路径**: [packages/mcp](./packages/mcp)
 
-连接外部 MCP Server，把远端工具包装为 aipack 原生 `Tool`，零成本接入 MCP 工具生态；一经包装即获得 runtime 全套能力（权限审批 / 超时 / 钩子 / telemetry / 并行调用）。零运行时依赖：自研 JSON-RPC 2.0 编解码 + MCP 核心协议子集（initialize / tools/list / tools/call / ping / cancelled / list_changed）。
+双向打通 MCP 生态，零运行时依赖：自研 JSON-RPC 2.0 编解码 + MCP 核心协议子集（initialize / tools/list / tools/call / ping / cancelled / list_changed / resources / prompts）。
 
-- **客户端方向（主）**：`createMcpPlugin({ servers })` → 工具经 `beforeRun` 懒连接注册进 Runtime；支持 `ready()` 预热、`refresh()` 热刷新（完整移除已消失工具）、`mcp_status` 内部工具查看连接状态
-- **传输层**：stdio（child_process + 行分隔 JSON-RPC）+ Streamable HTTP（会话管理 / 协议版本头 / SSE 响应）+ legacy SSE
+- **客户端方向（主）**：`createMcpPlugin({ servers })` 把外部 MCP Server 的工具包装为 aipack 原生 `Tool`，经 `beforeRun` 懒连接注册进 Runtime；一经包装即获得 runtime 全套能力（权限审批 / 超时 / 钩子 / telemetry / 并行调用）；支持 `ready()` 预热、`refresh()` 热刷新（完整移除已消失工具）、`mcp_status` 内部工具查看连接状态
+- **服务端方向（M3）**：`createMcpServerHost({ tools, resources?, prompts? })` 把 aipack 原生 `Tool[]`（+ 可选 resources / prompts）反向暴露为标准 MCP Server，供 Claude Desktop / Cursor 等外部 MCP 客户端调用；`multi-agent/MCPBridge` 已统一——新增 `asTools()` / `toMcpServerHost()` 与 `createMultiAgentMcpServerHost(graph)` 工厂，把 `AgentGraph` 经 `McpServerHost` + `runStdioServer` 拉起为 stdio MCP Server（补齐 MCPBridge 原缺失的传输层），legacy `listTools()`/`handleCall()` API 保持不变。`handleRequest` 为传输层无关入口，处理 initialize / tools/* / resources/* / prompts/* / ping，未知方法回 `-32601`，`ToolResult.details.error` 存在 → MCP `isError`
+- **传输层**：客户端 stdio（child_process + 行分隔 JSON-RPC）+ Streamable HTTP（会话管理 / 协议版本头 / SSE 响应）+ legacy SSE；服务端 `runStdioServer` 驱动 stdin/stdout 循环，`server/stdio-entry` 提供独立进程入口
 - **配置加载**：`.mcp.json`（项目级 `<cwd>/.mcp.json` 优先于用户级 `~/.aipack/mcp.json`），CLI 自动生效
-- **协议容错**：版本协商降级、content block 未知类型降级、JSON-RPC 错误统一转 `isError`、env `${VAR}` 未定义即跳过该 server
-- **安全**：包装工具默认 `permissions: ['mcp:<server>']`，CLI 经 `permission: 'mcp'` 前缀规则归入 confirm 档
+- **协议容错**：版本协商降级、content block 未知类型降级（agent thinking/toolCall → 文本摘要）、JSON-RPC 错误统一转 `isError`、env `${VAR}` 未定义即跳过该 server
+- **sampling 双向**：客户端方向 `McpClient.onSampling` 应答外部 server 的 `sampling/createMessage`（设置时宣告 `sampling` 能力，否则回 `-32601`）；服务端方向 `McpServerHost({ sampling: true })` + `host.sampleLLM()` 经 `stdio-runner` 出站通道向 client 请求 LLM 补全
+- **安全**：包装工具默认 `permissions: ['mcp:<server>']`，CLI 经 `permission: 'mcp'` 前缀规则归入 confirm 档；服务端 `authorize` 钩子可选（stdio 本地默认放行）
+
+**客户端方向**：
 
 ```typescript
 import { createRuntime } from '@aipack-ai/agent';
@@ -238,6 +242,29 @@ const mcp = createMcpPlugin({
 });
 const runtime = createRuntime({ extensions: [...mcp.extensions] });
 await mcp.ready(); // 可选预热
+```
+
+**服务端方向**（Claude Desktop 直接拉起）：
+
+```bash
+# 构建产物入口（工具来源：AIPACK_MCP_TOOLS 指向 ESM 模块的 tools 导出；未设置则用内置 demo 工具）
+node packages/mcp/dist/server/stdio-entry.js
+```
+
+```jsonc
+// Claude Desktop 配置
+{ "mcpServers": { "aipack": { "command": "node", "args": ["/abs/path/to/packages/mcp/dist/server/stdio-entry.js"], "env": { "AIPACK_MCP_TOOLS": "/abs/path/to/my-tools.mjs" } } } }
+```
+
+程序化使用（自定义工具 + 可选 resources / prompts）：
+
+```typescript
+import { createMcpServerHost, runStdioServer } from '@aipack-ai/mcp';
+import type { Tool } from '@aipack-ai/agent';
+
+const tools: Tool[] = [/* ... */];
+const host = createMcpServerHost({ name: 'my-agent', version: '0.1.0', tools });
+await runStdioServer(host);
 ```
 
 ---
@@ -339,6 +366,7 @@ pnpm release
 | `pnpm example:agent-memory` | 运行 Agent 记忆示例                |
 | `pnpm example:compression`  | 运行上下文压缩示例                 |
 | `pnpm example:mcp`          | 运行 MCP 客户端示例（本地 echo server，离线可运行） |
+| `pnpm example:mcp-server`   | 以 stdio MCP Server 模式拉起 aipack 工具（离线可运行） |
 | `pnpm lint`                 | 全量 TypeScript 类型检查（noEmit） |
 | `pnpm docs:dev`             | 启动文档网站开发服务器             |
 | `pnpm docs:build`           | 构建文档网站                       |
