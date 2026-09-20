@@ -1,0 +1,47 @@
+{
+  "name": "@aipack-ai/skills",
+  "version": "0.0.1",
+  "description": "aipack Agent Skills 插件：SKILL.md 加载 + 渐进式披露 + skill 工具，Extension 机制接入",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "prebuild": "pnpm --filter @aipack-ai/agent build",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "keywords": [
+    "aipack",
+    "skills",
+    "agent",
+    "plugin",
+    "skill",
+    "context"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "@aipack-ai/agent": "workspace:*"
+  },
+  "devDependencies": {
+    "@aipack-ai/agent": "workspace:*",
+    "@types/node": "^20.12.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.5.0",
+    "tsx": "^4.16.0"
+  }
+}

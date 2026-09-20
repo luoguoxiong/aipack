@@ -27,6 +27,11 @@ import {
   ShareAltOutlined,
   DeploymentUnitOutlined,
   BugOutlined,
+  TagsOutlined,
+  FileTextOutlined,
+  FolderOpenOutlined,
+  BulbOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 
 interface DocsLayoutProps {
@@ -143,6 +148,18 @@ const memoryMenu: MenuItem[] = [
   { key: '/memory#config', label: '12. 插件配置全览', icon: <SettingOutlined /> },
 ];
 
+const skillsMenu: MenuItem[] = [
+  { key: '/skills#overview', label: '总览', icon: <RocketOutlined /> },
+  { key: '/skills#quickstart', label: '1. 快速开始', icon: <ThunderboltOutlined /> },
+  { key: '/skills#skill-md', label: '2. SKILL.md 格式', icon: <FileTextOutlined /> },
+  { key: '/skills#layout', label: '3. 目录与发现规则', icon: <FolderOpenOutlined /> },
+  { key: '/skills#disclosure', label: '4. 渐进式披露', icon: <BulbOutlined /> },
+  { key: '/skills#explicit', label: '5. 显式触发', icon: <ThunderboltOutlined /> },
+  { key: '/skills#diy', label: '6. 程序化 DIY', icon: <CodeOutlined /> },
+  { key: '/skills#diagnostics', label: '7. 诊断与冲突', icon: <WarningOutlined /> },
+  { key: '/skills#security', label: '8. 安全与边界', icon: <SafetyCertificateOutlined /> },
+];
+
 const multiAgentMenu: MenuItem[] = [
   { key: '/multi-agent', label: '总览', icon: <ApartmentOutlined /> },
   { key: '/multi-agent#architecture', label: '架构总览', icon: <NodeIndexOutlined /> },
@@ -174,6 +191,7 @@ const packagesMenu: MenuItem[] = [
   { key: '/packages', label: '包概览', icon: <AppstoreOutlined /> },
   { key: '/packages#aipack', label: 'aipack（核心）', icon: <RocketOutlined /> },
   { key: '/packages#memory', label: 'aipack-memory', icon: <DatabaseOutlined /> },
+  { key: '/packages#aipack-skills', label: 'aipack-skills', icon: <TagsOutlined /> },
   { key: '/packages#compression', label: 'aipack-compression', icon: <AimOutlined /> },
   { key: '/packages#aipack-multi-agent', label: 'aipack-multi-agent', icon: <ApartmentOutlined /> },
   { key: '/packages#aipack-observability', label: 'aipack-observability', icon: <LineChartOutlined /> },
@@ -193,6 +211,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     else if (path === '/extend' || path.startsWith('/extend')) items = extendMenu;
     else if (path === '/observability' || path.startsWith('/observability')) items = observabilityMenu;
     else if (path === '/memory' || path.startsWith('/memory')) items = memoryMenu;
+    else if (path === '/skills' || path.startsWith('/skills')) items = skillsMenu;
     else if (path === '/multi-agent' || path.startsWith('/multi-agent')) items = multiAgentMenu;
     else if (path === '/examples' || path.startsWith('/examples')) items = examplesMenu;
     else if (path === '/packages' || path.startsWith('/packages')) items = packagesMenu;
@@ -215,6 +234,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     if (rootPath === '/extend') return extendMenu;
     if (rootPath === '/observability') return observabilityMenu;
     if (rootPath === '/memory') return memoryMenu;
+    if (rootPath === '/skills') return skillsMenu;
     if (rootPath === '/multi-agent') return multiAgentMenu;
     if (rootPath === '/examples') return examplesMenu;
     if (rootPath === '/packages') return packagesMenu;

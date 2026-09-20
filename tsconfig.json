@@ -23,7 +23,8 @@
       "@aipack-ai/compression": ["./packages/compression/index.ts"],
       "@aipack-ai/observability": ["./packages/observability/src/index.ts"],
       "@aipack-ai/observability-server": ["./packages/observability-server/src/index.ts"],
-      "@aipack-ai/multi-agent": ["./packages/multi-agent/index.ts"]
+      "@aipack-ai/multi-agent": ["./packages/multi-agent/index.ts"],
+      "@aipack-ai/skills": ["./packages/skills/index.ts"]
     }
   },
   "include": ["packages/**/*", "examples/**/*"],

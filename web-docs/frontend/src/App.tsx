@@ -10,6 +10,7 @@ import PackagesPage from './pages/PackagesPage';
 import ObservabilityPage from './pages/ObservabilityPage';
 import MemoryPage from './pages/MemoryPage';
 import MultiAgentPage from './pages/MultiAgentPage';
+import SkillsPage from './pages/SkillsPage';
 
 export default function App() {
   return (
@@ -61,6 +62,14 @@ export default function App() {
           element={
             <DocsLayout>
               <MemoryPage />
+            </DocsLayout>
+          }
+        />
+        <Route
+          path="/skills"
+          element={
+            <DocsLayout>
+              <SkillsPage />
             </DocsLayout>
           }
         />

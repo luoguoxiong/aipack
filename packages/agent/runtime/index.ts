@@ -393,6 +393,7 @@ export class AgentRuntime implements Runtime {
       workspace: options.workspace ?? process.cwd(),
       sessionKey: runtime._sessionKey,
       shared: new Map(),
+      runtime,
     };
     runtime._extensionContext = ctx;
     runtime._extensions.applyAll(ctx);
@@ -1941,7 +1942,11 @@ export class AgentRuntime implements Runtime {
     };
 
     try {
-      for await (const event of this._streamFn(this._model, this.buildContext(compilation.messages), options)) {
+      // beforeModelCall：插件可在此改写最终 Context（如 skills 目录注入 / 工具附加）
+      const context = await this._hooks.beforeModelCall.promise(
+        this.buildContext(compilation.messages),
+      );
+      for await (const event of this._streamFn(this._model, context, options)) {
         if (stream && event.type === 'text_delta' && ttftAt === undefined) {
           ttftAt = Date.now();
         }

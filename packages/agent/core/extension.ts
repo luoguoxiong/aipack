@@ -8,8 +8,10 @@
 import { AsyncSeriesHook, AsyncSeriesWaterfallHook } from './tapable';
 import type { Request } from './request';
 import type { Result } from './result';
+import type { Context } from './types';
 import type { ContextResource } from './context-resource';
 import type { BeforeToolCallDecision, AfterToolCallDecision } from './tool-hooks';
+import type { Runtime } from './runtime';
 
 // ─── Runtime 钩子集合 ─────────────────────────────────────────────
 
@@ -22,8 +24,17 @@ export interface RuntimeHooks {
   beforeRun: AsyncSeriesWaterfallHook<Request>;
   /** 资源构建后、转换前（可修改资源） */
   beforeTransform: AsyncSeriesWaterfallHook<ContextResource[]>;
-  /** 资源转换后、模型调用前（可修改资源） */
+  /**
+   * 资源转换后、模型调用前（可修改资源）
+   */
   afterTransform: AsyncSeriesWaterfallHook<ContextResource[]>;
+  /**
+   * 模型调用前（waterfall，可修改最终发给模型的 Context：
+   * systemPrompt / messages / tools）。
+   * 典型用途：插件注入 system prompt 片段或动态附加工具（如 skills 目录注入）。
+   * 每次模型调用触发一次；systemPrompt 以 Runtime 持有的基准值为起点，改动不累积。
+   */
+  beforeModelCall: AsyncSeriesWaterfallHook<Context>;
   /** 模型调用后、结果构建前 */
   beforeEmit: AsyncSeriesHook<[Result]>;
   /** 结果构建后 */
@@ -74,6 +85,12 @@ export interface ExtensionContext {
   readonly sessionKey: string;
   /** 共享状态（Extension 间通信） */
   readonly shared: Map<string, unknown>;
+  /**
+   * 所属 Runtime 引用（可选）。
+   * 供插件在 apply 阶段注册工具等（如 SkillsExtension 注册内置 skill 工具）。
+   * 由 AgentRuntime.create 注入；自建 ExtensionContext 时可缺省。
+   */
+  readonly runtime?: Runtime;
 }
 
 // ─── Extension 管理器 ─────────────────────────────────────────────
@@ -93,6 +110,7 @@ export class ExtensionManager {
       beforeRun: new AsyncSeriesWaterfallHook('beforeRun'),
       beforeTransform: new AsyncSeriesWaterfallHook('beforeTransform'),
       afterTransform: new AsyncSeriesWaterfallHook('afterTransform'),
+      beforeModelCall: new AsyncSeriesWaterfallHook('beforeModelCall'),
       beforeEmit: new AsyncSeriesHook('beforeEmit'),
       afterEmit: new AsyncSeriesHook('afterEmit'),
       done: new AsyncSeriesHook('done'),
