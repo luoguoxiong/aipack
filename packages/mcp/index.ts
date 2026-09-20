@@ -112,6 +112,39 @@ export type { McpCallFn } from './src/adapter';
 export { loadMcpConfig } from './src/loader';
 export type { LoadMcpConfigOptions, LoadMcpConfigResult } from './src/loader';
 
+// ─── 服务端方向（M3）──────────────────────────────────────────
+export { McpServerHost, createMcpServerHost } from './src/server/host';
+export { runStdioServer } from './src/server/stdio-runner';
+export type {
+  McpServerHostOptions,
+  McpAuthorizeCall,
+  McpAuthorizeFn,
+} from './src/server/host';
+export { mapAgentContentToMcp, toolResultToMcpCallResult } from './src/server/host';
+
+// ─── 服务端协议（纯函数：响应构造 + 入站 params 解析 + resources/prompts）──
+export {
+  createInitializeResult,
+  buildToolsListResult,
+  buildToolCallResult,
+  buildResourcesListResult,
+  buildResourceReadResult,
+  buildPromptsListResult,
+  buildPromptGetResult,
+  parseInitializeParams,
+  parseToolCallParams,
+  parseListToolsParams,
+  parseResourceReadParams,
+  parsePromptGetParams,
+} from './src/client/protocol';
+export type {
+  McpResource,
+  McpPromptArgument,
+  McpPromptMessage,
+  McpPrompt,
+  McpServerInfoLike,
+} from './src/client/protocol';
+
 // ─── 配置 / 诊断类型 ────────────────────────────────────────────
 export type {
   McpStdioTransportConfig,

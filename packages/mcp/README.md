@@ -2,7 +2,7 @@
 
 连接外部 MCP Server，把远端工具包装为 aipack 原生 `Tool`，零成本接入 MCP 工具生态。一经包装即获得 runtime 全套能力（权限审批 / 超时 / 钩子 / telemetry / 并行调用）。零运行时依赖：自研 JSON-RPC 2.0 编解码 + MCP 核心协议子集。
 
-> 已完成：客户端方向 + stdio / Streamable HTTP / legacy SSE 传输 + `.mcp.json` 加载器 + 热刷新（完整移除已消失工具）。服务端方向、resources/prompts/sampling 留待 M3。
+> 已完成：客户端方向（stdio / Streamable HTTP / legacy SSE 传输 + `.mcp.json` 加载器 + 热刷新）与服务端方向（M3：`McpServerHost` 把 aipack 工具反向暴露为 MCP Server + stdio 进程入口 + resources/prompts 协议支持）。resources/prompts 全量 / sampling 留待后续。
 
 ## 安装
 
@@ -71,7 +71,8 @@ await mcp.ready(); // 可选预热；不调用则首次 run 时 beforeRun 懒连
 ## 分层
 
 - 契约层（纯函数，零 Node API）：`jsonrpc` / `protocol` / `adapter` / `types`
-- 客户端（Node only）：`stdio-transport` / `mcp-client` / `registry` / `extension`
+- 客户端（Node only）：`stdio-transport` / `http-transport` / `mcp-client` / `registry` / `extension` / `loader`
+- 服务端（Node only）：`server/host`（McpServerHost：handleRequest + 反向 content 映射）/ `server/stdio-runner`（runStdioServer 循环）/ `server/stdio-entry`（进程入口）
 
 ## 权限说明
 
@@ -95,7 +96,62 @@ await mcp.ready(); // 可选预热；不调用则首次 run 时 beforeRun 懒连
 
 ```bash
 pnpm example:mcp            # 连接本地 echo MCP server（离线可运行）
-pnpm --filter @aipack-ai/mcp test   # 含 jsonrpc / protocol / adapter / registry / loader / stdio + http 集成
+pnpm example:mcp-server     # 以 stdio Server 模式拉起 aipack 工具（离线可运行）
+pnpm --filter @aipack-ai/mcp test   # 含 jsonrpc / protocol / adapter / registry / loader / stdio + http 集成 + server host + server stdio 端到端
+```
+
+## 服务端方向（M3）：把 aipack 工具暴露为 MCP Server
+
+`McpServerHost` 把 aipack 原生 `Tool[]`（+ 可选 resources / prompts）反向暴露为标准 MCP Server，供 Claude Desktop、Cursor 等外部 MCP 客户端调用。与 `multi-agent/MCPBridge` 的关系：泛化而非复制（MCPBridge 保持不动，避免 breaking）。
+
+### 程序化使用
+
+```typescript
+import { createMcpServerHost, runStdioServer } from '@aipack-ai/mcp';
+import type { Tool } from '@aipack-ai/agent';
+
+const tools: Tool[] = [
+  { name: 'echo', description: 'echo back', parameters: { type: 'object', properties: { text: { type: 'string' } } }, permissions: [],
+    async execute(_id, args) { return { content: [{ type: 'text', text: String((args as { text?: string })?.text ?? '') }], details: undefined }; } },
+];
+
+const host = createMcpServerHost({
+  name: 'my-agent',
+  version: '0.1.0',
+  tools,
+  // stdio 本地默认放行；http 场景可注入 authorize（可包装 PermissionPolicy）
+  // authorize: async ({ toolName, args }) => true,
+  // 可选：resources / prompts（提供则 advertise capability 并处理 resources/* / prompts/*）
+  // resources: [{ uri: 'file://x', name: 'x', text: '...', mimeType: 'text/plain' }],
+  // prompts: [{ name: 'greet', messages: [{ role: 'user', content: { type: 'text', text: 'hi' } }] }],
+});
+
+// 驱动 stdin/stdout 行分隔 JSON-RPC 循环
+await runStdioServer(host);
+```
+
+`McpServerHost.handleRequest(message)` 为传输层无关入口：接收已分类的 JSON-RPC 消息，返回响应（请求）或 `null`（通知 / 非法）。处理 `initialize` / `tools/list` / `tools/call` / `ping` / `resources/*` / `prompts/*`；未知方法回 `-32601`，内部异常回 `-32603`。工具调用经可选 `authorize` 钩子裁决；`ToolResult.details.error` 存在 → MCP `isError`。
+
+### stdio 进程入口（Claude Desktop 直接拉起）
+
+`node packages/mcp/dist/server/stdio-entry.js`
+
+工具来源（按优先级）：
+1. 环境变量 `AIPACK_MCP_TOOLS` 指向一个 ESM 模块，其具名 `tools` 或默认导出为 `Tool[]`；
+2. 未设置时回退内置演示工具（`echo` / `add`），开箱即用。
+
+Claude Desktop 配置示例：
+
+```jsonc
+{
+  "mcpServers": {
+    "aipack": {
+      "command": "node",
+      "args": ["/abs/path/to/packages/mcp/dist/server/stdio-entry.js"],
+      "env": { "AIPACK_MCP_TOOLS": "/abs/path/to/my-tools.mjs" }
+    }
+  }
+}
 ```
 
 ## CLI 斜杠命令
