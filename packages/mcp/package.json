@@ -1,13 +1,10 @@
 {
-  "name": "@aipack-ai/cli",
-  "version": "1.0.2",
-  "description": "aipack CLI - 基于 @aipack-ai/agent 的终端 AI 助手",
+  "name": "@aipack-ai/mcp",
+  "version": "0.1.0",
+  "description": "aipack MCP 插件：连接外部 MCP Server（客户端方向）并把其工具包装为原生 Tool，零运行时依赖",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "aipack": "dist/bin.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -18,34 +15,33 @@
   "files": [
     "dist"
   ],
+  "sideEffects": false,
   "scripts": {
     "build": "tsup",
     "prebuild": "[ -f ../agent/dist/index.d.ts ] || pnpm --filter @aipack-ai/agent build",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test test/*.test.ts",
-    "dev": "tsx src/bin.ts"
+    "test": "node --import tsx --test tests/*.test.ts"
   },
   "keywords": [
-    "cli",
-    "ai",
+    "aipack",
+    "mcp",
+    "model-context-protocol",
     "agent",
-    "llm",
-    "aipack"
+    "plugin",
+    "tool"
   ],
   "license": "MIT",
   "engines": {
-    "node": ">=18.19.0"
+    "node": ">=18.0.0"
   },
-  "dependencies": {
-    "@aipack-ai/agent": "workspace:*",
-    "@aipack-ai/compression": "workspace:*",
-    "@aipack-ai/mcp": "workspace:*",
-    "chalk": "^5.3.0"
+  "peerDependencies": {
+    "@aipack-ai/agent": "workspace:*"
   },
   "devDependencies": {
+    "@aipack-ai/agent": "workspace:*",
     "@types/node": "^20.12.0",
     "tsup": "^8.5.1",
-    "tsx": "^4.16.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "tsx": "^4.16.0"
   }
 }

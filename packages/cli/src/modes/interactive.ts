@@ -25,6 +25,7 @@ import type {
 import type { Args } from '../args.js';
 import type { ResolvedModel } from '../builder.js';
 import { listSessionsByRecency } from '../builder.js';
+import type { McpPlugin } from '@aipack-ai/mcp';
 import { ChunkRenderer } from './render.js';
 import { ask } from '../prompt.js';
 import { APP_NAME, VERSION } from '../version.js';
@@ -36,6 +37,8 @@ export interface InteractiveOptions {
   args: Args;
   storage?: SessionStorage;
   approvalManager?: ApprovalManager;
+  /** MCP 插件（/mcp 命令用；无 .mcp.json 配置时为 undefined） */
+  mcp?: McpPlugin;
   /** 启动时的初始消息（aipack "帮我..."） */
   initialMessages?: string[];
   /** confirm 委托（cli.ts 创建；此处包装为"关 rl → select → 重建 rl"后生效） */
@@ -47,7 +50,7 @@ export interface InteractiveOptions {
 const VALID_THINKING = new Set(['off', 'minimal', 'low', 'medium', 'high', 'max']);
 
 export async function runInteractiveMode(opts: InteractiveOptions): Promise<void> {
-  const { runtime, sessionKey, model, args, storage, approvalManager } = opts;
+  const { runtime, sessionKey, model, args, storage, approvalManager, mcp } = opts;
 
   // --resume：先选会话
   let activeKey = sessionKey;
@@ -245,6 +248,38 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
         console.log(chalk.dim('通过 --tools / --exclude-tools / --no-tools 配置启停'));
         break;
 
+      case '/mcp': {
+        if (!mcp) {
+          console.log(chalk.yellow('未配置 MCP server（在 .mcp.json / ~/.aipack/mcp.json 中配置）'));
+          break;
+        }
+        if (rest === 'refresh') {
+          console.log(chalk.dim('刷新 MCP 工具列表...'));
+          const diags = await mcp.refresh();
+          if (diags.length > 0) {
+            for (const d of diags) console.log(`  ${chalk[d.type === 'error' ? 'red' : d.type === 'warning' ? 'yellow' : 'cyan'](d.type)} [${d.server}] ${d.message}`);
+          }
+          console.log(chalk.green('刷新完成'));
+          break;
+        }
+        const statuses = mcp.registry.getStatus();
+        if (statuses.length === 0) {
+          console.log(chalk.dim('（无 MCP server）'));
+          break;
+        }
+        for (const s of statuses) {
+          const flag = s.connected ? chalk.green('●') : chalk.red('○');
+          const err = s.error ? chalk.red(`  ${s.error}`) : '';
+          console.log(`${flag} ${chalk.cyan(s.name)}  ${s.transport}  ${s.toolCount} 工具${err}`);
+        }
+        const diags = mcp.diagnostics;
+        if (diags.length > 0) {
+          console.log(chalk.dim('诊断:'));
+          for (const d of diags) console.log(`  ${d.type} [${d.server}] ${d.message}`);
+        }
+        break;
+      }
+
       case '/approvals': {
         if (!approvalManager) {
           console.log(chalk.yellow('审批未启用（在 aipack.config.js 中配置 approvals.enabled: true）'));
@@ -293,6 +328,7 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
   /approvals              未决审批单
   /approve <id>           批准
   /deny <id>              驳回
+  /mcp [refresh]          MCP server 连接状态 / 热刷新工具列表
   /quit                   退出（Ctrl+C 双击）`);
   }
 

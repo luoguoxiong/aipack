@@ -38,11 +38,15 @@ aipack/
 │   ├── memory/                 # 持久化记忆插件（BM25 + 向量检索）
 │   ├── compression/            # 多级上下文压缩插件
 │   ├── observability/          # 可观测性上报 SDK
-│   └── observability-server/   # 可观测性收集服务 + Dashboard
+│   ├── observability-server/   # 可观测性收集服务 + Dashboard
+│   ├── multi-agent/            # 多 Agent 编排图
+│   ├── skills/                 # Agent Skills 插件（SKILL.md 加载 + 渐进式披露）
+│   └── mcp/                    # MCP 插件（连接外部 MCP Server，远端工具包装为原生 Tool）
 ├── examples/                    # 代码示例
 │   ├── deepseek.ts             # DeepSeek 模型接入示例
 │   ├── agent-memory.ts         # Agent 记忆插件示例
-│   └── compression-demo.ts     # 上下文压缩示例
+│   ├── compression-demo.ts     # 上下文压缩示例
+│   └── mcp-client.ts           # MCP 客户端方向示例（连接外部 MCP Server）
 ├── docs/                        # 设计文档
 ├── web-docs/                    # 官方文档网站（Vite + React）
 └── image/                       # 资源图片
@@ -211,6 +215,31 @@ aipack approvals list           # 跨进程审批单管理
 - **告警**：自定义规则 + 通知
 - **导出**：Prometheus `/metrics` 端点
 
+### 6. `@aipack-ai/mcp` — MCP 客户端插件
+
+**包路径**: [packages/mcp](./packages/mcp)
+
+连接外部 MCP Server，把远端工具包装为 aipack 原生 `Tool`，零成本接入 MCP 工具生态；一经包装即获得 runtime 全套能力（权限审批 / 超时 / 钩子 / telemetry / 并行调用）。零运行时依赖：自研 JSON-RPC 2.0 编解码 + MCP 核心协议子集（initialize / tools/list / tools/call / ping / cancelled / list_changed）。
+
+- **客户端方向（主）**：`createMcpPlugin({ servers })` → 工具经 `beforeRun` 懒连接注册进 Runtime；支持 `ready()` 预热、`refresh()` 热刷新（完整移除已消失工具）、`mcp_status` 内部工具查看连接状态
+- **传输层**：stdio（child_process + 行分隔 JSON-RPC）+ Streamable HTTP（会话管理 / 协议版本头 / SSE 响应）+ legacy SSE
+- **配置加载**：`.mcp.json`（项目级 `<cwd>/.mcp.json` 优先于用户级 `~/.aipack/mcp.json`），CLI 自动生效
+- **协议容错**：版本协商降级、content block 未知类型降级、JSON-RPC 错误统一转 `isError`、env `${VAR}` 未定义即跳过该 server
+- **安全**：包装工具默认 `permissions: ['mcp:<server>']`，CLI 经 `permission: 'mcp'` 前缀规则归入 confirm 档
+
+```typescript
+import { createRuntime } from '@aipack-ai/agent';
+import { createMcpPlugin } from '@aipack-ai/mcp';
+
+const mcp = createMcpPlugin({
+  servers: [
+    { name: 'echo', transport: { type: 'stdio', command: 'node', args: ['echo-server.mjs'] } },
+  ],
+});
+const runtime = createRuntime({ extensions: [...mcp.extensions] });
+await mcp.ready(); // 可选预热
+```
+
 ---
 
 ## 💡 示例应用
@@ -254,6 +283,9 @@ pnpm example:agent-memory
 
 # 上下文压缩示例
 pnpm example:compression
+
+# MCP 客户端示例（连接本地 echo MCP server，离线可运行）
+pnpm example:mcp
 ```
 
 ### 测试
@@ -265,6 +297,7 @@ pnpm lint
 # 各包测试（具体见各包 scripts.test）
 pnpm --filter @aipack-ai/agent test
 pnpm --filter @aipack-ai/memory test
+pnpm --filter @aipack-ai/mcp test
 ```
 
 ### 文档网站
@@ -305,6 +338,7 @@ pnpm release
 | `pnpm example:deepseek`     | 运行 DeepSeek 示例                 |
 | `pnpm example:agent-memory` | 运行 Agent 记忆示例                |
 | `pnpm example:compression`  | 运行上下文压缩示例                 |
+| `pnpm example:mcp`          | 运行 MCP 客户端示例（本地 echo server，离线可运行） |
 | `pnpm lint`                 | 全量 TypeScript 类型检查（noEmit） |
 | `pnpm docs:dev`             | 启动文档网站开发服务器             |
 | `pnpm docs:build`           | 构建文档网站                       |

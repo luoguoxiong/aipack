@@ -77,6 +77,12 @@ export interface Runtime {
   /** 批量注册工具 */
   registerTools(tools: Tool[]): this;
 
+  /**
+   * 注销工具（按 name）。供插件热刷新 / 重连场景移除已消失的工具。
+   * 不存在则静默返回 false（不告警）。返回是否实际移除。
+   */
+  unregisterTool(name: string): boolean;
+
   /** 设置模型 */
   setModel(model: Model): this;
 
