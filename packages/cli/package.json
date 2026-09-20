@@ -1,6 +1,6 @@
 {
   "name": "@aipack-ai/cli",
-  "version": "0.0.2",
+  "version": "1.0.0",
   "description": "aipack CLI - 基于 @aipack-ai/agent 的终端 AI 助手",
   "type": "module",
   "main": "./dist/index.js",
@@ -20,7 +20,7 @@
   ],
   "scripts": {
     "build": "tsup",
-    "prebuild": "pnpm --filter @aipack-ai/agent build",
+    "prebuild": "[ -f ../agent/dist/index.d.ts ] || pnpm --filter @aipack-ai/agent build",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "dev": "tsx src/bin.ts"

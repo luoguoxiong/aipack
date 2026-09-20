@@ -1,6 +1,6 @@
 {
   "name": "@aipack-ai/compression",
-  "version": "0.0.2",
+  "version": "1.0.0",
   "description": "aipack 多级上下文压缩：L1 工具输出裁剪 -> L2 旧消息摘要 -> L3 任务状态提取 -> L4 会话检查点 -> L5 新会话交接",
   "type": "module",
   "main": "./dist/index.js",
@@ -18,7 +18,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
-    "prebuild": "pnpm --filter @aipack-ai/agent build || true",
+    "prebuild": "[ -f ../agent/dist/index.d.ts ] || pnpm --filter @aipack-ai/agent build || true",
     "typecheck": "tsc --noEmit",
     "example": "node --import tsx examples/compression-demo.ts",
     "test": "node --import tsx --test test/safety.test.ts test/l1-l4.test.ts test/transformer.test.ts test/retry.test.ts"

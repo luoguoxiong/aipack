@@ -1,6 +1,6 @@
 {
   "name": "@aipack-ai/observability",
-  "version": "0.0.2",
+  "version": "1.0.0",
   "description": "aipack 可观测性上报 SDK(S2)：埋点上报模式，appId+appSecret 一行接入，失败本地缓存补报",
   "type": "module",
   "main": "./dist/index.js",
@@ -18,7 +18,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
-    "prebuild": "pnpm --filter @aipack-ai/agent build || true",
+    "prebuild": "[ -f ../agent/dist/index.d.ts ] || pnpm --filter @aipack-ai/agent build || true",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/observability.test.ts"
   },
