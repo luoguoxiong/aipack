@@ -1,6 +1,6 @@
 {
   "name": "@aipack-ai/multi-agent",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "多Agent编排框架：AgentGraph + Pipeline + Router 等模式",
   "type": "module",
   "main": "./dist/index.js",

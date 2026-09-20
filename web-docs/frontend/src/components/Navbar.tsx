@@ -35,7 +35,7 @@ export default function Navbar() {
             fontWeight: 600,
           }}
         >
-          v1.0.0
+          v1.0.2
         </span>
       </div>
       <div className="navbar-links">
