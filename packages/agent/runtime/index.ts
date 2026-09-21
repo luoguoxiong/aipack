@@ -432,6 +432,10 @@ export class AgentRuntime implements Runtime {
     return this;
   }
 
+  unregisterTool(name: string): boolean {
+    return this._globalTools.delete(name);
+  }
+
   setModel(model: Model): this {
     this._model = model;
     return this;

@@ -111,6 +111,7 @@ export async function main(argv: string[]): Promise<number> {
         args,
         storage: built.storage,
         approvalManager: built.approvalManager,
+        mcp: built.mcp,
         initialMessages: args.messages.length > 0 ? [initial.text] : [],
         confirmRef,
         baseConfirm: toolConfirm,
@@ -118,6 +119,7 @@ export async function main(argv: string[]): Promise<number> {
     }
   } finally {
     built.approvalManager?.close();
+    await built.mcp?.dispose().catch(() => {});
     await built.runtime.close();
   }
 

@@ -20,6 +20,7 @@ const tagColorMap: Record<string, string> = {
   'Agent Skills': 'magenta',
   上下文压缩: 'orange',
   多Agent编排: 'geekblue',
+  'MCP 互操作': 'volcano',
   可观测性: 'cyan',
   命令行工具: 'purple',
 };

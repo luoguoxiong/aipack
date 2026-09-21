@@ -30,6 +30,8 @@ import {
   type CompressionConfig,
   type ContextCompressionTransformer,
 } from '@aipack-ai/compression';
+import { createMcpPlugin, loadMcpConfig } from '@aipack-ai/mcp';
+import type { McpPlugin } from '@aipack-ai/mcp';
 import type {
   Runtime,
   Tool,
@@ -194,6 +196,8 @@ export interface BuiltRuntime {
   config: AipackCliConfig;
   /** 五级压缩转换器（--no-compaction 时为 undefined） */
   compressionTransformer?: ContextCompressionTransformer;
+  /** MCP 插件（/mcp 命令用；无 .mcp.json 配置时为 undefined） */
+  mcp?: McpPlugin;
 }
 
 // ─── 上下文压缩 ───────────────────────────────────────────────────
@@ -306,6 +310,15 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
     confirmFn: options.confirmFn,
   });
 
+  // ── MCP 插件（.mcp.json：项目级 .mcp.json 优先于用户级 ~/.aipack/mcp.json）──
+  const mcpConfig = await loadMcpConfig({ cwd });
+  if (mcpConfig.diagnostics.length > 0) {
+    for (const d of mcpConfig.diagnostics) {
+      console.warn(`[aipack] MCP config ${d.type} [${d.server}]: ${d.message}`);
+    }
+  }
+  const mcp = mcpConfig.servers.length > 0 ? createMcpPlugin({ servers: mcpConfig.servers }) : undefined;
+
   // ── 系统提示词 ──
   const systemPrompt = buildSystemPrompt(args);
 
@@ -332,6 +345,8 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
     approvals: approvalManager,
     maxTurns: 50,
     transformers: compressionTransformer ? [compressionTransformer] : [],
+    // MCP 插件：beforeRun 懒连接，工具一经包装即获得权限/超时/钩子能力
+    ...(mcp ? { extensions: [...mcp.extensions] } : {}),
     // --no-compaction 时一并关闭内置摘要压缩（仅保留硬截断兜底）
     compaction: args.noCompaction ? { enabled: false } : { enabled: true },
   });
@@ -344,6 +359,7 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
     model,
     config,
     compressionTransformer,
+    mcp,
   };
 }
 
@@ -378,10 +394,17 @@ function buildPermissionPolicy(opts: {
     return [{ name: `builtin:${cap}:${decision}`, permission: cap, decision }];
   });
 
+  // MCP 工具（permissions: mcp:<server>）：外部进程/网络调用，不可默认放行
+  // - approvals.enabled → pending（异步审批）
+  // - 否则 → confirm（内联确认）
+  const mcpDecision: 'pending' | 'confirm' = approvalsEnabled ? 'pending' : 'confirm';
+  const mcpRule = { name: `builtin:mcp:${mcpDecision}`, permission: 'mcp', decision: mcpDecision };
+
   return createPermissionPolicy({
     rules: [
       ...customRules,
       ...highRiskRules,
+      mcpRule,
       { name: 'builtin:read', permission: 'fs:read', decision: 'allow' as const },
       // 未声明 permissions 的安全工具放行
       { name: 'builtin:safe-tools', decision: 'allow' as const },

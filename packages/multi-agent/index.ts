@@ -47,7 +47,7 @@ export { createDebate } from './patterns/debate';
 export { createMapReduce } from './patterns/map-reduce';
 
 // ─── 扩展层 ──────────────────────────────────────────────────────
-export { MCPBridge, createMCPBridge } from './extensions/mcp-bridge';
+export { MCPBridge, createMCPBridge, createMultiAgentMcpServerHost } from './extensions/mcp-bridge';
 export type { MCPToolDefinition, MCPToolParameter, MCPToolCallRequest, MCPToolCallResult } from './extensions/mcp-bridge';
 
 export { GraphDebugger, createDebugger } from './extensions/debug';

@@ -1,6 +1,6 @@
 {
   "name": "@aipack-ai/cli",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "aipack CLI - 基于 @aipack-ai/agent 的终端 AI 助手",
   "type": "module",
   "main": "./dist/index.js",
@@ -39,6 +39,7 @@
   "dependencies": {
     "@aipack-ai/agent": "workspace:*",
     "@aipack-ai/compression": "workspace:*",
+    "@aipack-ai/mcp": "workspace:*",
     "chalk": "^5.3.0"
   },
   "devDependencies": {
