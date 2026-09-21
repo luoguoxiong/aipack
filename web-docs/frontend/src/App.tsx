@@ -11,6 +11,7 @@ import ObservabilityPage from './pages/ObservabilityPage';
 import MemoryPage from './pages/MemoryPage';
 import MultiAgentPage from './pages/MultiAgentPage';
 import SkillsPage from './pages/SkillsPage';
+import McpPage from './pages/McpPage';
 
 export default function App() {
   return (
@@ -70,6 +71,14 @@ export default function App() {
           element={
             <DocsLayout>
               <SkillsPage />
+            </DocsLayout>
+          }
+        />
+        <Route
+          path="/mcp"
+          element={
+            <DocsLayout>
+              <McpPage />
             </DocsLayout>
           }
         />

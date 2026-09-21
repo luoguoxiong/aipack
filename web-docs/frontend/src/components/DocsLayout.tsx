@@ -160,6 +160,20 @@ const skillsMenu: MenuItem[] = [
   { key: '/skills#security', label: '8. 安全与边界', icon: <SafetyCertificateOutlined /> },
 ];
 
+const mcpMenu: MenuItem[] = [
+  { key: '/mcp#overview', label: '总览', icon: <RocketOutlined /> },
+  { key: '/mcp#quickstart', label: '1. 快速开始', icon: <ThunderboltOutlined /> },
+  { key: '/mcp#config', label: '2. .mcp.json 配置', icon: <SettingOutlined /> },
+  { key: '/mcp#server-config', label: '3. Server 配置项', icon: <ApiOutlined /> },
+  { key: '/mcp#transports', label: '4. 传输层', icon: <ShareAltOutlined /> },
+  { key: '/mcp#lifecycle', label: '5. 连接生命周期', icon: <DeploymentUnitOutlined /> },
+  { key: '/mcp#protocol', label: '6. 协议与容错', icon: <CodeOutlined /> },
+  { key: '/mcp#sampling', label: '7. Sampling 双向', icon: <BulbOutlined /> },
+  { key: '/mcp#server', label: '8. 服务端方向', icon: <CloudServerOutlined /> },
+  { key: '/mcp#security', label: '9. 安全与权限', icon: <SafetyCertificateOutlined /> },
+  { key: '/mcp#cli', label: '10. CLI 集成', icon: <SettingOutlined /> },
+];
+
 const multiAgentMenu: MenuItem[] = [
   { key: '/multi-agent', label: '总览', icon: <ApartmentOutlined /> },
   { key: '/multi-agent#architecture', label: '架构总览', icon: <NodeIndexOutlined /> },
@@ -185,6 +199,8 @@ const examplesMenu: MenuItem[] = [
   { key: '/examples#memory', label: '记忆集成', icon: <DatabaseOutlined /> },
   { key: '/examples#compression', label: '上下文压缩', icon: <AimOutlined /> },
   { key: '/examples#cli', label: 'CLI 配置', icon: <SettingOutlined /> },
+  { key: '/examples#mcp', label: 'MCP 客户端', icon: <DeploymentUnitOutlined /> },
+  { key: '/examples#mcp-server', label: 'MCP 服务端', icon: <CloudServerOutlined /> },
 ];
 
 const packagesMenu: MenuItem[] = [
@@ -194,6 +210,7 @@ const packagesMenu: MenuItem[] = [
   { key: '/packages#aipack-skills', label: 'aipack-skills', icon: <TagsOutlined /> },
   { key: '/packages#compression', label: 'aipack-compression', icon: <AimOutlined /> },
   { key: '/packages#aipack-multi-agent', label: 'aipack-multi-agent', icon: <ApartmentOutlined /> },
+  { key: '/packages#aipack-mcp', label: 'aipack-mcp', icon: <DeploymentUnitOutlined /> },
   { key: '/packages#aipack-observability', label: 'aipack-observability', icon: <LineChartOutlined /> },
   { key: '/packages#aipack-observability-server', label: 'aipack-observability-server', icon: <CloudServerOutlined /> },
   { key: '/packages#cli', label: 'aipack-cli', icon: <SettingOutlined /> },
@@ -212,6 +229,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     else if (path === '/observability' || path.startsWith('/observability')) items = observabilityMenu;
     else if (path === '/memory' || path.startsWith('/memory')) items = memoryMenu;
     else if (path === '/skills' || path.startsWith('/skills')) items = skillsMenu;
+    else if (path === '/mcp' || path.startsWith('/mcp')) items = mcpMenu;
     else if (path === '/multi-agent' || path.startsWith('/multi-agent')) items = multiAgentMenu;
     else if (path === '/examples' || path.startsWith('/examples')) items = examplesMenu;
     else if (path === '/packages' || path.startsWith('/packages')) items = packagesMenu;
@@ -235,6 +253,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     if (rootPath === '/observability') return observabilityMenu;
     if (rootPath === '/memory') return memoryMenu;
     if (rootPath === '/skills') return skillsMenu;
+    if (rootPath === '/mcp') return mcpMenu;
     if (rootPath === '/multi-agent') return multiAgentMenu;
     if (rootPath === '/examples') return examplesMenu;
     if (rootPath === '/packages') return packagesMenu;

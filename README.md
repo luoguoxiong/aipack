@@ -4,52 +4,98 @@
 
 # aipack
 
-**轻量级个人 AI 助手框架** — Agent 运行时 + 丰富插件生态 + 多端应用
+**轻量、可扩展、零魔法的 TypeScript Agent 框架**
+
+Agent 运行时 + 可插拔插件生态，快速构建你自己的 AI Agent
+零外部 Agent 框架依赖 · TypeScript 全类型覆盖 · 13 家模型提供商开箱即用
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
 [![TypeScript](https://img.shields.io/badge/typescript-5.5%2B-blue.svg)](tsconfig.json)
+[![pnpm](https://img.shields.io/badge/pnpm-%3E%3D8-orange.svg)](pnpm-workspace.yaml)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/luoguoxiong/aipack/pulls)
+
+[核心特性](#-核心特性) · [架构总览](#-架构总览) · [快速开始](#-快速开始) · [核心包](#-核心包) · [示例应用](#-示例应用) · [开发指南](#-开发指南)
 
 </div>
 
 ---
 
-## 🌟 特性
+## 📖 目录
 
-- **轻量 Agent 框架**：核心调度、会话持久化、工具执行、上下文转换核心实现，不依赖任何外部 Agent 框架
-- **Runtime + Extension + Transformer 三段式架构**：灵活扩展，插件通过 Tapable 钩子挂载生命周期
-- **多模型提供商支持**：OpenAI、DeepSeek、Anthropic、Google、Groq、Mistral、xAI、Moonshot 等 13+ 提供商开箱即用
-- **流式与同步双入口**：`runtime.run()` 一次性返回，`runtime.stream()` 流式返回增量事件
-- **持久化会话管理**：内存 / 文件双存储适配器，支持过期惰性清理
-- **跨会话长期记忆**：BM25 + 向量双路混合检索，自动捕获/注入/合并
-- **多级上下文压缩**：L1 工具输出裁剪 → L2 旧消息摘要 → L3 任务状态提取 → L4 会话检查点 → L5 新会话交接
-- **可观测性全链路**：埋点 SDK + 收集服务 + Dashboard，Prometheus 指标导出
-- **多端交付**：CLI、Tauri 桌面端、Web 应用全覆盖
+- [✨ 核心特性](#-核心特性)
+- [🏗️ 架构总览](#-架构总览)
+- [🚀 快速开始](#-快速开始)
+- [🧩 核心包](#-核心包)
+- [💡 示例应用](#-示例应用)
+- [🛠️ 开发指南](#-开发指南)
+- [📋 Scripts 参考](#-scripts-参考)
+- [🔐 API Key 配置](#-api-key-配置)
+- [🤝 相关资源](#-相关资源)
+- [📄 License](#-license)
 
 ---
 
-## 📦 项目结构
+## ✨ 核心特性
+
+### 框架内核
+
+- **轻量 Agent 框架** — 核心调度、会话持久化、工具执行、上下文转换全部自研，不依赖任何外部 Agent 框架
+- **Runtime + Extension + Transformer 三段式架构** — 插件通过 Tapable 钩子挂载生命周期，扩展点清晰可控
+- **流式与同步双入口** — `runtime.run()` 一次性返回结果，`runtime.stream()` 流式返回增量事件
+- **持久化会话管理** — 内存 / 文件双存储适配器，支持 `maxAge` 过期惰性清理
+
+### 模型与上下文
+
+- **多模型提供商支持** — OpenAI、DeepSeek、Anthropic、Google、Groq、Mistral、xAI、Moonshot 等 13+ 提供商开箱即用
+- **跨会话长期记忆** — BM25 + 向量双路混合检索，自动捕获 / 注入 / 合并
+- **多级上下文压缩** — L1 工具输出裁剪 → L2 旧消息摘要 → L3 任务状态提取 → L4 会话检查点 → L5 新会话交接
+
+### 生态与交付
+
+- **MCP 双向打通** — 既把外部 MCP Server 工具包装为原生 `Tool`，也把 aipack 工具反向暴露为标准 MCP Server
+- **Agent Skills 插件** — 对齐 `SKILL.md` 开放规范，渐进式披露，零开销向后兼容
+- **多 Agent 编排** — `AgentGraph` / Pipeline / Router 等编排模式
+- **可观测性全链路** — 埋点 SDK + 收集服务 + Dashboard，支持 Prometheus 指标导出
+- **多端交付** — CLI、Tauri 桌面端、Web 应用全覆盖
+
+---
+
+## 🏗️ 架构总览
 
 ```
-aipack/
-├── packages/                    # 核心包
-│   ├── agent/                  # Agent 框架核心（Runtime + Extension + Transformer）
-│   ├── cli/                    # 命令行工具（aipack 命令）
-│   ├── memory/                 # 持久化记忆插件（BM25 + 向量检索）
-│   ├── compression/            # 多级上下文压缩插件
-│   ├── observability/          # 可观测性上报 SDK
-│   ├── observability-server/   # 可观测性收集服务 + Dashboard
-│   ├── multi-agent/            # 多 Agent 编排图
-│   ├── skills/                 # Agent Skills 插件（SKILL.md 加载 + 渐进式披露）
-│   └── mcp/                    # MCP 插件（连接外部 MCP Server，远端工具包装为原生 Tool）
-├── examples/                    # 代码示例
-│   ├── deepseek.ts             # DeepSeek 模型接入示例
-│   ├── agent-memory.ts         # Agent 记忆插件示例
-│   ├── compression-demo.ts     # 上下文压缩示例
-│   └── mcp-client.ts           # MCP 客户端方向示例（连接外部 MCP Server）
-├── docs/                        # 设计文档
-├── web-docs/                    # 官方文档网站（Vite + React）
-└── image/                       # 资源图片
+┌──────────────────────────────────────────────────────────────┐
+│                           应用层                              │
+│      CLI  ·  Tauri 桌面端  ·  Web 应用  ·  自定义集成         │
+└──────────────────────────────────────────────────────────────┘
+                              │
+┌──────────────────────────────────────────────────────────────┐
+│                     插件生态 (Extensions)                     │
+│  memory  ·  compression  ·  skills  ·  mcp  ·  observability │
+│  multi-agent                                                 │
+└──────────────────────────────────────────────────────────────┘
+                              │
+┌──────────────────────────────────────────────────────────────┐
+│                 @aipack-ai/agent  框架内核                    │
+│                                                              │
+│   Runtime      请求 → 任务图 → 上下文转换 → 模型调用 → 工具执行 │
+│   Extension    Tapable 生命周期钩子 (beforeRun / done / failed)│
+│   Transformer  数组顺序链式上下文转换 (工具配对 / 截断 / 快照)  │
+│   Session      文件 / 内存双适配器持久化                       │
+│   AI 模型层    多提供商标准化目录 + 流式实现 (aipack/ai)        │
+└──────────────────────────────────────────────────────────────┘
+```
+
+一次 `runtime.run()` / `runtime.stream()` 的核心链路：
+
+```mermaid
+flowchart LR
+  A[Request] --> B[Task Graph]
+  B --> C[Transformer 链]
+  C --> D[Model Call]
+  D -->|tool_calls| E[Tool Execute]
+  E --> C
+  D -->|final| F[Response]
 ```
 
 ---
@@ -58,18 +104,19 @@ aipack/
 
 ### 环境要求
 
-- Node.js >= 18.0.0
-- pnpm >= 8（推荐）或 npm / yarn
+| 依赖    | 版本                       |
+| ------- | -------------------------- |
+| Node.js | `>= 18.0.0`（建议 18.19+） |
+| pnpm    | `>= 8`（推荐），亦可用 npm / yarn |
 
-### 安装（作为 CLI 使用）
+### 方式一：作为 CLI 使用
 
 ```bash
+# 全局安装
 npm install -g @aipack-ai/cli
 # 或
 pnpm add -g @aipack-ai/cli
 ```
-
-### 首次使用
 
 ```bash
 # 1. 交互模式（REPL，/help 查看斜杠命令）
@@ -80,13 +127,11 @@ aipack -p "用一句话介绍 aipack"
 cat src/index.ts | aipack -p "这段代码有什么问题？"
 ```
 
-### 安装（作为库使用）
+### 方式二：作为库使用
 
 ```bash
 pnpm add @aipack-ai/agent
 ```
-
-### 最小代码示例
 
 ```typescript
 import {
@@ -139,17 +184,28 @@ await runtime.close();
 DEEPSEEK_API_KEY=sk-xxx npx tsx your-script.ts
 ```
 
-更多示例见 [examples/](./examples) 目录。
+> 更多可运行示例见 [examples/](./examples) 目录。
 
 ---
 
-## 🧩 核心包介绍
+## 🧩 核心包
 
-### 1. `@aipack-ai/agent` — Agent 框架核心
+| 包                                                                    | 版本  | 定位         |
+| --------------------------------------------------------------------- | ----- | ------------ |
+| [`@aipack-ai/agent`](./packages/agent)                                | 1.0.2 | 框架内核     |
+| [`@aipack-ai/cli`](./packages/cli)                                    | 1.0.2 | 终端助手     |
+| [`@aipack-ai/memory`](./packages/memory)                              | 1.0.2 | 长期记忆插件 |
+| [`@aipack-ai/compression`](./packages/compression)                    | 1.0.2 | 上下文压缩   |
+| [`@aipack-ai/skills`](./packages/skills)                              | 1.0.2 | Skills 插件  |
+| [`@aipack-ai/multi-agent`](./packages/multi-agent)                    | 1.0.2 | 多 Agent 编排 |
+| [`@aipack-ai/mcp`](./packages/mcp)                                    | 0.1.0 | MCP 双向插件 |
+| [`@aipack-ai/observability`](./packages/observability)                | 1.0.2 | 可观测性 SDK |
+| [`@aipack-ai/observability-server`](./packages/observability-server)  | 1.0.2 | 收集服务     |
 
-**包路径**: [packages/agent](./packages/agent)
+<details>
+<summary><b>① <code>@aipack-ai/agent</code> — 框架内核</b></summary>
 
-Agent 框架内核，提供：
+框架内核，提供以下模块：
 
 | 模块            | 说明                                                                |
 | --------------- | ------------------------------------------------------------------- |
@@ -160,11 +216,18 @@ Agent 框架内核，提供：
 | **TaskGraph**   | 任务依赖图：工具调用链路追踪与分析                                  |
 | **AI 模型层**   | 多提供商标准化模型目录 + 流式实现（`aipack/ai` 子模块）             |
 
-### 2. `@aipack-ai/cli` — 命令行工具
+```bash
+pnpm add @aipack-ai/agent
+```
 
-**包路径**: [packages/cli](./packages/cli)
+详见 [packages/agent](./packages/agent)。
 
-基于 aipack 框架的终端 AI 编程助手，内置 read/write/edit/bash 工具与智能权限策略。
+</details>
+
+<details>
+<summary><b>② <code>@aipack-ai/cli</code> — 命令行工具</b></summary>
+
+基于 aipack 框架的终端 AI 编程助手，内置 read / write / edit / bash 工具与智能权限策略。
 
 ```bash
 aipack                          # 交互模式（REPL + 斜杠命令）
@@ -178,22 +241,28 @@ aipack --list-models            # 查看模型目录
 aipack approvals list           # 跨进程审批单管理
 ```
 
-### 3. `@aipack-ai/memory` — 持久化记忆插件
+详见 [packages/cli](./packages/cli)。
 
-**包路径**: [packages/memory](./packages/memory)
+</details>
+
+<details>
+<summary><b>③ <code>@aipack-ai/memory</code> — 持久化记忆插件</b></summary>
 
 跨会话长期记忆能力：**capture → compress → index → recall/inject → consolidate**
 
-- **自动捕获**：每轮对话结束提取要点存为记忆（零-LLM 要点压缩，可选 LLM 摘要）
-- **自动注入**：每轮对话开始检索相关记忆，sentinel 机制防跨轮累积
-- **BM25 检索**：零依赖关键词检索，支持 CJK（中日韩）bigram 分词
-- **混合检索**：BM25 + 向量双路独立召回融合
-- **记忆合并**：增量去重 / 合并相似记忆，修剪过期低置信度条目
-- **Agent 工具**：save / search / list / delete 4 个可调用工具
+- **自动捕获** — 每轮对话结束提取要点存为记忆（零-LLM 要点压缩，可选 LLM 摘要）
+- **自动注入** — 每轮对话开始检索相关记忆，sentinel 机制防跨轮累积
+- **BM25 检索** — 零依赖关键词检索，支持 CJK（中日韩）bigram 分词
+- **混合检索** — BM25 + 向量双路独立召回融合
+- **记忆合并** — 增量去重 / 合并相似记忆，修剪过期低置信度条目
+- **Agent 工具** — save / search / list / delete 4 个可调用工具
 
-### 4. `@aipack-ai/compression` — 上下文压缩插件
+详见 [packages/memory](./packages/memory)。
 
-**包路径**: [packages/compression](./packages/compression)
+</details>
+
+<details>
+<summary><b>④ <code>@aipack-ai/compression</code> — 上下文压缩插件</b></summary>
 
 五级上下文压缩策略，解决长对话 Token 爆炸问题：
 
@@ -205,31 +274,61 @@ aipack approvals list           # 跨进程审批单管理
 | L4   | 会话检查点   | 完整状态快照存档     |
 | L5   | 新会话交接   | 跨会话无缝上下文迁移 |
 
-### 5. `@aipack-ai/observability` + `@aipack-ai/observability-server` — 可观测性
+详见 [packages/compression](./packages/compression)。
 
-**包路径**: [packages/observability](./packages/observability) · [packages/observability-server](./packages/observability-server)
+</details>
 
-- **SDK 侧**：`appId + appSecret` 一行接入，失败本地缓存补报
-- **服务侧**：SQLite 落盘 + 内存聚合 + REST 查询 + Web Dashboard
-- **指标**：Token 用量、调用延迟、工具成功率、错误分布
-- **告警**：自定义规则 + 通知
-- **导出**：Prometheus `/metrics` 端点
+<details>
+<summary><b>⑤ <code>@aipack-ai/skills</code> — Agent Skills 插件</b></summary>
 
-### 6. `@aipack-ai/mcp` — MCP 插件（客户端 + 服务端）
+对齐 Agent Skills 开放规范（`SKILL.md` + YAML frontmatter），通过 Extension 机制零侵入接入 Runtime。
 
-**包路径**: [packages/mcp](./packages/mcp)
+- **开放规范格式** — `name` / `description` / `disable-model-invocation`，与生态 skill 互通
+- **渐进式披露** — system prompt 只注入 `<available_skills>` 目录，全文由模型经内置 `skill` 工具按需获取
+- **多源加载** — user（`~/.aipack/skills`）→ project（`<cwd>/.aipack/skills`）→ `extraPaths`，同名先注册者胜
+- **零开销向后兼容** — 无 skill 时不注册工具、不注入 prompt
 
-双向打通 MCP 生态，零运行时依赖：自研 JSON-RPC 2.0 编解码 + MCP 核心协议子集（initialize / tools/list / tools/call / ping / cancelled / list_changed / resources / prompts）。
+```typescript
+import { createRuntime } from '@aipack-ai/agent';
+import { createSkillsPlugin } from '@aipack-ai/skills';
 
-- **客户端方向（主）**：`createMcpPlugin({ servers })` 把外部 MCP Server 的工具包装为 aipack 原生 `Tool`，经 `beforeRun` 懒连接注册进 Runtime；一经包装即获得 runtime 全套能力（权限审批 / 超时 / 钩子 / telemetry / 并行调用）；支持 `ready()` 预热、`refresh()` 热刷新（完整移除已消失工具）、`mcp_status` 内部工具查看连接状态
-- **服务端方向（M3）**：`createMcpServerHost({ tools, resources?, prompts? })` 把 aipack 原生 `Tool[]`（+ 可选 resources / prompts）反向暴露为标准 MCP Server，供 Claude Desktop / Cursor 等外部 MCP 客户端调用；`multi-agent/MCPBridge` 已统一——新增 `asTools()` / `toMcpServerHost()` 与 `createMultiAgentMcpServerHost(graph)` 工厂，把 `AgentGraph` 经 `McpServerHost` + `runStdioServer` 拉起为 stdio MCP Server（补齐 MCPBridge 原缺失的传输层），legacy `listTools()`/`handleCall()` API 保持不变。`handleRequest` 为传输层无关入口，处理 initialize / tools/* / resources/* / prompts/* / ping，未知方法回 `-32601`，`ToolResult.details.error` 存在 → MCP `isError`
-- **传输层**：客户端 stdio（child_process + 行分隔 JSON-RPC）+ Streamable HTTP（会话管理 / 协议版本头 / SSE 响应）+ legacy SSE；服务端 `runStdioServer` 驱动 stdin/stdout 循环，`server/stdio-entry` 提供独立进程入口
-- **配置加载**：`.mcp.json`（项目级 `<cwd>/.mcp.json` 优先于用户级 `~/.aipack/mcp.json`），CLI 自动生效
-- **协议容错**：版本协商降级、content block 未知类型降级（agent thinking/toolCall → 文本摘要）、JSON-RPC 错误统一转 `isError`、env `${VAR}` 未定义即跳过该 server
-- **sampling 双向**：客户端方向 `McpClient.onSampling` 应答外部 server 的 `sampling/createMessage`（设置时宣告 `sampling` 能力，否则回 `-32601`）；服务端方向 `McpServerHost({ sampling: true })` + `host.sampleLLM()` 经 `stdio-runner` 出站通道向 client 请求 LLM 补全
-- **安全**：包装工具默认 `permissions: ['mcp:<server>']`，CLI 经 `permission: 'mcp'` 前缀规则归入 confirm 档；服务端 `authorize` 钩子可选（stdio 本地默认放行）
+const plugin = createSkillsPlugin({ load: { cwd: process.cwd() } });
+const runtime = createRuntime({ extensions: plugin.extensions });
+```
 
-**客户端方向**：
+详见 [packages/skills](./packages/skills)。
+
+</details>
+
+<details>
+<summary><b>⑥ <code>@aipack-ai/multi-agent</code> — 多 Agent 编排</b></summary>
+
+提供 `AgentGraph`、Pipeline、Router 等编排模式，用于构建多 Agent 协作系统。
+
+`MCPBridge` 已统一编排图与 MCP 生态的桥接：新增 `asTools()` / `toMcpServerHost()` 与 `createMultiAgentMcpServerHost(graph)` 工厂，可将 `AgentGraph` 经 `McpServerHost` + `runStdioServer` 拉起为 stdio MCP Server；legacy `listTools()` / `handleCall()` API 保持不变。
+
+详见 [packages/multi-agent](./packages/multi-agent)。
+
+</details>
+
+<details>
+<summary><b>⑦ <code>@aipack-ai/mcp</code> — MCP 插件（客户端 + 服务端）</b></summary>
+
+双向打通 MCP 生态，**零运行时依赖**：自研 JSON-RPC 2.0 编解码 + MCP 核心协议子集（initialize / tools / ping / cancelled / list_changed / resources / prompts）。
+
+**客户端方向（主）** — `createMcpPlugin({ servers })` 把外部 MCP Server 工具包装为原生 `Tool`，经 `beforeRun` 懒连接注册进 Runtime；一经包装即获得全套能力（权限审批 / 超时 / 钩子 / telemetry / 并行调用）。支持 `ready()` 预热、`refresh()` 热刷新（完整移除已消失工具）、`mcp_status` 内省工具。
+
+**服务端方向** — `createMcpServerHost({ tools, resources?, prompts? })` 把 aipack 原生 `Tool[]` 反向暴露为标准 MCP Server，供 Claude Desktop / Cursor 等调用。
+
+**传输层** — 客户端：stdio（child_process + 行分隔 JSON-RPC）· Streamable HTTP（会话管理 / 协议版本头 / SSE）· legacy SSE；服务端：`runStdioServer` + 独立进程入口。
+
+**协议容错** — 版本协商降级、未知 content block 降级为文本、JSON-RPC 错误统一转 `isError`、env `${VAR}` 未定义即跳过该 server。
+
+**sampling 双向** — 客户端 `McpClient.onSampling` 应答外部 server 请求；服务端 `host.sampleLLM()` 经出站通道反向请求补全。
+
+**安全** — 包装工具默认 `permissions: ['mcp:<server>']`，CLI 经 `permission: 'mcp'` 规则归入 confirm 档。
+
+客户端接入：
 
 ```typescript
 import { createRuntime } from '@aipack-ai/agent';
@@ -244,19 +343,22 @@ const runtime = createRuntime({ extensions: [...mcp.extensions] });
 await mcp.ready(); // 可选预热
 ```
 
-**服务端方向**（Claude Desktop 直接拉起）：
-
-```bash
-# 构建产物入口（工具来源：AIPACK_MCP_TOOLS 指向 ESM 模块的 tools 导出；未设置则用内置 demo 工具）
-node packages/mcp/dist/server/stdio-entry.js
-```
+服务端接入（Claude Desktop 直接拉起）：
 
 ```jsonc
 // Claude Desktop 配置
-{ "mcpServers": { "aipack": { "command": "node", "args": ["/abs/path/to/packages/mcp/dist/server/stdio-entry.js"], "env": { "AIPACK_MCP_TOOLS": "/abs/path/to/my-tools.mjs" } } } }
+{
+  "mcpServers": {
+    "aipack": {
+      "command": "node",
+      "args": ["/abs/path/to/packages/mcp/dist/server/stdio-entry.js"],
+      "env": { "AIPACK_MCP_TOOLS": "/abs/path/to/my-tools.mjs" }
+    }
+  }
+}
 ```
 
-程序化使用（自定义工具 + 可选 resources / prompts）：
+程序化自定义：
 
 ```typescript
 import { createMcpServerHost, runStdioServer } from '@aipack-ai/mcp';
@@ -267,23 +369,70 @@ const host = createMcpServerHost({ name: 'my-agent', version: '0.1.0', tools });
 await runStdioServer(host);
 ```
 
+配置加载：`.mcp.json`（项目级 `<cwd>/.mcp.json` 优先于用户级 `~/.aipack/mcp.json`），CLI 自动生效。
+
+详见 [packages/mcp](./packages/mcp)。
+
+</details>
+
+<details>
+<summary><b>⑧ <code>@aipack-ai/observability</code> + <code>@aipack-ai/observability-server</code> — 可观测性</b></summary>
+
+| 侧         | 能力                                                             |
+| ---------- | ---------------------------------------------------------------- |
+| **SDK**    | `appId + appSecret` 一行接入，失败本地缓存补报                    |
+| **Server** | SQLite 落盘 + 内存聚合 + REST 查询 + Web Dashboard                |
+| **指标**   | Token 用量、调用延迟、工具成功率、错误分布                        |
+| **告警**   | 自定义规则 + 通知                                                |
+| **导出**   | Prometheus `/metrics` 端点                                       |
+
+详见 [packages/observability-server](./packages/observability-server)。
+
+</details>
+
 ---
 
 ## 💡 示例应用
 
-示例应用已迁移至独立仓库 **[llm-awesome-apps](https://github.com/luoguoxiong/llm-awesome-apps)**——基于 aipack 构建的 LLM 示例应用合集，通过 npm 包 `@aipack-ai/agent` 等接入框架：
+示例应用已迁移至独立仓库 **[llm-awesome-apps](https://github.com/luoguoxiong/llm-awesome-apps)** —— 基于 aipack 构建的 LLM 示例应用合集，通过 npm 包 `@aipack-ai/agent` 等接入框架：
 
-| 应用 | 说明 | 亮点 |
-| ---- | ---- | ---- |
-| ai_blog_to_podcast_agent | AI 博客转播客 | 网页抓取 → 内容改写 → TTS 语音合成 |
-| ai_office_agent | AI 办公助手 | Tauri 桌面端 + Office 文档操作 + 文件工具 |
-| ai_rag_database_routing | RAG 数据库路由 | 向量数据库 + 智能路由搜索 |
-| ai_teaching_agent_team | 教学 Agent 团队 | 多 Agent 协作教学 + 前端交互面板 |
-| ai_travel_agent | AI 旅行助手 | 行程规划 + 联网搜索 + 流式输出 |
+| 应用                          | 说明          | 亮点                                        |
+| ----------------------------- | ------------- | ------------------------------------------- |
+| `ai_blog_to_podcast_agent`    | AI 博客转播客 | 网页抓取 → 内容改写 → TTS 语音合成          |
+| `ai_office_agent`             | AI 办公助手   | Tauri 桌面端 + Office 文档操作 + 文件工具   |
+| `ai_rag_database_routing`     | RAG 数据库路由 | 向量数据库 + 智能路由搜索                   |
+| `ai_teaching_agent_team`      | 教学 Agent 团队 | 多 Agent 协作教学 + 前端交互面板            |
+| `ai_travel_agent`             | AI 旅行助手   | 行程规划 + 联网搜索 + 流式输出              |
 
 ---
 
-## 🔧 开发指南
+## 📦 项目结构
+
+```
+aipack/
+├── packages/                    # 核心包（详见「核心包」章节）
+│   ├── agent/                  # Agent 框架核心（Runtime + Extension + Transformer）
+│   ├── cli/                    # 命令行工具（aipack 命令）
+│   ├── memory/                 # 持久化记忆插件（BM25 + 向量检索）
+│   ├── compression/            # 多级上下文压缩插件
+│   ├── skills/                 # Agent Skills 插件（SKILL.md 加载 + 渐进式披露）
+│   ├── multi-agent/            # 多 Agent 编排图
+│   ├── mcp/                    # MCP 插件（客户端 + 服务端）
+│   ├── observability/          # 可观测性上报 SDK
+│   └── observability-server/   # 可观测性收集服务 + Dashboard
+├── examples/                    # 可运行代码示例
+│   ├── deepseek.ts             # DeepSeek 模型接入示例
+│   ├── agent-memory.ts         # Agent 记忆插件示例
+│   ├── compression-demo.ts     # 上下文压缩示例
+│   ├── mcp-client.ts           # MCP 客户端方向示例（连接外部 MCP Server）
+│   └── mcp-server.ts           # MCP 服务端方向示例（把工具暴露为 MCP Server）
+├── web-docs/                    # 官方文档网站（Vite + React）
+└── image/                       # 资源图片
+```
+
+---
+
+## 🛠️ 开发指南
 
 ### 克隆 & 安装依赖
 
@@ -313,15 +462,18 @@ pnpm example:compression
 
 # MCP 客户端示例（连接本地 echo MCP server，离线可运行）
 pnpm example:mcp
+
+# 以 stdio MCP Server 模式拉起 aipack 工具（离线可运行）
+pnpm example:mcp-server
 ```
 
-### 测试
+### 类型检查 & 测试
 
 ```bash
-# 类型检查
+# 全量 TypeScript 类型检查（noEmit）
 pnpm lint
 
-# 各包测试（具体见各包 scripts.test）
+# 各包测试
 pnpm --filter @aipack-ai/agent test
 pnpm --filter @aipack-ai/memory test
 pnpm --filter @aipack-ai/mcp test
@@ -330,11 +482,9 @@ pnpm --filter @aipack-ai/mcp test
 ### 文档网站
 
 ```bash
-# 开发模式
-pnpm docs:dev
-
-# 构建
-pnpm docs:build
+pnpm docs:dev      # 开发模式
+pnpm docs:build    # 构建
+pnpm docs:preview  # 本地预览构建产物
 ```
 
 ### 版本发布
@@ -342,14 +492,9 @@ pnpm docs:build
 项目使用 [Changesets](https://github.com/changesets/changesets) 管理版本：
 
 ```bash
-# 1. 添加变更记录
-pnpm changeset
-
-# 2. 更新版本号 & CHANGELOG
-pnpm version-packages
-
-# 3. 构建 & 发布
-pnpm release
+pnpm changeset         # 1. 添加变更记录
+pnpm version-packages  # 2. 更新版本号 & CHANGELOG
+pnpm release           # 3. 构建 & 发布
 ```
 
 ---
@@ -358,21 +503,26 @@ pnpm release
 
 根目录 `package.json` 脚本：
 
-| 命令                        | 说明                               |
-| --------------------------- | ---------------------------------- |
-| `pnpm build`                | 构建所有 packages 下的包           |
-| `pnpm build:agent`          | 单独构建 agent 包                  |
-| `pnpm example:deepseek`     | 运行 DeepSeek 示例                 |
-| `pnpm example:agent-memory` | 运行 Agent 记忆示例                |
-| `pnpm example:compression`  | 运行上下文压缩示例                 |
+| 命令                        | 说明                                                 |
+| --------------------------- | ---------------------------------------------------- |
+| `pnpm build`                | 构建所有 packages 下的包                             |
+| `pnpm build:agent`          | 单独构建 agent 包                                    |
+| `pnpm build:cli`            | 单独构建 cli 包                                      |
+| `pnpm cli`                  | 以构建产物运行 CLI                                   |
+| `pnpm cli:dev`              | 以 tsx 直接运行 CLI 源码                             |
+| `pnpm example:deepseek`     | 运行 DeepSeek 示例                                   |
+| `pnpm example:agent-memory` | 运行 Agent 记忆示例                                  |
+| `pnpm example:compression`  | 运行上下文压缩示例                                   |
 | `pnpm example:mcp`          | 运行 MCP 客户端示例（本地 echo server，离线可运行） |
-| `pnpm example:mcp-server`   | 以 stdio MCP Server 模式拉起 aipack 工具（离线可运行） |
-| `pnpm lint`                 | 全量 TypeScript 类型检查（noEmit） |
-| `pnpm docs:dev`             | 启动文档网站开发服务器             |
-| `pnpm docs:build`           | 构建文档网站                       |
-| `pnpm changeset`            | 添加 changeset 变更记录            |
-| `pnpm version-packages`     | 根据 changeset 更新版本号          |
-| `pnpm release`              | 构建 + 发布所有包到 npm            |
+| `pnpm example:mcp-server`   | 以 stdio MCP Server 模式拉起 aipack 工具             |
+| `pnpm lint`                 | 全量 TypeScript 类型检查（noEmit）                   |
+| `pnpm docs:dev`             | 启动文档网站开发服务器                               |
+| `pnpm docs:build`           | 构建文档网站                                         |
+| `pnpm docs:preview`         | 预览文档网站构建产物                                 |
+| `pnpm docs:deploy`          | 部署文档网站（生产）                                 |
+| `pnpm changeset`            | 添加 changeset 变更记录                              |
+| `pnpm version-packages`     | 根据 changeset 更新版本号                            |
+| `pnpm release`              | 构建 + 发布所有包到 npm                              |
 
 ---
 
@@ -380,14 +530,14 @@ pnpm release
 
 API Key 支持以下方式（优先级从高到低）：
 
-1. **Shell 环境变量**：
+1. **Shell 环境变量**
 
    ```bash
    export DEEPSEEK_API_KEY="sk-xxx"
    export OPENAI_API_KEY="sk-xxx"
    ```
 
-2. **`.env` 文件**（项目级 `<cwd>/.env` 优先级 > 用户级 `~/.aipack/.env`）：
+2. **`.env` 文件**（项目级 `<cwd>/.env` 优先于用户级 `~/.aipack/.env`）
 
    ```bash
    DEEPSEEK_API_KEY=sk-xxx
@@ -395,23 +545,29 @@ API Key 支持以下方式（优先级从高到低）：
    ANTHROPIC_API_KEY=sk-xxx
    ```
 
-3. **环境变量探测**：启动时自动检测已配置 Key 的提供商（`aipack --list-models` 查看状态）。
+3. **环境变量探测** — 启动时自动检测已配置 Key 的提供商（`aipack --list-models` 查看状态）
 
-变量名规则：`<PROVIDER_ID_UPPERCASE>_API_KEY`，如 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`GROQ_API_KEY` 等。
+**变量名规则**：`<PROVIDER_ID_UPPERCASE>_API_KEY`，如 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`GROQ_API_KEY`。
 
-支持的提供商：`openai` · `deepseek` · `anthropic` · `groq` · `google` · `openrouter` · `mistral` · `xai` · `cerebras` · `together` · `fireworks` · `nvidia` · `moonshot`
+**支持的提供商**：
+
+`openai` · `deepseek` · `anthropic` · `groq` · `google` · `openrouter` · `mistral` · `xai` · `cerebras` · `together` · `fireworks` · `nvidia` · `moonshot`
 
 ---
 
-## 🤝 相关项目
+## 🤝 相关资源
 
-- [Agent 框架 README](./packages/agent/README.md) — 核心 Runtime / Extension / Transformer 详细 API
-- [CLI README](./packages/cli/README.md) — `aipack` 命令完整参考与配置说明
-- [记忆插件 README](./packages/memory/README.md) — 持久化记忆检索原理与自定义扩展
-- [可观测性服务 README](./packages/observability-server/README.md) — Server 部署与 Dashboard 使用
+| 文档                                                                  | 说明                                        |
+| --------------------------------------------------------------------- | ------------------------------------------- |
+| [Agent 框架](./packages/agent/README.md)                              | 核心 Runtime / Extension / Transformer 详细 API |
+| [CLI](./packages/cli/README.md)                                       | `aipack` 命令完整参考与配置说明             |
+| [记忆插件](./packages/memory/README.md)                               | 持久化记忆检索原理与自定义扩展              |
+| [Skills 插件](./packages/skills/README.md)                            | `SKILL.md` 规范与渐进式披露机制             |
+| [MCP 插件](./packages/mcp/README.md)                                  | 客户端 / 服务端双向接入与传输层细节         |
+| [可观测性服务](./packages/observability-server/README.md)             | Server 部署与 Dashboard 使用                |
 
 ---
 
 ## 📄 License
 
-MIT © [luoguoxiong](https://github.com/luoguoxiong)
+[MIT](LICENSE) © [luoguoxiong](https://github.com/luoguoxiong)

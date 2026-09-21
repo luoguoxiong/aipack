@@ -526,6 +526,23 @@ export default function HomePage() {
                         </Button>
                       </Card>
                     </Col>
+                    <Col xs={24} md={8}>
+                      <Card
+                        title={
+                          <span>
+                            🔌 mcp <Tag color="volcano" style={{ marginLeft: 8 }}>MCP</Tag>
+                          </span>
+                        }
+                        bordered
+                      >
+                        <p style={{ color: '#475569', lineHeight: 1.8, fontSize: 14 }}>
+                          双向打通 MCP 生态：连接外部 MCP Server 包装远端工具，或把 aipack 工具反向暴露为 MCP Server。
+                        </p>
+                        <Button type="link" icon={<ArrowRightOutlined />} onClick={() => navigate('/mcp')}>
+                          查看
+                        </Button>
+                      </Card>
+                    </Col>
                   </Row>
                 ),
               },

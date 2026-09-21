@@ -7,7 +7,12 @@
  *
  * 零运行时依赖：自研 JSON-RPC 2.0 编解码 + MCP 核心协议子集（initialize /
  * tools/list / tools/call / ping / cancelled / list_changed）。
- * 服务端方向、http/sse 传输、resources/prompts/sampling 留待 M2/M3。
+ * 服务端方向（McpServerHost + stdio 进程入口）与 http/sse 传输、
+ * resources/prompts/sampling 均已支持，见 README。
+ *
+ * 双向能力：
+ *   · 客户端方向（主）：连接外部 MCP Server，包装远端工具为原生 Tool
+ *   · 服务端方向：把 aipack 工具反向暴露为标准 MCP Server（Claude Desktop / Cursor）
  *
  * 快速接入：
  *   import { createMcpPlugin } from '@aipack-ai/mcp';

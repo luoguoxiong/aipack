@@ -5,6 +5,7 @@ import {
   AimOutlined,
   SettingOutlined,
   RocketOutlined,
+  DeploymentUnitOutlined,
 } from '@ant-design/icons';
 import CodeBlock from '../components/CodeBlock';
 import {
@@ -12,6 +13,8 @@ import {
   exMemoryCode,
   exCompressionCode,
   exCliConfigCode,
+  exMcpClientCode,
+  exMcpServerCode,
 } from '../data/examplesCode';
 
 export default function ExamplesPage() {
@@ -21,7 +24,7 @@ export default function ExamplesPage() {
         <CodeOutlined style={{ color: '#6366f1' }} /> 示例代码
       </h1>
       <p className="section-subtitle">
-        精选 4 个最常用的场景示例：最小应用、记忆集成、上下文压缩、CLI 配置文件。
+        精选最常用的场景示例：最小应用、记忆集成、上下文压缩、CLI 配置文件、MCP 双向接入。
         直接复制即可运行（仅需配置 <code>{'<PROVIDER>_API_KEY'}</code> 环境变量）。
       </p>
 
@@ -34,6 +37,7 @@ export default function ExamplesPage() {
             除 <code>@aipack-ai/agent</code> 核心外：
             memory 示例需 <code>pnpm add @aipack-ai/memory</code>，
             compression 示例需 <code>pnpm add @aipack-ai/compression</code>，
+            MCP 示例需 <code>pnpm add @aipack-ai/mcp</code>，
             CLI 需 <code>pnpm add -g @aipack-ai/cli</code>。
           </span>
         }
@@ -96,6 +100,36 @@ export default function ExamplesPage() {
           支持跨终端 <code>aipack approvals</code> 结算）。
         </p>
         <CodeBlock code={exCliConfigCode} />
+      </div>
+
+      <Divider />
+
+      {/* 5. MCP 客户端 */}
+      <div id="mcp" style={{ scrollMarginTop: 100 }}>
+        <h2 className="subsection-title">
+          <DeploymentUnitOutlined /> 连接外部 MCP Server（客户端方向）
+        </h2>
+        <p style={{ lineHeight: 1.8, color: '#475569' }}>
+          <code>createMcpPlugin</code> 连接外部 MCP Server，把远端工具包装为原生 <code>Tool</code>。
+          工具在 <code>beforeRun</code> 阶段懒连接注册，一经包装即获得 runtime 全套能力
+          （权限审批 / 超时 / 钩子 / telemetry / 并行调用），模型调用与本地工具完全一致。
+        </p>
+        <CodeBlock code={exMcpClientCode} />
+      </div>
+
+      <Divider />
+
+      {/* 6. MCP 服务端 */}
+      <div id="mcp-server" style={{ scrollMarginTop: 100 }}>
+        <h2 className="subsection-title">
+          <DeploymentUnitOutlined /> 把 aipack 工具暴露为 MCP Server（服务端方向）
+        </h2>
+        <p style={{ lineHeight: 1.8, color: '#475569' }}>
+          <code>createMcpServerHost</code> + <code>runStdioServer</code> 把 aipack 原生
+          <code> Tool[]</code>（+ 可选 resources / prompts）反向暴露为标准 MCP Server，
+          供 Claude Desktop、Cursor 等外部 MCP 客户端经 stdio 调用。零运行时依赖。
+        </p>
+        <CodeBlock code={exMcpServerCode} />
       </div>
     </div>
   );

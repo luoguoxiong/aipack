@@ -48,12 +48,55 @@ await mcp.ready(); // 可选预热；不调用则首次 run 时 beforeRun 懒连
 | 字段 | 说明 |
 | --- | --- |
 | `name` | 唯一标识；默认同时作为工具名前缀 |
-| `transport` | `{ type: 'stdio', command, args?, env?, cwd? }`（http/sse M2） |
+| `transport` | 传输层配置，见下方「传输层」：`stdio` / `http` / `sse` |
 | `enabled?` | 默认 true；false 时跳过连接 |
 | `toolPrefix?` | 默认 = name；传空串禁用前缀 |
 | `toolFilter?` | `string[]` 或 `(rawName) => boolean` 白名单 |
 | `timeoutMs?` | 该 server 单次调用超时 |
 | `permissions?` | 覆盖包装工具权限标记 |
+
+## 传输层
+
+```typescript
+// ① stdio —— 本地子进程（spawn + 行分隔 JSON-RPC）
+{ type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], env: { GITHUB_TOKEN: '${GITHUB_TOKEN}' }, cwd: '.' }
+
+// ② Streamable HTTP —— 远程 server（2025-06-18）
+//    会话头 Mcp-Session-Id · 后续请求带 MCP-Protocol-Version 头
+//    POST 响应可为 application/json / text/event-stream(SSE) / 202 Accepted
+{ type: 'http', url: 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer ${MCP_TOKEN}' } }
+
+// ③ legacy SSE —— 兼容旧 server（GET 流首事件 endpoint 给出 POST URL）
+{ type: 'sse', url: 'https://legacy.example.com/sse', headers: {} }
+```
+
+`.mcp.json` 中 stdio 条目省略 `type` 即可（有 `command` 即识别）；http/sse 条目需 `type` + `url`。
+
+## 高级：直接驱动单个 MCP Server
+
+`createMcpPlugin` 覆盖了绝大多数场景；需要精细控制（单 server、自定义 transport、sampling 应答）时可直接使用 `McpClient`：
+
+```typescript
+import { McpClient, createTransportFromConfig } from '@aipack-ai/mcp';
+
+const client = new McpClient({
+  transport: createTransportFromConfig({ type: 'stdio', command: 'node', args: ['server.mjs'] }),
+  clientInfo: { name: 'aipack-mcp', version: '0.1.0' },
+  // 应答外部 server 发起的 sampling/createMessage；设置后在 initialize 中宣告 sampling 能力
+  onSampling: async ({ messages, maxTokens }) => ({
+    role: 'assistant',
+    content: { type: 'text', text: await myModel.complete(messages, { maxTokens }) },
+    model: 'deepseek-chat',
+  }),
+});
+
+await client.connect();
+const tools = await client.listTools();
+const result = await client.callTool('echo', { text: 'hi' }, { timeoutMs: 10_000 });
+await client.dispose();
+```
+
+`McpClient` API：`connect()` / `listTools()` / `callTool(name, args, opts?)` / `setOnListChanged(cb)` / `setOnSampling(cb)` / `isInitialized()` / `isDisposed()` / `dispose()`。
 
 ## 内部工具
 
@@ -141,7 +184,7 @@ await runStdioServer(host);
 
 工具来源（按优先级）：
 1. 环境变量 `AIPACK_MCP_TOOLS` 指向一个 ESM 模块，其具名 `tools` 或默认导出为 `Tool[]`；
-2. 未设置时回退内置演示工具（`echo` / `add`），开箱即用。
+2. 未设置时回退内置演示工具（`echo` / `add` / `ask_llm`），开箱即用（`ask_llm` 演示 sampling 反向调用）。
 
 Claude Desktop 配置示例：
 
