@@ -5,7 +5,9 @@
     { "repo": "luoguoxiong/aipack" }
   ],
   "commit": false,
-  "fixed": [],
+  "fixed": [
+    ["@aipack-ai/*"]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "master",

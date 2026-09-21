@@ -36,7 +36,7 @@ export default function Navbar() {
             fontWeight: 600,
           }}
         >
-          v1.0.2
+          v{__APP_VERSION__}
         </span>
       </div>
       <div className="navbar-links">
