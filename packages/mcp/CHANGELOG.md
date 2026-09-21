@@ -1,0 +1,16 @@
+# @aipack-ai/mcp
+
+## 2.0.0
+
+### Minor Changes
+
+- [#16](https://github.com/luoguoxiong/aipack/pull/16) [`6dff7b2`](https://github.com/luoguoxiong/aipack/commit/6dff7b22203d065bcdb9f3ce7d19fb947dd961f9) Thanks [@luoguoxiong](https://github.com/luoguoxiong)! - 新增 `@aipack-ai/mcp` 包（M1 客户端闭环）：连接外部 MCP Server（stdio 传输），把远端工具包装为 aipack 原生 `Tool`。自研 JSON-RPC 2.0 编解码 + MCP 核心协议子集（initialize / tools/list / tools/call / ping / notifications/cancelled / tools/list_changed）。提供 `createMcpPlugin` 插件工厂（beforeRun 懒连接 + ready 预热 + refresh 热刷新 + mcp_status 内部工具），零运行时依赖。含纯函数单测 + stdio 集成测试（自举 echo server 夹具）+ `examples/mcp-client.ts`。
+
+- [#16](https://github.com/luoguoxiong/aipack/pull/16) [`6dff7b2`](https://github.com/luoguoxiong/aipack/commit/6dff7b22203d065bcdb9f3ce7d19fb947dd961f9) Thanks [@luoguoxiong](https://github.com/luoguoxiong)! - M2：MCP 生态接入。`@aipack-ai/mcp` 新增 Streamable HTTP + legacy SSE 传输（会话管理 / `MCP-Protocol-Version` 头 / SSE 响应解析 / GET 长连接收 server 主动消息）、`.mcp.json` 加载器（项目级优先于用户级，stdio/http/sse 归一化）、热刷新完整移除已消失工具。`@aipack-ai/agent` 新增 `Runtime.unregisterTool(name)` 供插件热刷新。`@aipack-ai/cli` 接线：自动加载 `.mcp.json` → MCP 插件 + `permission: 'mcp'` → confirm/pending 档 + `/mcp` 与 `/mcp refresh` 斜杠命令。
+
+### Patch Changes
+
+- [#16](https://github.com/luoguoxiong/aipack/pull/16) [`7dae9a8`](https://github.com/luoguoxiong/aipack/commit/7dae9a8d48468120d0e0989f4db7454daac6ddc2) Thanks [@luoguoxiong](https://github.com/luoguoxiong)! - M3：MCP 服务端泛化 + sampling 双向。`@aipack-ai/mcp` `McpServerHost` 把 aipack 原生 `Tool[]`（+ 可选 resources / prompts）反向暴露为标准 MCP Server，处理 initialize / tools/_ / resources/_ / prompts/\* / ping，未知方法回 `-32601`，`ToolResult.details.error` → MCP `isError`；`runStdioServer` 驱动 stdin/stdout 行分隔 JSON-RPC 循环并关联出站请求/响应，`server/stdio-entry` 提供独立进程入口（`AIPACK_MCP_TOOLS` 加载外部工具模块，回退内置 demo 工具 echo/add/ask_llm），Claude Desktop 可直接拉起。sampling：客户端方向 `McpClient` 经 `onSampling` 应答外部 server 发起的 `sampling/createMessage`（设置时宣告 `sampling` 能力，否则回 `-32601`）；服务端方向 `McpServerHost({ sampling: true })` 宣告能力并经 `host.sampleLLM()` 经出站通道向 client 请求 LLM 补全（`stdio-runner` 自动注入通道），新增 `createSamplingRequest` / `parseCreateMessageParams` / `buildCreateMessageResult` / `parseCreateMessageResult` 协议纯函数与类型。`@aipack-ai/multi-agent` `MCPBridge` 统一：新增 `asTools()` / `toMcpServerHost()` 与 `createMultiAgentMcpServerHost(graph)` 工厂，把 `AgentGraph` 经 `McpServerHost` + `runStdioServer` 拉起为 stdio MCP Server（补齐 MCPBridge 原缺失的传输层），run/status 核心逻辑在 legacy `handleCall()` 与统一路径间共享；legacy `listTools()`/`handleCall()` API 保持不变。新增 `@aipack-ai/mcp` 为 multi-agent workspace 依赖。
+
+- Updated dependencies [[`6dff7b2`](https://github.com/luoguoxiong/aipack/commit/6dff7b22203d065bcdb9f3ce7d19fb947dd961f9)]:
+  - @aipack-ai/agent@1.1.0
