@@ -7,7 +7,10 @@
  *   3. 注册工具，观察 aipack 的 tool_call / tool_result 循环
  *   4. 流式输出最终回复
  *
- * 运行: DEEPSEEK_API_KEY=sk-xxx npx tsx examples/deepseek.ts
+ * 模型配置统一来自 examples/model.config.ts（本地私有，不提交）：
+ *   cp examples/model.config.example.ts examples/model.config.ts
+ *
+ * 运行: npx tsx examples/deepseek.ts
  * 换用推理模型: DEEPSEEK_MODEL=deepseek-reasoner npx tsx examples/deepseek.ts
  */
 import {
@@ -16,33 +19,19 @@ import {
   LoggingExtension,
   createFileSessionStorage,
   createDefaultTransformers,
-  adaptAiModel,
-  createStreamFnFromAi,
-  getBuiltinModel,
-  hasProviderConfigured,
 } from '@aipack-ai/agent';
+import { createLlm, formatModelConfig } from './model.config';
 
 async function main() {
-  // ── 1. 从 aipack/ai 内置目录获取 DeepSeek 模型 ──────────────
-  const modelId = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
-  const aiModel = getBuiltinModel('deepseek', modelId);
-  if (!aiModel) {
-    console.error(`找不到内置模型 deepseek/${modelId}`);
-    console.error('可选: deepseek-chat / deepseek-reasoner / deepseek-v4-flash');
-    process.exit(1);
-  }
+  // ── 1. 从统一配置装配模型 + streamFn ──────────────────────────
+  const { model, streamFn } = createLlm();
+  console.log(`✅ 模型: ${formatModelConfig()}\n`);
 
-  // ── 2. 启动前检查 API Key ───────────────────────────────────────
-  if (!hasProviderConfigured('deepseek')) {
-    console.warn('⚠️  未检测到 DEEPSEEK_API_KEY，真实调用会失败。');
-    console.warn('   设置环境变量后重试，例如: DEEPSEEK_API_KEY=sk-xxx');
-  }
-
-  // ── 3. 零手写 streamFn 创建 Runtime ────────────────────────────
+  // ── 2. 零手写 streamFn 创建 Runtime ────────────────────────────
   const runtime = await createRuntime({
     // 模型与流式函数（必需）
-    model: adaptAiModel(aiModel),             // DeepSeek Model -> 框架 Model
-    streamFn: createStreamFnFromAi(aiModel),  // 自动生成 streamFn（按 model.api 分派，API Key 读 DEEPSEEK_API_KEY 环境变量）
+    model,
+    streamFn,
     // 基础配置
     systemPrompt: '你是一个简洁的 AI 助手。',
     config: {                                 // 运行时配置，可通过 runtime.config 读取
@@ -76,7 +65,7 @@ async function main() {
     extensions: [new LoggingExtension(true)],
   });
 
-  // ── 4. 动态注册工具（可选，等价于上面的 tools 选项） ──────────
+  // ── 3. 动态注册工具（可选，等价于上面的 tools 选项） ──────────
   runtime.registerTool({
     name: 'get_time',
     description: '查询当前时间',
@@ -93,7 +82,7 @@ async function main() {
     },
   });
 
-  // ── 5. 流式运行 ─────────────────────────────────────────────────
+  // ── 4. 流式运行 ─────────────────────────────────────────────────
   const request = createRequest(
     '北京和上海的天气怎么样？分别说一下。',
     { sessionKey: 'deepseek-demo' },

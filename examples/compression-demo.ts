@@ -8,12 +8,15 @@
  *   L4: SessionCheckpoint     会话检查点（持久化 + 激进缩减）
  *   L5: NewSessionHandoff    新会话交接（保底重置）
  *
+ * 模型配置统一来自 examples/model.config.ts（本地私有，不提交）：
+ *   cp examples/model.config.example.ts examples/model.config.ts
+ *
  * 运行:
- *   DEEPSEEK_API_KEY=sk-xxx npx tsx examples/compression-demo.ts
+ *   npx tsx examples/compression-demo.ts
  * 换用推理模型:
- *   DEEPSEEK_API_KEY=sk-xxx DEEPSEEK_MODEL=deepseek-reasoner npx tsx examples/compression-demo.ts
+ *   DEEPSEEK_MODEL=deepseek-reasoner npx tsx examples/compression-demo.ts
  * 自定义模拟窗口大小（用于快速触发压缩，不传则用模型真实 contextWindow）:
- *   DEEPSEEK_API_KEY=sk-xxx DEMO_CONTEXT_WINDOW=4000 npx tsx examples/compression-demo.ts
+ *   DEMO_CONTEXT_WINDOW=4000 npx tsx examples/compression-demo.ts
  */
 
 import {
@@ -22,36 +25,17 @@ import {
   extractText,
   createMemorySessionStorage,
   createDefaultTransformers,
-  adaptAiModel,
-  createStreamFnFromAi,
-  getBuiltinModel,
-  hasProviderConfigured,
 } from '@aipack-ai/agent';
 import type { Model, ContentBlock, Tool } from '@aipack-ai/agent';
 import {
   createCompressionTransformer,
   loadCompressionConfig,
 } from '@aipack-ai/compression';
+import { createLlm, formatModelConfig } from './model.config';
 
 async function main() {
-  // ── 1. 从 aipack/ai 内置目录获取 DeepSeek 模型 ──────────────
-  const modelId = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
-  const aiModel = getBuiltinModel('deepseek', modelId);
-  if (!aiModel) {
-    console.error(`找不到内置模型 deepseek/${modelId}`);
-    console.error('可选: deepseek-chat / deepseek-reasoner / deepseek-v4-flash');
-    process.exit(1);
-  }
-
-  // ── 2. 启动前检查 API Key ───────────────────────────────────────
-  if (!hasProviderConfigured('deepseek')) {
-    console.error('⚠️  未检测到 DEEPSEEK_API_KEY，无法调用真实模型。');
-    console.error('   设置环境变量后重试: DEEPSEEK_API_KEY=sk-xxx npx tsx examples/compression-demo.ts');
-    process.exit(1);
-  }
-
-  // ── 3. 适配为框架 Model ─────────────────────────────────────────
-  const realModel = adaptAiModel(aiModel);
+  // ── 1. 从统一配置装配模型 + streamFn ──────────────────────────
+  const { model: realModel, streamFn } = createLlm();
 
   // 演示用：允许通过环境变量覆盖 contextWindow，用小窗口快速触发压缩
   // 不设置 DEMO_CONTEXT_WINDOW 则使用模型真实 contextWindow（如 deepseek-chat 的 64K）
@@ -65,11 +49,12 @@ async function main() {
   console.log('║   aipack-compression + DeepSeek 多级压缩演示    ║');
   console.log('╚════════════════════════════════════════════════════╝');
   console.log(`  模型: ${model.name} (${model.id})`);
+  console.log(`  配置: ${formatModelConfig()}`);
   console.log(`  contextWindow: ${model.contextWindow} tokens${demoContextWindow !== realModel.contextWindow ? ` (覆盖自 ${realModel.contextWindow})` : ''}`);
   console.log(`  工具: read_file（返回 30 行内容，约 250 tokens/次）`);
   console.log(`  预期: 多轮对话后逐步触发 L1 → L2 → L3+ 压缩\n`);
 
-  // ── 4. 加载压缩配置 ────────────────────────────────────────────
+  // ── 2. 加载压缩配置 ────────────────────────────────────────────
   const compressionConfig = loadCompressionConfig({
     l1: { threshold: 0.50, targetRatio: 0.40, toolResultMaxLines: 10, toolResultHeadLines: 3, toolResultTailLines: 3 },
     l2: { threshold: 0.65, targetRatio: 0.50, protectedRecentCount: 4, minResourcesToCompress: 3 },
@@ -80,9 +65,8 @@ async function main() {
 
   console.log(`  配置: L1>${(compressionConfig.l1.threshold * 100).toFixed(0)}% L2>${(compressionConfig.l2.threshold * 100).toFixed(0)}% L3>${(compressionConfig.l3.threshold * 100).toFixed(0)}% L4>${(compressionConfig.l4.threshold * 100).toFixed(0)}% L5>${(compressionConfig.l5.threshold * 100).toFixed(0)}%\n`);
 
-  // ── 5. 创建压缩转换器 ───────────────────────────────────────────
-  // streamFn 复用真实 DeepSeek 适配器，Fork Agent 也会调用真实模型生成摘要
-  const streamFn = createStreamFnFromAi(aiModel);
+  // ── 3. 创建压缩转换器 ───────────────────────────────────────────
+  // streamFn 复用统一配置，Fork Agent 也会调用真实模型生成摘要
   const compressionTransformer = createCompressionTransformer({
     config: compressionConfig,
     model,
@@ -91,7 +75,7 @@ async function main() {
     contextWindow: model.contextWindow,
   });
 
-  // ── 6. 创建 Runtime ─────────────────────────────────────────────
+  // ── 4. 创建 Runtime ─────────────────────────────────────────────
   const transformers = [
     ...createDefaultTransformers(),
     compressionTransformer,
@@ -108,7 +92,7 @@ async function main() {
     tools: [readFileTool],
   });
 
-  // ── 7. 模拟多轮对话，逐步填满上下文 ────────────────────────────
+  // ── 5. 模拟多轮对话，逐步填满上下文 ────────────────────────────
   const turns = [
     '请读取 file_1.txt 的内容',
     '请读取 file_2.txt 的内容',
@@ -164,7 +148,7 @@ async function main() {
     }
   }
 
-  // ── 8. 最终状态报告 ─────────────────────────────────────────────
+  // ── 6. 最终状态报告 ─────────────────────────────────────────────
   logSeparator('最终上下文状态');
 
   const finalMessages = runtime.getMessages(sessionKey);

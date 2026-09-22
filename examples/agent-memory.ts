@@ -8,72 +8,29 @@
  *   4. 直接调用记忆工具 save_memory / search_memory
  *   5. 展示手动 consolidate 合并相似记忆
  *
- * 运行（默认零依赖、零 API Key，用假 streamFn）：
- *   npx tsx examples/agent-memory.ts
+ * 模型配置统一来自 examples/model.config.ts（本地私有，不提交）：
+ *   cp examples/model.config.example.ts examples/model.config.ts
  *
- * 接入真实 LLM（可选）：
- *   DEEPSEEK_API_KEY=sk-xxx npx tsx examples/agent-memory.ts
- *   或：USE_REAL_LLM=1 DEEPSEEK_API_KEY=sk-xxx npx tsx examples/agent-memory.ts
+ * 运行：
+ *   npx tsx examples/agent-memory.ts
+ * 临时覆盖（优先于配置文件）：
+ *   DEEPSEEK_MODEL=deepseek-chat npx tsx examples/agent-memory.ts
  */
 import {
   createRuntime,
   createRequest,
   extractText,
-  createEmptyUsage,
   createFileSessionStorage,
 } from '@aipack-ai/agent';
 import type {
   StreamFn,
   Context,
-  Model,
-  AssistantMessage,
   ContentBlock,
   TextContent,
   Tool,
 } from '@aipack-ai/agent';
 import { createMemoryPlugin, MEMORY_BLOCK_START } from '@aipack-ai/memory';
-
-// ─── 假 streamFn：无 API Key 时降级使用，返回固定中文回复 ─────────────
-
-function makeFakeStreamFn(reply: string): StreamFn {
-  return (model: Model, _context: Context) => {
-    return (async function* () {
-      yield {
-        type: 'start' as const,
-        partial: { content: [{ type: 'text' as const, text: '' }] as ContentBlock[] },
-      };
-      yield { type: 'text_delta' as const, delta: reply };
-      yield {
-        type: 'done' as const,
-        message: {
-          role: 'assistant' as const,
-          content: [{ type: 'text' as const, text: reply }] as ContentBlock[],
-          stopReason: 'stop',
-          usage: createEmptyUsage(),
-          model: model.id,
-          provider: model.provider,
-          timestamp: Date.now(),
-        } as AssistantMessage,
-      };
-    })();
-  };
-}
-
-// ─── 可选：接入真实 LLM（DeepSeek） ──────────────────────────────────
-
-async function maybeCreateRealStreamFn(): Promise<{ model: Model; streamFn: StreamFn } | null> {
-  const useReal = process.env.USE_REAL_LLM === '1' || process.env.DEEPSEEK_API_KEY;
-  if (!useReal) return null;
-  try {
-    const { getBuiltinModel, hasProviderConfigured, adaptAiModel, createStreamFnFromAi } = await import('@aipack-ai/agent');
-    const aiModel = getBuiltinModel('deepseek', 'deepseek-chat');
-    if (!aiModel || !hasProviderConfigured('deepseek')) return null;
-    console.log('✅ 检测到 DEEPSEEK_API_KEY，使用真实 DeepSeek 模型\n');
-    return { model: adaptAiModel(aiModel), streamFn: createStreamFnFromAi(aiModel) };
-  } catch {
-    return null; // 子路径不可用则降级
-  }
-}
+import { createLlm, formatModelConfig } from './model.config';
 
 // ─── 辅助：取最新 user 消息纯文本 ────────────────────────────────────
 
@@ -101,16 +58,9 @@ async function main() {
   });
   const installed = mem.install();
 
-  // 2. 选择模型与 streamFn（真实 LLM 优先，否则假 streamFn）
-  const real = await maybeCreateRealStreamFn();
-  const model: Model = real?.model ?? {
-    id: 'fake-model',
-    name: 'fake-model',
-    provider: 'fake',
-    contextWindow: 128000,
-    maxTokens: 8192,
-    reasoning: false,
-  };
+  // 2. 装配模型与 streamFn（统一来自 model.config.ts）
+  const { model, streamFn } = createLlm();
+  console.log(`✅ 模型: ${formatModelConfig()}\n`);
 
   // 3. 自定义工具：与记忆工具合并后一次性注入 createRuntime
   const getWeather: Tool = {
@@ -151,14 +101,13 @@ async function main() {
   // 5. 会话 s1：捕获用户偏好 + 触发自定义工具
   console.log('▶ 会话 s1：捕获用户偏好 + 触发自定义工具');
   console.log('  用户: 我喜欢用 React + TypeScript 做项目，顺便查下北京天气');
-  const s1StreamFn = real?.streamFn ?? makeFakeStreamFn('好的，我记住了你的技术栈。北京今天晴 26°C。');
-  const runtime1 = createMemoryRuntime(s1StreamFn);
+  const runtime1 = createMemoryRuntime(streamFn);
 
   const r1 = await runtime1.run(
     createRequest('我喜欢用 React + TypeScript 做项目，顺便查下北京天气', { sessionKey: 's1' }),
   );
   console.log(`  助手: ${r1.content}`);
-  console.log(`  🔧 使用的工具: ${r1.toolsUsed.length ? r1.toolsUsed.join(', ') : '（假模式未触发）'}\n`);
+  console.log(`  🔧 使用的工具: ${r1.toolsUsed.length ? r1.toolsUsed.join(', ') : '（无）'}\n`);
 
   const memories = await mem.store.list();
   console.log(`  📝 已捕获 ${memories.length} 条记忆：`);
@@ -179,7 +128,7 @@ async function main() {
       messages: ctx.messages.map((mm) => ({ ...mm })),
       tools: ctx.tools,
     });
-    return (real?.streamFn ?? makeFakeStreamFn('根据记忆，你之前提到用 React + TypeScript，深色主题，VSCode。'))(m, ctx);
+    return streamFn(m, ctx);
   };
   const runtime2 = createMemoryRuntime(observeStreamFn);
 
