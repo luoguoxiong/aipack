@@ -211,6 +211,14 @@ export class McpServerHost {
   }
 
   /**
+   * 注入通知分发钩子（由传输层如 http-runner 调用）：host 经此回调发出主动通知。
+   * 与 setOutboundRequest 对称。重复调用以最后一次为准。
+   */
+  setOnNotification(fn: (msg: jsonrpc.JsonRpcNotification) => void): void {
+    this.onNotification = fn;
+  }
+
+  /**
    * 注入出站请求通道（由传输层如 stdio-runner 调用）：写入 JSON-RPC 请求
    * 并关联响应。注入后 `sampleLLM` 可向外部 client 请求 LLM 补全。
    */

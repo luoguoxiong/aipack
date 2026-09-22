@@ -4,6 +4,7 @@ export default defineConfig({
   entry: {
     index: 'index.ts',
     'server/stdio-entry': 'src/server/stdio-entry.ts',
+    'server/http-entry': 'src/server/http-entry.ts',
   },
   format: ['esm'],
   target: 'es2022',

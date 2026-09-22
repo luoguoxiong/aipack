@@ -120,6 +120,11 @@ export type { LoadMcpConfigOptions, LoadMcpConfigResult } from './src/loader';
 // ─── 服务端方向（M3）──────────────────────────────────────────
 export { McpServerHost, createMcpServerHost } from './src/server/host';
 export { runStdioServer } from './src/server/stdio-runner';
+export { createMcpHttpServer, runHttpServer } from './src/server/http-runner';
+export type {
+  McpHttpServerOptions,
+  McpHttpServerHandle,
+} from './src/server/http-runner';
 export type {
   McpServerHostOptions,
   McpAuthorizeCall,
