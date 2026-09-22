@@ -1,5 +1,5 @@
 /**
- * aipack-memory —— aipack 持久化记忆插件
+ * @aipack-ai/memory —— aipack 持久化记忆插件
  *
  * 核心闭环：capture → compress → index → recall/inject → consolidate
  * 参考 https://github.com/rohitg00/agentmemory

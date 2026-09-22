@@ -87,7 +87,7 @@ flowchart TB
 
 ### 插件装配
 
-[plugin.ts](file:///Users/kye/Documents/ai/aipack/packages/memory/src/plugin.ts) 是聚合入口：
+[plugin.ts](./src/plugin.ts) 是聚合入口：
 
 ```typescript
 const mem = createMemoryPlugin({ baseDir: '~/.aipack/memory' });
@@ -102,7 +102,7 @@ const { extensions, transformers, tools } = mem.install();
 
 ### 3.1 类型系统（`types.ts`）
 
-[types.ts](file:///Users/kye/Documents/ai/aipack/packages/memory/src/types.ts) 定义了整个插件的类型基础，不依赖任何外部实现。
+[types.ts](./src/types.ts) 定义了整个插件的类型基础，不依赖任何外部实现。
 
 #### MemoryEntry —— 记忆条目
 
@@ -154,7 +154,7 @@ interface MemoryStore {
 
 #### FileMemoryStore
 
-[file-memory-store.ts](file:///Users/kye/Documents/ai/aipack/packages/memory/src/store/file-memory-store.ts)
+[file-memory-store.ts](./src/store/file-memory-store.ts)
 
 **持久化策略**：每条记忆一个 JSON 文件，路径为 `<baseDir>/<encodeURIComponent(id)>.json`。
 
@@ -171,7 +171,7 @@ interface MemoryStore {
 
 #### MemoryIndex
 
-[memory-index.ts](file:///Users/kye/Documents/ai/aipack/packages/memory/src/store/memory-index.ts)
+[memory-index.ts](./src/store/memory-index.ts)
 
 内存索引的复用核心，供 `FileMemoryStore` 和 `InMemoryStore` 共享：
 
@@ -187,7 +187,7 @@ interface MemoryStore {
 
 #### 分词器（tokenizer.ts）
 
-[tokenizer.ts](file:///Users/kye/Documents/ai/aipack/packages/memory/src/retrieval/tokenizer.ts)
+[tokenizer.ts](./src/retrieval/tokenizer.ts)
 
 零依赖，支持中日韩英混合文本：
 
@@ -202,7 +202,7 @@ interface MemoryStore {
 
 #### BM25（bm25.ts）
 
-[bm25.ts](file:///Users/kye/Documents/ai/aipack/packages/memory/src/retrieval/bm25.ts)
+[bm25.ts](./src/retrieval/bm25.ts)
 
 经典 BM25 公式实现：
 
@@ -219,7 +219,7 @@ idf(t) = ln((N - df(t) + 0.5) / (df(t) + 0.5) + 1)
 
 #### 向量索引（vector-index.ts）
 
-[vector-index.ts](file:///Users/kye/Documents/ai/aipack/packages/memory/src/retrieval/vector-index.ts)
+[vector-index.ts](./src/retrieval/vector-index.ts)
 
 零依赖简化 ANN 向量索引，两种策略：
 
@@ -232,7 +232,7 @@ idf(t) = ln((N - df(t) + 0.5) / (df(t) + 0.5) + 1)
 
 #### 混合检索器（hybrid-retriever.ts）
 
-[hybrid-retriever.ts](file:///Users/kye/Documents/ai/aipack/packages/memory/src/retrieval/hybrid-retriever.ts)
+[hybrid-retriever.ts](./src/retrieval/hybrid-retriever.ts)
 
 核心检索策略：
 
@@ -256,7 +256,7 @@ final = (w_bm25 × bm25_norm + w_embed × cos_norm) / (w_bm25 + w_embed)
 
 #### 抽取器（extractor.ts）
 
-[extractor.ts](file:///Users/kye/Documents/ai/aipack/packages/memory/src/capture/extractor.ts)
+[extractor.ts](./src/capture/extractor.ts)
 
 两种抽取模式：
 
@@ -274,7 +274,7 @@ concepts = extractConcepts(全文, maxConcepts)
 
 #### 捕获扩展（capture-extension.ts）
 
-[capture-extension.ts](file:///Users/kye/Documents/ai/aipack/packages/memory/src/capture/capture-extension.ts)
+[capture-extension.ts](./src/capture/capture-extension.ts)
 
 `MemoryCaptureExtension extends BaseExtension`，利用 aipack Runtime 生命周期钩子：
 
@@ -295,7 +295,7 @@ failed ────▶ 不捕获（仅成功回合入库）
 
 #### Sentinel 机制（sentinels.ts）
 
-[sentinels.ts](file:///Users/kye/Documents/ai/aipack/packages/memory/src/injection/sentinels.ts)
+[sentinels.ts](./src/injection/sentinels.ts)
 
 记忆以 sentinel 包裹块的形式嵌入 user 消息 content：
 
@@ -313,7 +313,7 @@ aipack 的 `messageToResource` / `resourceToMessage` 对 user 消息不保留 me
 
 #### 注入转换器（injection-transformer.ts）
 
-[injection-transformer.ts](file:///Users/kye/Documents/ai/aipack/packages/memory/src/injection/injection-transformer.ts)
+[injection-transformer.ts](./src/injection/injection-transformer.ts)
 
 `MemoryInjectionTransformer extends BaseTransformer`，**必须放在 transformers 数组最前**。
 
@@ -342,7 +342,7 @@ aipack 的 `messageToResource` / `resourceToMessage` 对 user 消息不保留 me
 
 #### Consolidator
 
-[consolidator.ts](file:///Users/kye/Documents/ai/aipack/packages/memory/src/consolidation/consolidator.ts)
+[consolidator.ts](./src/consolidation/consolidator.ts)
 
 合并去重 + 生命周期修剪，参考 agentmemory 的 consolidate 阶段。
 
@@ -382,7 +382,7 @@ aipack 的 `messageToResource` / `resourceToMessage` 对 user 消息不保留 me
 
 ### 3.7 工具层（`tools/`）
 
-[memory-tools.ts](file:///Users/kye/Documents/ai/aipack/packages/memory/src/tools/memory-tools.ts)
+[memory-tools.ts](./src/tools/memory-tools.ts)
 
 4 个 Agent 可调用工具，使用纯 JSON Schema 定义参数（不依赖 TypeBox）：
 

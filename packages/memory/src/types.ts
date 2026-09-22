@@ -1,5 +1,5 @@
 /**
- * aipack-memory - 核心类型定义
+ * @aipack-ai/memory - 核心类型定义
  *
  * 记忆条目、存储契约、检索结果、Embedder 与摘要函数接口。
  * 不依赖任何外部实现，是整个插件的类型基础。
@@ -21,7 +21,7 @@ export interface MemoryEntry {
   content: string;
   /** 关键词 / 概念标签（用于 BM25 索引与展示） */
   concepts: string[];
-  /** 置信度 0..1（捕获默认 0.6，摘要 0.8，合并后累加并截断到 1，可衰减） */
+  /** 置信度 0..1（捕获默认 0.6，摘要 0.8，合并取 max + 0.05 小奖励后截断到 1） */
   confidence: number;
   /** 来源 */
   source: MemorySource;

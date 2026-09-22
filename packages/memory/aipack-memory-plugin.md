@@ -1,8 +1,10 @@
-# aipack-memory：上下文管理插件实现方案
+# @aipack-ai/memory：上下文管理插件实现方案
+
+> 备注：本文为插件立项时的设计 / 实现方案，保留原始设计决策以说明取舍。当前 API 与实现细节以 [README.md](./README.md) 与 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准。
 
 ## Context（背景与目标）
 
-`aipack` 框架目前只有「会话级线性消息持久化」（`FileSessionStorage`），跨会话、跨主题的长期记忆缺失——每次新会话都要重新解释架构、重新发现同样的约束。参考 `rohitg00/agentmemory` 的核心闭环（**capture → compress → index → recall/inject → consolidate**，默认零依赖 BM25 + 可选本地 embedding，可选 LLM 摘要），为 aipack 新增一个独立 npm 包 `aipack-memory`，作为 Extension + Transformer + Tool 组合插件，实现：每轮对话自动捕获要点存为可检索记忆、每轮自动检索相关记忆注入上下文、提供 Agent 可调用的记忆工具、定期合并去重与生命周期修剪。默认零依赖、零 API Key，开箱即用；embedding 与 LLM 摘要均为可选可插拔。
+`aipack` 框架目前只有「会话级线性消息持久化」（`FileSessionStorage`），跨会话、跨主题的长期记忆缺失——每次新会话都要重新解释架构、重新发现同样的约束。参考 `rohitg00/agentmemory` 的核心闭环（**capture → compress → index → recall/inject → consolidate**，默认零依赖 BM25 + 可选本地 embedding，可选 LLM 摘要），为 aipack 新增一个独立 npm 包 `@aipack-ai/memory`，作为 Extension + Transformer + Tool 组合插件，实现：每轮对话自动捕获要点存为可检索记忆、每轮自动检索相关记忆注入上下文、提供 Agent 可调用的记忆工具、定期合并去重与生命周期修剪。默认零依赖、零 API Key，开箱即用；embedding 与 LLM 摘要均为可选可插拔。
 
 ## 已核验的框架约束（决定设计的关键事实，均带行号）
 
@@ -53,7 +55,7 @@
 
 ```
 packages/memory/
-├── package.json              # name: aipack-memory, 仅 peer+dev 依赖 aipack, ESM, tsup
+├── package.json              # name: @aipack-ai/memory, 仅 peer+dev 依赖 @aipack-ai/agent, ESM, tsup
 ├── tsconfig.json             # extends ../../tsconfig.json, include index.ts/src/examples
 ├── tsup.config.ts            # 镜像 aipack: format esm, target es2022, dts, skipNodeModulesBundle
 ├── README.md                 # overview/install/programmatic API/config.js wiring/options/工具/限制
@@ -164,7 +166,7 @@ export interface ConsolidateOptions {
 
 - `resolveBaseDir(baseDir?)`：处理 `~`/绝对/相对，默认 `path.join(process.cwd(), '.aipack', 'memory')`。
 - 每条一文件 `<baseDir>/<encodeURIComponent(id)>.json`，原子写 `tmp+rename`（镜像 `session/file.ts`）。
-- 内存缓存 `Map<id, MemoryEntry>` + `BM25Index`，save/delete 增量更新；首次 `list` 懒构建。`maxAge` 加载时惰性删除过期条目。
+- 内存缓存 `MemoryIndex`（entries + BM25 倒排 + 独立 VectorIndex），save/delete 增量更新；首次访问懒加载目录。`maxAge` / `expiresAt` 加载时惰性删除过期条目。
 - `search` 委托内部 BM25；`consolidate` 委托 `Consolidator`。
 
 ### `src/retrieval/bm25.ts`
@@ -286,9 +288,14 @@ export class Consolidator {
 ### `src/tools/memory-tools.ts`
 
 ```ts
+export interface MemoryToolsOptions {
+  listLimit?: number; // list_memories 默认返回上限，默认 20
+  searchLimit?: number; // search_memory 默认返回上限，默认 5
+  saveTtlMs?: number; // save_memory 保存的记忆 TTL（ms）
+}
 export function createMemoryTools(
   store: MemoryStore,
-  options?: { listLimit?: number },
+  options?: MemoryToolsOptions,
 ): Tool[];
 ```
 
@@ -337,7 +344,7 @@ export function createMemoryPlugin(options?: MemoryPluginOptions): MemoryPlugin;
 ## `aipack.config.js` 接入示例（写入 README）
 
 ```js
-import { createMemoryPlugin } from 'aipack-memory';
+import { createMemoryPlugin } from '@aipack-ai/memory';
 const mem = createMemoryPlugin({
   baseDir: '~/.aipack/memory',
   maxMemories: 5,
@@ -379,9 +386,9 @@ export default {
 ### 构建
 
 ```bash
-pnpm --filter aipack build          # 先构建框架（peer 依赖）
-pnpm --filter aipack-memory build   # tsup → dist/index.js + dist/index.d.ts
-pnpm --filter aipack-memory typecheck
+pnpm --filter @aipack-ai/agent build    # 先构建框架（peer 依赖）
+pnpm --filter @aipack-ai/memory build   # tsup → dist/index.js + dist/index.d.ts
+pnpm --filter @aipack-ai/memory typecheck
 ```
 
 ### 往返验证脚本 `examples/round-trip.ts`（不依赖真实 LLM/Key）

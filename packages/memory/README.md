@@ -1,8 +1,8 @@
-# aipack-memory
+# @aipack-ai/memory
 
 > aipack 持久化记忆插件：**capture → compress → index → recall/inject → consolidate**
 >
-> 参考 [rohitg00/agentmemory](https://github.com/rohitg00/agentmemory)，为 [aipack](../aipack) 提供「跨会话长期记忆」能力。
+> 参考 [rohitg00/agentmemory](https://github.com/rohitg00/agentmemory)，为 [aipack](../../README.md) 提供「跨会话长期记忆」能力。
 
 ## 特性
 
@@ -19,19 +19,19 @@
 ## 安装
 
 ```bash
-pnpm add aipack-memory
+pnpm add @aipack-ai/memory
 # 或
-npm install aipack-memory
+npm install @aipack-ai/memory
 ```
 
-`aipack` 为 peer 依赖，需同时安装。
+`@aipack-ai/agent` 为 peer 依赖，需同时安装。
 
 ## 快速接入
 
 ### aipack.config.js
 
 ```js
-import { createMemoryPlugin } from 'aipack-memory';
+import { createMemoryPlugin } from '@aipack-ai/memory';
 
 const mem = createMemoryPlugin({
   baseDir: '~/.aipack/memory', // 记忆存储目录
@@ -54,7 +54,7 @@ export default {
 ### 编程式 API
 
 ```typescript
-import { createMemoryPlugin, InMemoryStore } from 'aipack-memory';
+import { createMemoryPlugin, InMemoryStore } from '@aipack-ai/memory';
 
 const store = new InMemoryStore();
 const mem = createMemoryPlugin({ store });
@@ -148,6 +148,15 @@ BM25 tokenizer 支持：
 | `ttlMs`            | `number`          | —      | 捕获记忆 TTL（ms）  |
 | `onEvent`          | `MemoryEventSink` | —      | 捕获失败事件接收器  |
 
+### InjectionOptions
+
+| 选项             | 类型                             | 默认  | 说明                                        |
+| ---------------- | -------------------------------- | ----- | ------------------------------------------- |
+| `maxMemories`    | `number`                         | `5`   | 注入 top-K 上限                             |
+| `minScore`       | `number`                         | `0.1` | 最低相关度阈值（本地阈值，不写回 retriever）|
+| `queryTransform` | `(latestUserText: string) => string` | —  | 对检索 query 做变换（如只取最后一句提问）   |
+| `onRecall`       | `(ids: string[]) => void \| Promise<void>` | — | 命中后的回调（插件层装配为 `store.touchRecall`） |
+
 ## Agent 工具
 
 插件自动注册 4 个 Agent 可调用工具（带输入校验与 limit 裁剪）：
@@ -159,10 +168,70 @@ BM25 tokenizer 支持：
 | `list_memories` | `limit?`               | 列出最近记忆（limit ≤ 200）                             |
 | `delete_memory` | `id`                   | 删除一条记忆                                            |
 
+工具选项（`createMemoryTools(store, options)`）：
+
+| 选项          | 类型     | 默认 | 说明                          |
+| ------------- | -------- | ---- | ----------------------------- |
+| `listLimit`   | `number` | `20` | `list_memories` 默认返回上限  |
+| `searchLimit` | `number` | `5`  | `search_memory` 默认返回上限  |
+| `saveTtlMs`   | `number` | —    | `save_memory` 保存记忆的 TTL  |
+
+> 通过 `createMemoryPlugin({ toolTtlMs })` 即可把该值透传给 `save_memory`。
+
+## 过期、统计与事件
+
+### TTL 过期
+
+三种粒度：
+
+| 粒度       | 配置                                        | 说明                                         |
+| ---------- | ------------------------------------------- | -------------------------------------------- |
+| 库级       | `new FileMemoryStore({ maxAge })`           | 按 `updatedAt` 判定，加载时惰性清理           |
+| 捕获记忆   | `createMemoryPlugin({ captureTtlMs })`      | 换算为 `expiresAt`，prune 时清理              |
+| 工具保存   | `createMemoryPlugin({ toolTtlMs })`         | 同上，作用于 `save_memory`                    |
+
+`save({ ttlMs })` 时 `expiresAt = createdAt + ttlMs`，优先于显式传入的 `expiresAt`。
+
+### 统计快照（`store.stats()`）
+
+| 字段                 | 说明                         |
+| -------------------- | ---------------------------- |
+| `count`              | 记忆总数                     |
+| `embeddingCount`     | 带向量的条目数               |
+| `bySource`           | 按 `capture` / `tool` / `consolidation` 计数 |
+| `avgConfidence`      | 平均置信度（0..1）           |
+| `recallTotal`        | 检索注入总次数               |
+| `lastRecalledAt`     | 最近一次被检索注入的时间     |
+| `lastConsolidatedAt` | 最近一次合并时间（驱动增量候选窗口）|
+
+### 事件监控（`onEvent`）
+
+`onEvent` 可接收以下 `MemoryEvent`；默认行为是只把失败类事件打印到 `console.warn`：
+
+| type                  | 触发时机     | 关键字段                  |
+| --------------------- | ------------ | ------------------------- |
+| `store:load`          | 记忆库加载完 | `loaded` / `skipped` / `ms` |
+| `store:corrupt`       | 文件损坏     | `file`                    |
+| `embedding:error`     | 向量化失败   | `id?` / `error`           |
+| `capture:failed`      | 捕获失败     | `sessionKey?` / `error`   |
+| `consolidate:failed`  | 合并失败     | `error`                   |
+| `consolidate`         | 合并完成     | `merged` / `pruned` / `ms` |
+| `prune`               | 修剪完成     | `removed`                 |
+
+```typescript
+const mem = createMemoryPlugin({
+  onEvent(event) {
+    if (event.type === 'consolidate') {
+      console.log(`合并 ${event.merged} 条，修剪 ${event.pruned} 条，耗时 ${event.ms}ms`);
+    }
+  },
+});
+```
+
 ## 自定义 Embedder
 
 ```typescript
-import { createMemoryPlugin, type Embedder } from 'aipack-memory';
+import { createMemoryPlugin, type Embedder } from '@aipack-ai/memory';
 
 // 示例：接入 ollama embedding
 const ollamaEmbedder: Embedder = {
@@ -187,7 +256,7 @@ const mem = createMemoryPlugin({
 ## 自定义 LLM 摘要
 
 ```typescript
-import { createMemoryPlugin, type SummarizeFn } from 'aipack-memory';
+import { createMemoryPlugin, type SummarizeFn } from '@aipack-ai/memory';
 
 const summarize: SummarizeFn = async ({ userMessage, assistantContent }) => {
   // 调用你的 LLM 压缩对话
@@ -265,17 +334,17 @@ interface MemoryEntry {
 
 ```bash
 # 构建
-pnpm --filter aipack build          # 先构建框架（peer 依赖）
-pnpm --filter aipack-memory build   # 构建插件
+pnpm --filter @aipack-ai/agent build    # 先构建框架（peer 依赖）
+pnpm --filter @aipack-ai/memory build   # 构建插件
 
 # 类型检查
-pnpm --filter aipack-memory typecheck
+pnpm --filter @aipack-ai/memory typecheck
 
 # 单元测试（node:test，覆盖 tokenizer/BM25/向量索引/双路检索/合并器/存储/并发）
-pnpm --filter aipack-memory test
+pnpm --filter @aipack-ai/memory test
 
 # 运行往返验证脚本（不依赖真实 LLM / API Key）
-pnpm --filter aipack-memory example
+pnpm --filter @aipack-ai/memory example
 ```
 
 ## License
