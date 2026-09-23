@@ -90,7 +90,14 @@
  *   RATE_LIMIT_REDIS_URL  限流 Redis 连接串(backend=redis 时必填)
  *                          缺省时 fallback 到 AGGREGATOR_REDIS_URL / REDIS_URL(与 aggregator 共用)
  */
-import './loadEnv.js'; // 副作用:最先加载 .env(必须在读取 process.env 之前)
+import { loadEnvFile } from './loadEnv.js';
+
+// 副作用：最先加载 .env（必须在读取 process.env 之前）。
+// 显式调用而非裸 `import './loadEnv.js'`：本包 package.json 声明了 sideEffects，
+// 裸副作用 import 会被 esbuild/tsup 判定为"无副作用"而整段丢弃，
+// 导致 dist 产物静默不加载 .env。显式调用可被静态分析识别为已使用，不会被摇掉。
+loadEnvFile();
+
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
