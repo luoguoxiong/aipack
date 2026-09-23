@@ -16,7 +16,7 @@ pnpm --filter @aipack-ai/observability-server build
 # 构建产物内置面板：GET / 直接返回管理界面`;
 
 // ── 2. 客户端接入（一行注入） ─────────────────────────────────
-export const obsServerClientCode = `import { createRuntime } from '@aipack-ai/core';
+export const obsServerClientCode = `import { createRuntime } from '@aipack-ai/agent';
 import { createObservability } from '@aipack-ai/observability';
 
 // 1. 创建可观测性实例（配置 appId + 收集服务地址）
@@ -28,7 +28,7 @@ const obs = createObservability({
 
 // 2. 注入 Runtime，所有埋点自动上报
 const runtime = createRuntime({
-  provider: /* ... */,
+  model: model,
   telemetry: obs.telemetry,  // 一行注入
 });
 
@@ -230,13 +230,12 @@ export const obsServerArchiveCode = `// ArchiveScheduler 每日自动运行：
 // 手动触发出：
 import { exportToParquet, createArchiveScheduler } from '@aipack-ai/observability-server';
 
-const result = await exportToParquet({
-  clickhouse: chClient,
-  s3: { bucket: 'my-bucket', prefix: 'aipack-archive/' },
-  daysAgoStart: 91,
-  daysAgoEnd: 180,
+const result = await exportToParquet(chClient, {
+  s3Path: 's3://my-bucket/aipack-archive/',        // S3 导出路径
+  fromDate: new Date(Date.now() - 180 * 86400_000), // 180 天前（含）
+  toDate: new Date(Date.now() - 91 * 86400_000),    // 91 天前（不含）
 });
-// result = { exportedRows: 1_234_567, parquetFiles: 42, s3Path: 's3://...' }
+// result = [{ table, rows, s3Url }, ...]  各表导出结果
 
 // 定时任务：
 const scheduler = createArchiveScheduler({

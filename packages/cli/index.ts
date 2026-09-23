@@ -26,6 +26,9 @@ export type { SelectOption, ToolConfirmChoice, ToolConfirmHandlerOptions } from 
 export { runInteractiveMode, pickSessionInteractively } from './src/modes/interactive.js';
 export { runPrintMode } from './src/modes/print.js';
 export { runJsonMode } from './src/modes/json.js';
+export { Spinner, pauseActiveSpinner, resumeActiveSpinner } from './src/spinner.js';
+export { printStartupBanner } from './src/banner.js';
+export type { BannerOptions } from './src/banner.js';
 
 export { main } from './src/cli.js';
 export { APP_NAME, VERSION, defaultConfigDir, defaultSessionDir } from './src/version.js';

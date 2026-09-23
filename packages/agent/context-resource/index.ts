@@ -160,6 +160,23 @@ export function resourceToMessage(resource: ContextResource): Message {
         timestamp: resource.timestamp,
       } as SystemMessage;
 
+    case 'state_snapshot': {
+      // StateSnapshotTransformer 直接构造的资源（不经 messageToResource），
+      // 其 content 为快照文本字符串。此处包装为合法 Message
+      // （role='stateSnapshot'），由 runtime.buildContext 统一转为 user 消息
+      // 发往 provider。此前 default 分支 `return resource.content as Message`
+      // 会把字符串当 Message 返回，导致消息数组混入字符串、buildContext 崩溃。
+      const text =
+        typeof resource.content === 'string'
+          ? resource.content
+          : extractText(resource.content as ContentBlock[]);
+      return {
+        role: 'stateSnapshot',
+        content: text,
+        timestamp: resource.timestamp,
+      } as unknown as Message;
+    }
+
     default:
       return resource.content as Message;
   }

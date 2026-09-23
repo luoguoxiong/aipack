@@ -1,5 +1,11 @@
 # @aipack-ai/skills
 
+## 1.1.6
+
+### Patch Changes
+
+- 版本对齐：`@aipack-ai/*` 全部 9 个发布包统一到 `1.1.6`。
+
 ## 1.1.5
 
 ### Patch Changes

@@ -16,10 +16,9 @@ export { SessionManager, createSessionManager } from './session-manager';
 export type { SessionManagerOptions } from './session-manager';
 
 // ─── Request: 请求入口 ────────────────────────────────────────────
-export {
-  validateRequest,
-  normalizeRequest,
-} from './request';
+// createRequest / RequestBuilder / validateRequest / normalizeRequest
+// 均已通过 `export * from './core'` 重导出（core/index.ts re-export 自
+// ./request），此处无需再重复列出 validateRequest / normalizeRequest。
 
 // ─── ContextResource: 上下文资源 ──────────────────────────────────
 export {

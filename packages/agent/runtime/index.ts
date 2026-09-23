@@ -149,18 +149,27 @@ function withTimeoutSignal(
     () => controller.abort(new Error(`Tool execution timeout after ${ms}ms`)),
     ms,
   );
+  // 保存监听器引用，clear 时移除，避免 parent 长生命周期时未触发的 abort
+  // 监听器累积（{ once: true } 仅在触发后清理，不触发则常驻 parent 上）。
+  let onAbort: (() => void) | undefined;
   if (parent) {
     if (parent.aborted) {
       controller.abort(parent.reason);
     } else {
-      parent.addEventListener(
-        'abort',
-        () => controller.abort(parent.reason),
-        { once: true },
-      );
+      onAbort = () => controller.abort(parent.reason);
+      parent.addEventListener('abort', onAbort, { once: true });
     }
   }
-  return { signal: controller.signal, clear: () => clearTimeout(timer) };
+  return {
+    signal: controller.signal,
+    clear: () => {
+      clearTimeout(timer);
+      if (onAbort && parent) {
+        parent.removeEventListener('abort', onAbort);
+        onAbort = undefined;
+      }
+    },
+  };
 }
 
 // ─── 媒体附件 → ImageContent ──────────────────────────────────────
@@ -220,6 +229,9 @@ const DEFAULT_COMPACTION_PROMPT = [
 
 /** compactionSummary 消息发给 provider 时转换后的 user 消息前缀 */
 const COMPACTION_USER_PREFIX = '[以下为此前对话历史的压缩摘要，作为上下文参考]';
+
+/** stateSnapshot 消息发给 provider 时转换后的 user 消息前缀 */
+const STATE_SNAPSHOT_USER_PREFIX = '[以下为当前状态快照，作为上下文参考]';
 
 /** 序列化单条消息为摘要输入行；system 等无关角色返回空串 */
 function messageToSummaryLine(msg: Message): string {
@@ -932,7 +944,7 @@ export class AgentRuntime implements Runtime {
           };
         }
 
-        const outcome = await this.executeToolCallsStreaming(
+        const outcome = await this.executeToolCalls(
           compilation,
           toolCalls,
           session.abortController!.signal,
@@ -970,21 +982,6 @@ export class AgentRuntime implements Runtime {
 
   /** 同步循环：执行工具调用并将结果消息按原顺序追加 */
   private async executeToolCalls(
-    compilation: Compilation,
-    toolCalls: ToolCallContent[],
-    signal: AbortSignal,
-  ): Promise<ToolExecutionOutcome> {
-    const outcome = await this.runTools(toolCalls, signal, compilation.request, compilation.traceId);
-    for (let i = 0; i < toolCalls.length; i++) {
-      compilation.messages.push(
-        this.buildToolResultMessage(toolCalls[i], outcome.results[i]),
-      );
-    }
-    return outcome;
-  }
-
-  /** 流式循环：执行工具调用，返回结果（消息由调用方追加） */
-  private async executeToolCallsStreaming(
     compilation: Compilation,
     toolCalls: ToolCallContent[],
     signal: AbortSignal,
@@ -1444,13 +1441,16 @@ export class AgentRuntime implements Runtime {
     const tools = Array.from(this._globalTools.values());
     return {
       systemPrompt: this._systemPrompt,
-      // compactionSummary 为内部扩展 role，provider 适配层仅支持
-      // user/assistant/toolResult，发出前统一转为带标注的 user 消息
+      // compactionSummary / stateSnapshot 为内部扩展 role，provider 适配层
+      // 仅支持 user/assistant/toolResult，发出前统一转为带标注的 user 消息
       messages: messages
         .filter(m => m.role !== 'system')
-        .map(m => ((m as { role: string }).role === 'compactionSummary'
-          ? this.compactionSummaryToUser(m)
-          : m)),
+        .map(m => {
+          const role = (m as { role: string }).role;
+          if (role === 'compactionSummary') return this.compactionSummaryToUser(m);
+          if (role === 'stateSnapshot') return this.stateSnapshotToUser(m);
+          return m;
+        }),
       tools: tools.length > 0 ? tools : undefined,
     };
   }
@@ -1461,6 +1461,16 @@ export class AgentRuntime implements Runtime {
     return {
       role: 'user',
       content: `${COMPACTION_USER_PREFIX}\n${text}`,
+      timestamp: msg.timestamp,
+    } as Message;
+  }
+
+  /** stateSnapshot 消息 → user 消息（所有 provider 均兼容 user role） */
+  private stateSnapshotToUser(msg: Message): Message {
+    const text = typeof msg.content === 'string' ? msg.content : extractText(msg.content);
+    return {
+      role: 'user',
+      content: `${STATE_SNAPSHOT_USER_PREFIX}\n${text}`,
       timestamp: msg.timestamp,
     } as Message;
   }

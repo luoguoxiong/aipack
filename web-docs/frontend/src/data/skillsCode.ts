@@ -21,7 +21,7 @@ export const skillsQuickstartCode = [
   '});',
   '',
   '// 3. 正常使用——模型看到目录后按需调用 skill 工具取全文',
-  'const result = await runtime.run(createRequest({ message: "帮我导出这个页面为 PDF" }));',
+  'const result = await runtime.run(createRequest("帮我导出这个页面为 PDF"));',
   '',
   '// 加载诊断（校验失败 / 同名冲突），供上层展示',
   'plugin.diagnostics.forEach((d) => console.warn(`[${d.type}] ${d.message}`));',

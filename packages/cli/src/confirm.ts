@@ -7,6 +7,7 @@
 import chalk from 'chalk';
 import type { PermissionRequest } from '@aipack-ai/agent';
 import { select } from './select.js';
+import { pauseActiveSpinner, resumeActiveSpinner } from './spinner.js';
 
 export { select };
 export type { SelectOption } from './select.js';
@@ -15,8 +16,10 @@ export type { SelectOption } from './select.js';
 
 /** [模式, 说明]：命中的 shell 命令即使默认放行模式也需人工确认 */
 const DANGEROUS_PATTERNS: Array<[RegExp, string]> = [
-  // 递归删除根/家目录（rm -rf /、rm -rf ~、rm -rf /* 等；正常子目录不受影响）
+  // 递归删除根/家目录（rm -rf /、rm -rf ~、rm -rf /* 等）——最严重，优先匹配
   [/rm\s+[^;|&]*[rf][^;|&]*\s+(\/|~|\$HOME)(\/?\*|\s|$)/, '递归删除根/家目录'],
+  // 任何 rm 删除（单文件 / 子目录递归）——删除不可撤销，一律确认
+  [/\brm\b/, '删除文件'],
   [/\bsudo(\s|$)/, '提权执行'],
   [/\bmkfs(\s|\.)/, '格式化磁盘'],
   [/\bdd\s+[^;|]*of=\/dev\//, '写入磁盘设备'],
@@ -63,26 +66,30 @@ export function createToolConfirmHandler(
   options: ToolConfirmHandlerOptions = {},
 ): (req: PermissionRequest) => Promise<boolean> {
   const autoApproveSafe = options.autoApproveSafe ?? true;
-  /** 会话级"总是允许"记忆：key = 能力组合或工具名 */
+  /** 会话级"总是允许"记忆：key = 能力组合或工具名（仅对非危险操作生效） */
   const alwaysAllowed = new Set<string>();
 
   return async (req: PermissionRequest): Promise<boolean> => {
     if (!process.stdin.isTTY) return false;
 
-    const key = req.permissions.length > 0
-      ? [...req.permissions].sort().join(',')
-      : `tool:${req.toolName}`;
-    if (alwaysAllowed.has(key)) return true;
-
     const args = req.args as Record<string, unknown> | undefined;
     const command = typeof args?.command === 'string' ? args.command : '';
 
-    // 默认模式：bash 非危险命令自动放行（不打断用户）
-    if (autoApproveSafe && command && !isDangerousCommand(command)) {
-      return true;
+    // 危险命令检测优先：危险命令永远需要人工确认，
+    // 不受"总是允许"记忆影响（避免一次放行后续 rm -rf / 被静默执行）
+    const dangerReason = command ? isDangerousCommand(command) : null;
+
+    const key = req.permissions.length > 0
+      ? [...req.permissions].sort().join(',')
+      : `tool:${req.toolName}`;
+
+    // 非危险操作：会话级"总是允许"或默认模式静默放行
+    if (!dangerReason) {
+      if (alwaysAllowed.has(key)) return true;
+      // 默认模式：bash 非危险命令静默放行（command 非空即 bash 工具）
+      if (autoApproveSafe && command) return true;
     }
 
-    const dangerReason = command ? isDangerousCommand(command) : null;
     const summary = command || summarizeArgs(req);
     const question = dangerReason
       ? `危险命令（${dangerReason}）：${summary}`
@@ -90,11 +97,26 @@ export function createToolConfirmHandler(
         ? `允许执行 ${req.toolName}：${summary}`
         : `允许执行 ${req.toolName}`;
 
-    const choice = await select<ToolConfirmChoice>(question, [
-      { label: '允许', value: 'once' },
-      { label: '总是允许（本会话）', value: 'always' },
-      { label: '拒绝', value: 'deny' },
-    ]);
+    // 危险命令只给"允许/拒绝"两项（不给"总是允许"，防止误授权）
+    const options = dangerReason
+      ? [
+          { label: '允许', value: 'once' as const },
+          { label: '拒绝', value: 'deny' as const },
+        ]
+      : [
+          { label: '允许', value: 'once' as const },
+          { label: '总是允许（本会话）', value: 'always' as const },
+          { label: '拒绝', value: 'deny' as const },
+        ];
+
+    // 暂停 spinner，避免动画覆盖选择器渲染
+    pauseActiveSpinner();
+    let choice: ToolConfirmChoice | null;
+    try {
+      choice = await select<ToolConfirmChoice>(question, options);
+    } finally {
+      resumeActiveSpinner();
+    }
 
     if (choice === 'always') {
       alwaysAllowed.add(key);

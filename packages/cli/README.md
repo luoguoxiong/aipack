@@ -36,7 +36,7 @@ aipack -c "我们刚才聊到哪里了？"
 
 | 模式 | 用法 | 说明 |
 |------|------|------|
-| 交互（默认） | `aipack` | REPL,支持斜杠命令、Ctrl+C 中断运行（双击退出） |
+| 交互（默认） | `aipack` | REPL,支持斜杠命令、多行输入、Ctrl+C 中断运行（双击退出） |
 | 非交互 | `aipack -p "..."` | 处理一次提示后退出；回复写 stdout（可管道），工具信息写 stderr |
 | JSON 事件流 | `aipack --mode json "..."` | 全部流式事件按 JSON 行输出，供程序消费 |
 
@@ -61,7 +61,7 @@ JSON 模式输出示例：
 | `--thinking <级别>` | 思考级别：off / minimal / low / medium / high / max |
 | `--list-models [搜索]` | 列出内置模型目录（标注 API Key 配置状态） |
 
-未指定模型时自动探测第一个已配置 `*_API_KEY` 的提供商并使用其默认模型。
+未指定模型时优先使用 DeepSeek（`DEEPSEEK_API_KEY` 已配置则用 `deepseek-chat`），次选第一个已配置 `*_API_KEY` 的内置提供商。
 
 ### 会话
 
@@ -115,7 +115,9 @@ JSON 模式输出示例：
 | bash 普通命令 | 静默放行 |
 | bash 危险命令 | 弹出选择器,标注危险原因 |
 
-危险命令识别:`sudo` 提权、`rm -rf /` `rm -rf ~`(根/家目录递归删除)、`mkfs` / `dd of=/dev/` / `> /dev/sdX`(磁盘写入)、`curl ... \| sh`(管道执行远程脚本)、`chmod -R 777 /`、`shutdown` / `reboot`、fork 炸弹。指定子目录的正常删除(如 `rm -rf dist`)不受影响。
+危险命令识别：`rm` 删除（任何 `rm` 命令均需确认，含 `rm -rf /`、`rm -rf ~` 等根/家目录递归删除）、`sudo` 提权、`mkfs` / `dd of=/dev/` / `> /dev/sdX`(磁盘写入)、`curl ... \| sh`(管道执行远程脚本)、`chmod -R 777 /`、`shutdown` / `reboot`、fork 炸弹。普通命令（`ls`/`cat`/`echo` 等）静默放行。
+
+> 危险命令每次都会重新确认，不受"总是允许"影响；"总是允许"只对非危险命令（如 `--safe` 模式下的常规命令）生效。
 
 确认时使用**方向键选择器**(非输入式):
 
@@ -138,9 +140,20 @@ JSON 模式输出示例：
 | `/session` | 当前会话信息 |
 | `/sessions` | 列出历史会话 |
 | `/clear` | 清空当前会话(仅内存) |
+| `/compact` | 手动压缩会话历史（释放上下文空间） |
+| `/tools` | 查看工具集与权限配置 |
+| `/mcp [refresh]` | MCP server 状态 / 热刷新工具列表 |
 | `/approvals` | 列出未决审批单 |
 | `/approve <id>` / `/deny <id>` | 结算审批单 |
 | `/help` / `/quit` | 帮助 / 退出 |
+
+## 交互体验
+
+- **首次使用引导**：未检测到任何 `*_API_KEY` 时，启动横幅列出提供商与示例 `export` 命令。
+- **模型感知提示符**：提示符显示当前模型 ID，如 `aipack deepseek-chat>`。
+- **思考/工具动画**：思考与工具执行期间显示旋转动画（TTY），工具结束时标注成败与耗时。
+- **多行输入**：行尾以 `\` 续行，空行提交；续行中按 `Ctrl+C` 取消而非退出。
+- **回合统计**：每轮回复后显示本轮 token、会话累计 token 与本轮使用的工具。
 
 ## approvals 子命令(跨进程审批)
 

@@ -53,16 +53,18 @@ import { extractText } from '../core';
 
 /** 将 aipack/ai 的标准 Model 转为框架 Model（id/name/provider/窗口/token 等信息） */
 export function adaptAiModel(aiModel: AiModel): Model {
+  // 先透传 aipack/ai 的扩展字段（baseUrl、cost、headers、api 等），再用框架
+  // 接口的必填字段覆盖，确保类型与 Model 对齐（spread 在后会把同名字段覆盖成
+  // 相同的值，毫无意义；放在前才能让显式字段起到类型锚定作用）。
   return {
+    ...(aiModel as unknown as Record<string, unknown>),
     id: aiModel.id,
     name: aiModel.name,
     provider: aiModel.provider,
     contextWindow: aiModel.contextWindow,
     maxTokens: aiModel.maxTokens,
     reasoning: aiModel.reasoning,
-    // 透传 aipack/ai 的扩展字段（baseUrl、cost、headers、api 等），保留灵活性
-    ...(aiModel as unknown as Record<string, unknown>),
-  };
+  } as Model;
 }
 
 // ─── 事件映射 ───────────────────────────────────────────────────────
@@ -105,9 +107,12 @@ function findToolCall(
     | AiToolCallContent
     | undefined;
   if (block?.type === 'toolCall') return block;
-  // 兜底：contentIndex 对不上时，在所有 content 中找未记录的 toolCall
-  for (const b of partial.content) {
-    if (b.type === 'toolCall' && !known.has(contentIndex)) return b;
+  // 兜底：contentIndex 对不上时，在所有 content 中找未记录的 toolCall。
+  // 注意必须用当前遍历块的索引 i 查 known，而非入参 contentIndex——
+  // 否则只要 contentIndex 未记录就会反复返回第一个 toolCall 块。
+  for (let i = 0; i < partial.content.length; i++) {
+    const b = partial.content[i];
+    if (b.type === 'toolCall' && !known.has(i)) return b;
   }
   return undefined;
 }

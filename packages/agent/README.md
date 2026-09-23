@@ -1,4 +1,4 @@
-# aipack
+# @aipack-ai/agent
 
 Agent 框架：`Runtime + Extension + Transformer`，配置入口 + 执行入口。
 核心调度、会话持久化、工具执行、上下文转换核心实现，不依赖任何外部 Agent 框架。
@@ -10,14 +10,14 @@ Agent 框架：`Runtime + Extension + Transformer`，配置入口 + 执行入口
 - **会话持久化**：内存 / 文件两种 `SessionStorage` 适配器，`maxAge` 过期惰性清理
 - **流式与同步双入口**：`runtime.run()` 一次性返回，`runtime.stream()` 流式返回增量事件
 - **工具循环**：模型输出 tool call → 自动执行工具 → 结果回填上下文，直到无工具调用或终止
-- **可选 AI 模型层**：子模块 `aipack/ai` 提供模型目录、多提供商流式实现与图片生成；根路径 re-export `adaptAiModel`/`createStreamFnFromAi` 一键适配，无需手写 streamFn
+- **可选 AI 模型层**：子模块 `@aipack-ai/agent/ai` 提供模型目录、多提供商流式实现与图片生成；根路径 re-export `adaptAiModel`/`createStreamFnFromAi` 一键适配，无需手写 streamFn
 
 ## 安装
 
 ```bash
-npm install aipack
+npm install @aipack-ai/agent
 # 或
-pnpm add aipack
+pnpm add @aipack-ai/agent
 ```
 
 ## 快速开始
@@ -32,7 +32,7 @@ import {
   getBuiltinModel,
   adaptAiModel,
   createStreamFnFromAi,
-} from 'aipack';
+} from '@aipack-ai/agent';
 
 const aiModel = getBuiltinModel('deepseek', 'deepseek-chat'); // 需配置 DEEPSEEK_API_KEY
 
@@ -73,7 +73,7 @@ await runtime.close();
 | `Result`             | 运行结果                                       |
 | `Tapable`            | 事件钩子系统                                   |
 
-## 主入口 API（`aipack`）
+## 主入口 API（`@aipack-ai/agent`）
 
 ### 核心类型（core）
 
@@ -184,7 +184,7 @@ interface Result {
   - **`maxAge` 单位为毫秒**：超过 `updatedAt + maxAge` 的会话在加载时惰性清理
 - `createMemorySessionStorage({ maxAge? })` — 内存存储
 
-## AI 模型层（`aipack/ai`）
+## AI 模型层（`@aipack-ai/agent/ai`）
 
 标准化模型层（内置子模块，独立于核心框架类型）：
 
@@ -200,13 +200,13 @@ interface Result {
 
 支持多提供商：OpenAI、Anthropic、DeepSeek、Google、Mistral、Bedrock 等（按 `model.api` 自动分派 `streamOpenAI` / `streamAnthropic` / ...）。
 
-常用符号（`getBuiltinModel` / `getEnvApiKey` / `hasProviderConfigured` / `BUILTIN_PROVIDERS` / `AiModel` 类型）已从根路径 `aipack` re-export；完整 surface 见 `aipack/ai` 子路径。
+常用符号（`getBuiltinModel` / `getEnvApiKey` / `hasProviderConfigured` / `BUILTIN_PROVIDERS` / `AiModel` 类型）已从根路径 `@aipack-ai/agent` re-export；完整 surface 见 `@aipack-ai/agent/ai` 子路径。
 
 ## AI 适配器（`adaptAiModel` / `createStreamFnFromAi`）
 
-把 `aipack/ai` 的标准化模型接入核心框架（从根路径 `aipack` 导入）：
+把 `@aipack-ai/agent/ai` 的标准化模型接入核心框架（从根路径 `@aipack-ai/agent` 导入）：
 
-- `adaptAiModel(aiModel)` — `aipack/ai` 的 `Model` → 框架 `Model`
+- `adaptAiModel(aiModel)` — `@aipack-ai/agent/ai` 的 `Model` → 框架 `Model`
 - `createStreamFnFromAi(aiModel, options?)` — 生成框架 `StreamFn`，内部自动对接 OpenAI / Anthropic 流式实现，并转换事件与内容块
 
 ```ts
@@ -215,7 +215,7 @@ import {
   getBuiltinModel,
   adaptAiModel,
   createStreamFnFromAi,
-} from 'aipack';
+} from '@aipack-ai/agent';
 
 const aiModel = getBuiltinModel('openai', 'gpt-4o-mini');
 const runtime = createRuntime({
@@ -264,7 +264,7 @@ const runtime2 = createRuntime({
 ## 工具注册示例
 
 ```ts
-import { Type } from 'aipack/ai';
+import { Type } from '@aipack-ai/agent/ai';
 
 const runtime = createRuntime({
   model: adaptAiModel(aiModel),

@@ -94,15 +94,28 @@ function splitModelSpec(args: Args): { provider?: string; modelId?: string } {
   return { provider: args.provider, modelId: args.model };
 }
 
-/** 第一个已配置 API Key 的内置提供商 */
+/**
+ * 默认提供商探测：优先级 deepseek > 其余已配置内置提供商。
+ * - 未指定模型时，优先使用 DeepSeek（DEEPSEEK_API_KEY 已配置则用 deepseek-chat）
+ * - 次选第一个已配置 API Key 的内置提供商
+ * - 都未配置时回退 deepseek/deepseek-chat（调用会失败，提示用户配置 Key）
+ */
 function detectDefaultProvider(): { id: string; modelId: string } {
+  const PRIORITY = ['deepseek'];
+  for (const pid of PRIORITY) {
+    if (hasProviderConfigured(pid)) {
+      const models = getBuiltinModels(pid);
+      if (models.length > 0) return { id: pid, modelId: models[0].id };
+    }
+  }
   for (const p of getBuiltinProviders()) {
+    if (PRIORITY.includes(p.id)) continue;
     if (hasProviderConfigured(p.id)) {
       const models = getBuiltinModels(p.id);
       if (models.length > 0) return { id: p.id, modelId: models[0].id };
     }
   }
-  return { id: 'openai', modelId: 'gpt-4o-mini' };
+  return { id: 'deepseek', modelId: 'deepseek-chat' };
 }
 
 /** 为目录外模型构造最小可用的 ai Model（推断 API 类型与 baseUrl） */

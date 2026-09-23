@@ -2,6 +2,7 @@
  * CLI 参数解析与帮助文本（参考 pi 的 args.ts，适配 aipack）
  */
 import type { ThinkingLevel } from '@aipack-ai/agent';
+import chalk from 'chalk';
 import { APP_NAME, VERSION } from './version.js';
 
 export type Mode = 'text' | 'json';
@@ -146,78 +147,83 @@ export function parseArgs(args: string[]): Args {
 }
 
 export function printHelp(): void {
-  console.log(`${APP_NAME} ${VERSION} - 基于 @aipack-ai/agent 的终端 AI 助手
+  const c = chalk;
+  const title = c.bold.cyan(`${APP_NAME} ${VERSION}`);
+  const head = (s: string): string => c.bold.magenta(s);
+  const opt = (flag: string, desc: string): string =>
+    `  ${c.green(flag.padEnd(28))} ${c.dim(desc)}`;
 
-${'用法:'}
-  ${APP_NAME} [选项] [@文件...] [消息...]
+  console.log(`${title}  ${c.dim('· 终端 AI 编程助手')}
 
-${'子命令:'}
-  ${APP_NAME} approvals list              列出未决审批单
-  ${APP_NAME} approvals approve <id>      批准审批单
-  ${APP_NAME} approvals deny <id>         驳回审批单
-  ${APP_NAME} --list-models [搜索]        列出可用模型
+${head('用法:')}
+  ${c.cyan(APP_NAME)} ${c.dim('[选项]')} ${c.yellow('[@文件...]')} ${c.dim('[消息...]')}
 
-${'模式:'}
-  (默认)                                交互模式（REPL）
-  --print, -p [消息]                    非交互：处理一次提示后退出（支持管道 stdin）
-  --mode json                           以 JSON 行输出全部流式事件
+${head('子命令:')}
+${opt('approvals list', '列出未决审批单')}
+${opt('approvals approve <id>', '批准审批单')}
+${opt('approvals deny <id>', '驳回审批单')}
+${opt('--list-models [搜索]', '列出可用模型（标注 API Key 配置状态）')}
 
-${'模型选项:'}
-  --provider <名称>                     提供商（openai/deepseek/anthropic/google...）
-  --model <id>                          模型 ID，支持 provider/id 组合写法
-  --api-key <key>                       API Key（覆盖环境变量）
-  --thinking <级别>                     思考级别: off/minimal/low/medium/high/max
+${head('模式:')}
+${opt('(默认)', '交互模式（REPL），支持斜杠命令与多行输入')}
+${opt('--print, -p [消息]', '非交互：处理一次提示后退出（支持管道 stdin）')}
+${opt('--mode json', '以 JSON 行输出全部流式事件')}
 
-${'会话选项:'}
-  --continue, -c                        继续当前目录最近的会话
-  --resume, -r                          浏览并选择历史会话
-  --session <名称>                      使用指定会话
-  --name, -n <名称>                     为新会话命名
-  --session-dir <目录>                  自定义会话存储目录
-  --no-session                          临时会话（不持久化）
+${head('模型选项:')}
+${opt('--provider <名称>', '提供商（openai/deepseek/anthropic/google...）')}
+${opt('--model <id>', '模型 ID，支持 provider/id 组合写法')}
+${opt('--api-key <key>', 'API Key（覆盖环境变量）')}
+${opt('--thinking <级别>', '思考级别: off/minimal/low/medium/high/max')}
 
-${'工具选项:'}
-  --tools, -t <列表>                    工具白名单（逗号分隔）
-  --exclude-tools, -xt <列表>           工具黑名单（逗号分隔）
-  --no-tools, -nt                       禁用全部工具
-  --safe                                保守模式：写文件/shell 全部人工确认
+${head('会话选项:')}
+${opt('--continue, -c', '继续当前目录最近的会话')}
+${opt('--resume, -r', '浏览并选择历史会话')}
+${opt('--session <名称>', '使用指定会话')}
+${opt('--name, -n <名称>', '为新会话命名')}
+${opt('--session-dir <目录>', '自定义会话存储目录')}
+${opt('--no-session', '临时会话（不持久化）')}
 
-  内置工具: read, write, edit, bash, find, grep, ls
-  默认权限: 读写文件静默放行（工作区范围内）；bash 仅危险命令
-            （sudo、rm -rf ~、磁盘写入、远程脚本管道等）需确认
+${head('工具与权限:')}
+${opt('--tools, -t <列表>', '工具白名单（逗号分隔）')}
+${opt('--exclude-tools, -xt <列表>', '工具黑名单（逗号分隔）')}
+${opt('--no-tools, -nt', '禁用全部工具')}
+${opt('--safe', '保守模式：写文件/shell 全部人工确认')}
 
-${'其他:'}
-  --no-compaction                       关闭上下文压缩（长会话可能溢出）
-  --compaction-config <文件>            压缩配置 JSON（覆盖默认阈值）
-  --system-prompt <文本>                替换默认系统提示词
-  --append-system-prompt <文本>         追加系统提示词（可多次）
-  --help, -h                            显示帮助
-  --version, -v                         显示版本
+  ${c.dim('内置工具:')} read · write · edit · bash · find · grep · ls
+  ${c.dim('默认权限:')} 读/写文件静默放行（工作区范围）；bash 仅危险命令需确认
+            ${c.dim('（rm 删除、sudo、磁盘写入、远程脚本管道等；危险命令每次重确认）')}
 
-${'示例:'}
-  # 交互模式
-  ${APP_NAME}
+${head('上下文压缩:')}
+${opt('--no-compaction', '关闭上下文压缩（长会话可能溢出）')}
+${opt('--compaction-config <文件>', '压缩配置 JSON（覆盖默认阈值）')}
 
-  # 非交互单次提问（支持管道）
-  cat README.md | ${APP_NAME} -p "总结这段文本"
+${head('其他:')}
+${opt('--system-prompt <文本>', '替换默认系统提示词')}
+${opt('--append-system-prompt <文本>', '追加系统提示词（可多次）')}
+${opt('--help, -h', '显示本帮助')}
+${opt('--version, -v', '显示版本')}
 
-  # 指定模型
-  ${APP_NAME} --provider deepseek --model deepseek-chat "你好"
+${head('交互模式:')}
+  ${c.dim('· 多行输入：行尾以')} ${c.yellow('\\')} ${c.dim('续行，空行提交')}
+  ${c.dim('· 斜杠命令：/help /model /thinking /clear /compact /sessions /quit')}
+  ${c.dim('· Ctrl+C 中断运行，连按两次退出')}
 
-  # provider/id 组合写法
-  ${APP_NAME} --model anthropic/claude-sonnet-4-20250514 "帮我重构代码"
+${head('示例:')}
+  ${c.dim('# 交互模式')}
+  ${c.cyan(APP_NAME)}
+  ${c.dim('# 管道单次提问')}
+  ${c.yellow('cat README.md')} ${c.dim('|')} ${c.cyan(APP_NAME)} ${c.green('-p')} ${c.yellow('"总结这段文本"')}
+  ${c.dim('# 指定模型（provider/id）')}
+  ${c.cyan(APP_NAME)} ${c.green('--model')} ${c.yellow('deepseek/deepseek-chat')} ${c.yellow('"你好"')}
+  ${c.dim('# 附带文件上下文（图片走多模态）')}
+  ${c.cyan(APP_NAME)} ${c.yellow('@package.json')} ${c.yellow('"分析依赖"')}
+  ${c.dim('# 继续上次会话')}
+  ${c.cyan(APP_NAME)} ${c.green('-c')} ${c.yellow('"我们刚才聊到哪里了？"')}
+  ${c.dim('# 只读审查')}
+  ${c.cyan(APP_NAME)} ${c.green('-t')} ${c.yellow('read,find,grep')} ${c.green('-p')} ${c.yellow('"审查 src/"')}
 
-  # 附带文件上下文
-  ${APP_NAME} @package.json "分析这个文件的依赖"
-
-  # 继续上次会话
-  ${APP_NAME} -c "我们刚才聊到哪里了？"
-
-  # 只读模式
-  ${APP_NAME} --tools read -p "审查 src/ 下的代码"
-
-${'环境变量:'}
-  OPENAI_API_KEY / DEEPSEEK_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY ...
-  AIPACK_CONFIG_DIR                       配置目录（默认 ~/.aipack）
+${head('环境变量:')}
+  ${c.dim('OPENAI_API_KEY / DEEPSEEK_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY ...')}
+  ${c.dim('AIPACK_CONFIG_DIR')} ${c.dim('→')} ${c.dim('配置目录（默认 ~/.aipack）')}
 `);
 }

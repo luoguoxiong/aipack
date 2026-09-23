@@ -21,7 +21,7 @@ export const memQuickstartCode = [
   '});',
   '',
   '// 3. 正常使用——记忆自动运转',
-  'const result = await runtime.run(createRequest({ message: "我叫小明" }));',
+  'const result = await runtime.run(createRequest("我叫小明"));',
   '// 下次对话时，Agent 会自动知道"用户叫小明"',
 ].join('\n');
 

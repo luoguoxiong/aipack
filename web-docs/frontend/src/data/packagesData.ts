@@ -182,7 +182,7 @@ export const packages: PackageInfo[] = [
     icon: '🗄️',
     install: 'pnpm add @aipack-ai/observability-server',
     features: [
-      '独立部署：bin `observability-server` 一键启动，或宿主应用组装 createCollector',
+      '独立部署：npm start 一键启动（bin 为 observability-worker），或宿主应用组装 createCollector',
       '上报鉴权：appId+Secret 白名单（OBS_APPS），未授权 401 拒绝',
       'SQLite 落盘：runs / spans / tool_calls 三表 + 索引，事务批量写入',
       '在线对数直方图：p50/p95/p99 O(1) 维护，summary 查询零 SQL 聚合',

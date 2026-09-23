@@ -28,7 +28,7 @@ import { listSessionsByRecency } from '../builder.js';
 import type { McpPlugin } from '@aipack-ai/mcp';
 import { ChunkRenderer } from './render.js';
 import { ask } from '../prompt.js';
-import { APP_NAME, VERSION } from '../version.js';
+import { printStartupBanner } from '../banner.js';
 
 export interface InteractiveOptions {
   runtime: Runtime;
@@ -63,12 +63,21 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
   let busy = false;
   let sigintCount = 0;
 
+  /** 多行输入缓存：行尾以 \ 续行时累加，直至遇到普通行 */
+  let pendingMultiline: string[] = [];
+
   /** 主循环存活 Promise：cleanup 时 resolve，进程由 cli.ts 收尾 */
   let finish!: () => void;
   const finished = new Promise<void>(resolve => { finish = resolve; });
 
   function cleanup(): void {
     finish();
+  }
+
+  /** 提示符：显示短模型名，busy 时保持原值（busy 期间不 prompt） */
+  function buildPrompt(): string {
+    const id = model.aiModel.id;
+    return chalk.blue(`${chalk.dim('aipack')} ${chalk.cyan(id)}${chalk.blue('>')} `);
   }
 
   // ── readline 生命周期（确认期间销毁重建，避免与 select 抢占 stdin）──
@@ -81,13 +90,21 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
     rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
-      prompt: chalk.blue('aipack> '),
+      prompt: buildPrompt(),
     });
 
     rl.on('SIGINT', () => {
       if (busy) {
         console.log(chalk.yellow('\n中断当前运行...'));
         runtime.abort(activeKey);
+        return;
+      }
+      // 续行中：第一次 Ctrl+C 取消续行而非退出
+      if (pendingMultiline.length > 0) {
+        pendingMultiline = [];
+        rl.setPrompt(buildPrompt());
+        console.log(chalk.dim('（已取消多行输入）'));
+        rl.prompt();
         return;
       }
       sigintCount++;
@@ -127,23 +144,51 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
       ephemeral: args.noSession,
     };
 
+    let turnUsage = { input: 0, output: 0 };
+    let toolsUsed: string[] = [];
+
     try {
       for await (const chunk of runtime.stream(request) as AsyncGenerator<ResultChunk>) {
         renderer.render(chunk);
         if (chunk.type === 'done' && chunk.result?.usage) {
           const u = chunk.result.usage as { input?: number; output?: number };
-          usageTotal.input += u.input ?? 0;
-          usageTotal.output += u.output ?? 0;
+          turnUsage.input = u.input ?? 0;
+          turnUsage.output = u.output ?? 0;
+          usageTotal.input += turnUsage.input;
+          usageTotal.output += turnUsage.output;
+          toolsUsed = chunk.result.toolsUsed ?? [];
         }
       }
-      if (usageTotal.input > 0 || usageTotal.output > 0) {
-        console.log(chalk.dim(`  tokens: ↑${usageTotal.input.toLocaleString()} ↓${usageTotal.output.toLocaleString()}（累计）`));
-      }
+      printTurnStats(turnUsage, toolsUsed);
     } catch (err) {
       console.log(chalk.red(`错误: ${err instanceof Error ? err.message : String(err)}`));
     } finally {
       busy = false;
       rl.prompt();
+    }
+  }
+
+  /** 回合统计行：本轮 token + 工具数 + 会话累计 */
+  function printTurnStats(
+    turn: { input: number; output: number },
+    tools: string[],
+  ): void {
+    const parts: string[] = [];
+    if (turn.input > 0 || turn.output > 0) {
+      parts.push(
+        chalk.dim(`本轮 ↑${turn.input.toLocaleString()} ↓${turn.output.toLocaleString()}`),
+      );
+      parts.push(
+        chalk.dim(
+          `累计 ↑${usageTotal.input.toLocaleString()} ↓${usageTotal.output.toLocaleString()}`,
+        ),
+      );
+    }
+    if (tools.length > 0) {
+      parts.push(chalk.dim(`工具 ${tools.join(', ')}`));
+    }
+    if (parts.length > 0) {
+      console.log(`  ${parts.join(chalk.dim('  ·  '))}`);
     }
   }
 
@@ -317,39 +362,66 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
   }
 
   function printSlashHelp(): void {
-    console.log(`${chalk.bold('命令:')}
-  /model [provider/id]    切换模型（无参显示当前）
-  /thinking <级别>        off/minimal/low/medium/high/max
-  /system <文本>          替换系统提示词
-  /session                当前会话信息
-  /sessions               列出历史会话
-  /clear                  清空当前会话（仅内存）
-  /compact                手动压缩会话历史（释放上下文空间）
-  /approvals              未决审批单
-  /approve <id>           批准
-  /deny <id>              驳回
-  /mcp [refresh]          MCP server 连接状态 / 热刷新工具列表
-  /quit                   退出（Ctrl+C 双击）`);
+    console.log(`${chalk.bold.magenta('斜杠命令:')}
+  ${chalk.green('/model [provider/id]')}      切换模型（无参显示当前）
+  ${chalk.green('/thinking <级别>')}         ${chalk.dim('off/minimal/low/medium/high/max')}
+  ${chalk.green('/system <文本>')}           替换系统提示词
+  ${chalk.green('/session')}                  当前会话信息
+  ${chalk.green('/sessions')}                 列出历史会话
+  ${chalk.green('/clear')}                    清空当前会话（仅内存）
+  ${chalk.green('/compact')}                  手动压缩会话历史（释放上下文空间）
+  ${chalk.green('/tools')}                    查看工具集与权限配置
+  ${chalk.green('/mcp [refresh]')}            MCP server 状态 / 热刷新工具列表
+  ${chalk.green('/approvals')}                未决审批单
+  ${chalk.green('/approve <id>')}             批准
+  ${chalk.green('/deny <id>')}                驳回
+  ${chalk.green('/quit')}                     退出（Ctrl+C 双击）
+
+${chalk.dim('输入提示:')}
+  ${chalk.dim('· 普通文本直接发送；行尾以')} ${chalk.yellow('\\')} ${chalk.dim('续行，空行提交多行')}
+  ${chalk.dim('·')} ${chalk.yellow('@文件')} ${chalk.dim('可附加文件上下文（图片自动走多模态）')}`);
   }
 
   // ── 行输入分发 ──
   async function onLine(line: string): Promise<void> {
     const text = line.trim();
     if (!text) {
+      // 空行：若有续行缓存则提交，否则仅重置提示
+      if (pendingMultiline.length > 0) {
+        const joined = pendingMultiline.join('\n');
+        pendingMultiline = [];
+        await send(joined);
+      } else {
+        rl.prompt();
+      }
+      return;
+    }
+    // 续行：以 \ 结尾（且非斜杠命令）→ 累加并切换续行提示
+    if (!text.startsWith('/') && text.endsWith('\\') && !text.endsWith('\\\\')) {
+      pendingMultiline.push(text.slice(0, -1));
+      rl.setPrompt(chalk.dim('… '));
       rl.prompt();
       return;
     }
+    // 合并续行 + 当前行为完整输入
+    const full = pendingMultiline.length > 0
+      ? [...pendingMultiline, text].join('\n')
+      : text;
+    pendingMultiline = [];
+    // 恢复主提示符（续行后）
+    rl.setPrompt(buildPrompt());
+
     if (busy) {
       console.log(chalk.dim('（运行中，输入被忽略；Ctrl+C 中断）'));
       rl.prompt();
       return;
     }
-    if (text.startsWith('/')) {
-      await handleCommand(text);
+    if (full.startsWith('/')) {
+      await handleCommand(full);
       rl.prompt();
       return;
     }
-    await send(text);
+    await send(full);
   }
 
   // ── 权限确认：关 rl → select 接管 → 重建 rl ──
@@ -367,10 +439,12 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
   }
 
   // ── 启动横幅 ──
-  const modelLabel = `${model.aiModel.provider}/${model.aiModel.id}${model.custom ? chalk.yellow(' (自定义)') : ''}`;
-  console.log(chalk.bold(`${APP_NAME} ${VERSION}`) + chalk.dim(`  会话: ${activeKey}${args.noSession ? ' (临时)' : ''}`));
-  console.log(chalk.dim(`模型: ${modelLabel}`));
-  console.log(chalk.dim('输入 /help 查看命令，Ctrl+C 中断运行，连按两次退出\n'));
+  printStartupBanner({
+    sessionKey: activeKey,
+    ephemeral: args.noSession,
+    modelLabel: `${model.aiModel.provider}/${model.aiModel.id}`,
+    customModel: model.custom,
+  });
 
   setupRl();
 
