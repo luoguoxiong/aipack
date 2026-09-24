@@ -1,6 +1,8 @@
-import { ReactNode, useMemo } from 'react';
-import { Menu } from 'antd';
+import { ReactNode, useMemo, useEffect, useState } from 'react';
+import { Menu, Drawer } from 'antd';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { UnorderedListOutlined } from '@ant-design/icons';
+import { useIsMobile } from '../hooks/useIsMobile';
 import {
   RocketOutlined,
   ApiOutlined,
@@ -219,6 +221,13 @@ const packagesMenu: MenuItem[] = [
 export default function DocsLayout({ children }: DocsLayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const isMobile = useIsMobile();
+  const [tocOpen, setTocOpen] = useState(false);
+
+  // 切换路由时收起移动端目录抽屉
+  useEffect(() => {
+    setTocOpen(false);
+  }, [location.pathname]);
 
   const { selectedKey, openKeys, rootPath } = useMemo(() => {
     const path = location.pathname;
@@ -261,44 +270,72 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
   })();
 
   const handleClick = ({ key }: { key: string }) => {
+    setTocOpen(false);
     const [path, hash] = key.split('#');
     const target = hash ? `${path}#${hash}` : path;
     if (target !== location.pathname + location.hash) {
       // navigate 触发 URL 变化；页面内部 useLocation().hash effect 会处理滚动
       navigate(target);
     }
-    if (!hash) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
-    }
-    // 纯锚点直接滚动（如果 DOM 已渲染）；页面的 useLocation effect 也会兜底
-    const el = document.getElementById(hash);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // （若 DOM 未渲染到，页面内部 useEffect(location.hash) 会在 50ms 后再试一次）
+    // 移动端从抽屉点击时，先等抽屉关闭动画结束（期间 body 被锁滚动）再滚
+    const delay = isMobile ? 260 : 0;
+    window.setTimeout(() => {
+      if (!hash) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      // 纯锚点直接滚动（如果 DOM 已渲染）；页面的 useLocation effect 也会兜底
+      const el = document.getElementById(hash);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // （若 DOM 未渲染到，页面内部 useEffect(location.hash) 会在 50ms 后再试一次）
+    }, delay);
   };
 
   if (rootPath === '/') {
     return <>{children}</>;
   }
 
+  const menu = (
+    <Menu
+      mode="inline"
+      selectedKeys={[selectedKey]}
+      defaultOpenKeys={openKeys}
+      onClick={handleClick}
+      style={{ borderRight: 'none', background: 'transparent' }}
+      items={currentMenu as any}
+    />
+  );
+
   return (
     <div className="docs-layout">
-      <aside className="docs-sidebar">
-        <div style={{ padding: '0 20px 16px', fontSize: 12, fontWeight: 700, color: '#64748b', letterSpacing: 0.5 }}>
-          文档导航
-        </div>
-        <Menu
-          mode="inline"
-          selectedKeys={[selectedKey]}
-          defaultOpenKeys={openKeys}
-          onClick={handleClick}
-          style={{ borderRight: 'none', background: 'transparent' }}
-          items={currentMenu as any}
-        />
-      </aside>
+      {!isMobile && (
+        <aside className="docs-sidebar">
+          <div style={{ padding: '0 20px 16px', fontSize: 12, fontWeight: 700, color: '#64748b', letterSpacing: 0.5 }}>
+            文档导航
+          </div>
+          {menu}
+        </aside>
+      )}
       <main className="docs-content">
+        {isMobile && currentMenu.length > 0 && (
+          <button className="docs-toc-trigger" onClick={() => setTocOpen(true)}>
+            <UnorderedListOutlined />
+            <span>目录</span>
+          </button>
+        )}
         <div className="docs-content-inner">{children}</div>
       </main>
+      <Drawer
+        className="toc-drawer"
+        title={<span style={{ fontWeight: 700 }}>目录</span>}
+        placement="bottom"
+        height="70vh"
+        open={isMobile && tocOpen}
+        onClose={() => setTocOpen(false)}
+        styles={{ body: { padding: '8px 0 calc(16px + env(safe-area-inset-bottom))' } }}
+      >
+        {menu}
+      </Drawer>
     </div>
   );
 }
