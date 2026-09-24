@@ -262,65 +262,34 @@ describe('MCP HTTP server：GET 长连 + server 主动通知推送', () => {
     assert.ok(sid, 'initialize 应返回 Mcp-Session-Id');
     await initRes.body!.cancel();
 
-    // 2) 开 GET 长连，监听 SSE 事件
-    const events: unknown[] = [];
-    const got = new Promise<void>((resolve, reject) => {
-      const ac = new AbortController();
-      const timer = setTimeout(() => reject(new Error('timeout: list_changed not received')), 3000);
-      fetch(srv.url, {
-        method: 'GET',
-        headers: { Accept: 'text/event-stream', 'Mcp-Session-Id': sid },
-        signal: ac.signal,
-      }).then(async (res) => {
-        assert.equal(res.status, 200);
-        assert.match(res.headers.get('content-type') ?? '', /text\/event-stream/);
-        const reader = res.body!.getReader();
-        const decoder = new TextDecoder();
-        let buf = '';
-        // 监听一段时间
-        const start = Date.now();
-        while (Date.now() - start < 2500) {
-          const { value, done } = await Promise.race([
-            reader.read(),
-            new Promise<{ value: undefined; done: false }>((r) => setTimeout(() => r({ value: undefined, done: false }), 200)),
-          ]);
-          if (done) break;
-          if (value) buf += decoder.decode(value, { stream: true });
-          // 解析 \n\n 分隔的事件
-          let sep: number;
-          while ((sep = buf.indexOf('\n\n')) >= 0) {
-            const raw = buf.slice(0, sep);
-            buf = buf.slice(sep + 2);
-            const dataLine = raw.split('\n').find((l) => l.startsWith('data:'));
-            if (dataLine) events.push(dataLine.slice(5).replace(/^ /, ''));
-          }
-          // 命中目标 → resolve
-          if (events.some((d) => String(d).includes('list_changed'))) {
-            clearTimeout(timer);
-            ac.abort();
-            resolve();
-            return;
-          }
-        }
-        clearTimeout(timer);
-        ac.abort();
-        reject(new Error('timeout'));
-      }).catch((err) => {
-        clearTimeout(timer);
-        // 中止流导致的 AbortError 视为正常关闭
-        if ((err as Error).name === 'AbortError') return;
-        reject(err);
-      });
+    // 2) 开 GET 长连：await 到响应头即代表 server 侧已注册该流
+    //    （否则 notify 可能早于流注册 → 广播时无流可写，通知被丢弃）
+    const ac = new AbortController();
+    const res = await fetch(srv.url, {
+      method: 'GET',
+      headers: { Accept: 'text/event-stream', 'Mcp-Session-Id': sid },
+      signal: ac.signal,
     });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type') ?? '', /text\/event-stream/);
 
     // 3) 触发主动通知
     srv.host.notifyToolsListChanged();
 
-    await got;
+    // 4) 读 SSE，直到收到 list_changed（或超时）
+    const events: string[] = [];
+    try {
+      await readSseUntil(res, (data) => {
+        events.push(data);
+        return data.includes('list_changed');
+      }, 3000);
+    } finally {
+      ac.abort();
+      await res.body!.cancel().catch(() => {});
+    }
 
-    // 断言确实收到 list_changed 通知
     assert.ok(
-      events.some((d) => String(d).includes('list_changed')),
+      events.some((d) => d.includes('list_changed')),
       `expected list_changed in events, got: ${JSON.stringify(events)}`,
     );
 
@@ -402,4 +371,38 @@ describe('MCP HTTP server：sampling 双向', () => {
 });
 
 // ─── helpers ─────────────────────────────────────────────────
-// (test 文件已直接使用 fetch + SSE 解析，无额外 helper)
+
+/**
+ * 从 SSE 响应流中读取事件，直到 onData 返回 true（命中）或超时。
+ * 命中 → resolve；超时 / 流结束仍未命中 → reject。
+ */
+async function readSseUntil(
+  res: Response,
+  onData: (data: string) => boolean,
+  timeoutMs: number,
+): Promise<void> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  const deadline = Date.now() + timeoutMs;
+  let buf = '';
+  try {
+    while (Date.now() < deadline) {
+      const timer = new Promise<null>((r) => setTimeout(() => r(null), 100));
+      const read = reader.read().catch(() => null);
+      const result = await Promise.race([read, timer]);
+      if (!result) continue; // 轮询间隔到期，再等
+      if (result.done) break;
+      buf += decoder.decode(result.value, { stream: true });
+      let sep: number;
+      while ((sep = buf.indexOf('\n\n')) >= 0) {
+        const raw = buf.slice(0, sep);
+        buf = buf.slice(sep + 2);
+        const dataLine = raw.split('\n').find((l) => l.startsWith('data:'));
+        if (dataLine && onData(dataLine.slice(5).replace(/^ /, ''))) return;
+      }
+    }
+  } finally {
+    try { reader.releaseLock(); } catch { /* noop */ }
+  }
+  throw new Error(`timeout: expected SSE event not received within ${timeoutMs}ms`);
+}

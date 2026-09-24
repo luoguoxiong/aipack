@@ -75,10 +75,12 @@ interface Pending {
 
 interface Session {
   id: string;
-  /** 该 session 当前的活跃 SSE 流（POST 内嵌 SSE + 独立 GET 流） */
+  /** 该 session 当前的活跃 SSE 流（独立 GET 流 + 进行中的 POST 内嵌 SSE） */
   getStreams: Set<http.ServerResponse>;
   /** 该 session 待响应的出站请求（host.sampleLLM 触发） */
   outboundPending: Map<number, Pending>;
+  /** GET 流的 keepalive 定时器，close/DELETE 时需清理，避免悬挂句柄 */
+  keepaliveTimers: Set<ReturnType<typeof setInterval>>;
 }
 
 /** AsyncLocalStorage：把"当前请求所属 session"绑到 host.handleRequest 调用栈 */
@@ -157,6 +159,8 @@ export function createMcpHttpServer(
     server,
     close: () => new Promise<void>((resolve) => {
       for (const s of sessions.values()) {
+        for (const t of s.keepaliveTimers) clearInterval(t);
+        s.keepaliveTimers.clear();
         for (const stream of s.getStreams) {
           try { stream.end(); } catch { /* noop */ }
         }
@@ -167,6 +171,8 @@ export function createMcpHttpServer(
       }
       sessions.clear();
       server.close(() => resolve());
+      // keep-alive / SSE 长连不会自行断开，必须主动销毁，否则 close 回调永不触发
+      try { server.closeAllConnections?.(); } catch { /* noop */ }
     }),
     listen: () => new Promise<void>((resolve, reject) => {
       server.once('error', reject);
@@ -285,7 +291,12 @@ async function onPostEnd(
   const isInit = reqMsg.method === 'initialize';
   let session: Session;
   if (isInit) {
-    session = { id: randomUUID(), getStreams: new Set(), outboundPending: new Map() };
+    session = {
+      id: randomUUID(),
+      getStreams: new Set(),
+      outboundPending: new Map(),
+      keepaliveTimers: new Set(),
+    };
     sessions.set(session.id, session);
   } else {
     if (!sessionId) {
@@ -316,6 +327,10 @@ async function onPostEnd(
       req.on('close', () => { session.getStreams.delete(res); });
       const resp = await sessionStorage.run(session, () => host.handleRequest(reqMsg));
       if (resp) res.write(formatSseMessage(resp));
+      // POST 的 SSE 流只承载本请求的响应：写完即结束，否则客户端会一直挂在
+      // 流读取上（直至其 requestTimeout 超时）。server 主动消息走独立 GET 流。
+      session.getStreams.delete(res);
+      res.end();
     } else {
       // JSON 单条响应
       const resp = await sessionStorage.run(session, () => host.handleRequest(reqMsg));
@@ -363,13 +378,20 @@ function handleGet(
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
   });
+  // 立即写一条注释行：既 flush 响应头（否则 client 要等到首个真实事件才拿到
+  // headers，无法确认流已就绪），也不被 SSE 客户端当作事件解析
+  res.write(': open\n\n');
   session.getStreams.add(res);
   // 30s 注释 keepalive（防中间代理超时）
   const pingTimer = setInterval(() => {
     try { res.write(': keepalive\n\n'); } catch { /* noop */ }
   }, 30_000);
+  // unref：keepalive 不应阻止进程退出
+  pingTimer.unref?.();
+  session.keepaliveTimers.add(pingTimer);
   req.on('close', () => {
     clearInterval(pingTimer);
+    session.keepaliveTimers.delete(pingTimer);
     session.getStreams.delete(res);
   });
 }
@@ -389,6 +411,8 @@ function handleDelete(
   }
   const session = sessions.get(sessionId);
   if (session) {
+    for (const t of session.keepaliveTimers) clearInterval(t);
+    session.keepaliveTimers.clear();
     for (const stream of session.getStreams) {
       try { stream.end(); } catch { /* noop */ }
     }
