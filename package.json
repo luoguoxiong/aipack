@@ -40,7 +40,8 @@
     "overrides": {
       "esbuild@>=0.27.0 <0.28.1": ">=0.28.1",
       "nanoid@<3.3.18": ">=3.3.18",
-      "js-yaml": ">=4.3.2"
+      "js-yaml": "^4.3.2",
+      "read-yaml-file": "^2.1.0"
     }
   },
   "dependencies": {
@@ -54,5 +55,6 @@
     "@types/node": "^20.12.0",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0"
-  }
+  },
+  "packageManager": "pnpm@9.15.9+sha512.68046141893c66fad01c079231128e9afb89ef87e2691d69e4d40eee228988295fd4682181bae55b58418c3a253bde65a505ec7c5f9403ece5cc3cd37dcf2531"
 }
