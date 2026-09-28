@@ -44,6 +44,7 @@ Agent 运行时 + 可插拔插件生态，快速构建你自己的 AI Agent
 - **Runtime + Extension + Transformer 三段式架构** — 插件通过 Tapable 钩子挂载生命周期，扩展点清晰可控
 - **流式与同步双入口** — `runtime.run()` 一次性返回结果，`runtime.stream()` 流式返回增量事件
 - **持久化会话管理** — 内存 / 文件双存储适配器，支持 `maxAge` 过期惰性清理
+- **框架级权限审批** — `PermissionPolicy` 四档裁决（allow / deny / confirm / pending）+ `ApprovalManager` 审批单 + `FileApprovalStore` 持久化，裁决先于工具执行，工具自身无法绕过
 
 ### 模型与上下文
 
@@ -55,9 +56,10 @@ Agent 运行时 + 可插拔插件生态，快速构建你自己的 AI Agent
 
 - **MCP 双向打通** — 既把外部 MCP Server 工具包装为原生 `Tool`，也把 aipack 工具反向暴露为标准 MCP Server
 - **Agent Skills 插件** — 对齐 `SKILL.md` 开放规范，渐进式披露，零开销向后兼容
-- **多 Agent 编排** — `AgentGraph` / Pipeline / Router 等编排模式
-- **可观测性全链路** — 埋点 SDK + 收集服务 + Dashboard，支持 Prometheus 指标导出
-- **多端交付** — CLI、Tauri 桌面端、Web 应用全覆盖
+- **多 Agent 编排** — `AgentGraph` / Pipeline / Router / Supervisor / Debate / MapReduce 等编排模式
+- **内置 Eval 评测体系** — `EvalCase` 用例格式 + 规则评分器 + mock fixture 回放（免 API Key）+ baseline 回归门禁，`aipack-eval` CLI 直接跑
+- **可观测性全链路** — 埋点 SDK + 收集服务 + Web Dashboard，MySQL / ClickHouse 双库落盘，Prometheus `/metrics/prometheus` 导出
+- **多端交付** — CLI 终端助手 + 可观测性 Web Dashboard + 文档网站，框架本身以库形式嵌入任意宿主应用
 
 ---
 
@@ -66,13 +68,13 @@ Agent 运行时 + 可插拔插件生态，快速构建你自己的 AI Agent
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                           应用层                              │
-│      CLI  ·  Tauri 桌面端  ·  Web 应用  ·  自定义集成         │
+│   CLI  ·  Web Dashboard  ·  文档网站  ·  自定义集成(库接入)    │
 └──────────────────────────────────────────────────────────────┘
                               │
 ┌──────────────────────────────────────────────────────────────┐
 │                     插件生态 (Extensions)                     │
 │  memory  ·  compression  ·  skills  ·  mcp  ·  observability │
-│  multi-agent                                                 │
+│  multi-agent  ·  eval                                        │
 └──────────────────────────────────────────────────────────────┘
                               │
 ┌──────────────────────────────────────────────────────────────┐
@@ -82,6 +84,7 @@ Agent 运行时 + 可插拔插件生态，快速构建你自己的 AI Agent
 │   Extension    Tapable 生命周期钩子 (beforeRun / done / failed)│
 │   Transformer  数组顺序链式上下文转换 (工具配对 / 截断 / 快照)  │
 │   Session      文件 / 内存双适配器持久化                       │
+│   Permission   四档裁决 (allow / deny / confirm / pending)     │
 │   AI 模型层    多提供商标准化目录 + 流式实现 (aipack/ai)        │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -192,15 +195,18 @@ DEEPSEEK_API_KEY=sk-xxx npx tsx your-script.ts
 
 | 包                                                                    | 版本  | 定位         |
 | --------------------------------------------------------------------- | ----- | ------------ |
-| [`@aipack-ai/agent`](./packages/agent)                                | 1.0.2 | 框架内核     |
-| [`@aipack-ai/cli`](./packages/cli)                                    | 1.0.2 | 终端助手     |
-| [`@aipack-ai/memory`](./packages/memory)                              | 1.0.2 | 长期记忆插件 |
-| [`@aipack-ai/compression`](./packages/compression)                    | 1.0.2 | 上下文压缩   |
-| [`@aipack-ai/skills`](./packages/skills)                              | 1.0.2 | Skills 插件  |
-| [`@aipack-ai/multi-agent`](./packages/multi-agent)                    | 1.0.2 | 多 Agent 编排 |
-| [`@aipack-ai/mcp`](./packages/mcp)                                    | 0.1.0 | MCP 双向插件 |
-| [`@aipack-ai/observability`](./packages/observability)                | 1.0.2 | 可观测性 SDK |
-| [`@aipack-ai/observability-server`](./packages/observability-server)  | 1.0.2 | 收集服务     |
+| [`@aipack-ai/agent`](./packages/agent)                                | 1.1.6 | 框架内核     |
+| [`@aipack-ai/cli`](./packages/cli)                                    | 1.1.6 | 终端助手     |
+| [`@aipack-ai/memory`](./packages/memory)                              | 1.1.6 | 长期记忆插件 |
+| [`@aipack-ai/compression`](./packages/compression)                    | 1.1.6 | 上下文压缩   |
+| [`@aipack-ai/skills`](./packages/skills)                              | 1.1.6 | Skills 插件  |
+| [`@aipack-ai/multi-agent`](./packages/multi-agent)                    | 1.1.6 | 多 Agent 编排 |
+| [`@aipack-ai/mcp`](./packages/mcp)                                    | 1.1.6 | MCP 双向插件 |
+| [`@aipack-ai/observability`](./packages/observability)                | 1.1.6 | 可观测性 SDK |
+| [`@aipack-ai/observability-server`](./packages/observability-server)  | 1.1.6 | 收集服务 + Dashboard |
+| [`@aipack-ai/eval`](./packages/eval)                                  | 1.1.6 | Eval 评测体系 |
+
+> 版本号随 Changesets 发布同步更新，以各包 `package.json` 为准。
 
 <details>
 <summary><b>① <code>@aipack-ai/agent</code> — 框架内核</b></summary>
@@ -214,6 +220,7 @@ DEEPSEEK_API_KEY=sk-xxx npx tsx your-script.ts
 | **Transformer** | 上下文转换器：按数组顺序链式转换（工具配对、截断、快照等）          |
 | **Session**     | 会话持久化：文件 / 内存双适配器，`maxAge` 过期惰性清理              |
 | **TaskGraph**   | 任务依赖图：工具调用链路追踪与分析                                  |
+| **Permission**  | 权限层：`PermissionPolicy` 四档裁决 + `ApprovalManager` 审批单 + `FileApprovalStore` 持久化 |
 | **AI 模型层**   | 多提供商标准化模型目录 + 流式实现（`aipack/ai` 子模块）             |
 
 ```bash
@@ -227,7 +234,7 @@ pnpm add @aipack-ai/agent
 <details>
 <summary><b>② <code>@aipack-ai/cli</code> — 命令行工具</b></summary>
 
-基于 aipack 框架的终端 AI 编程助手，内置 read / write / edit / bash 工具与智能权限策略。
+基于 aipack 框架的终端 AI 编程助手，内置 read / write / edit / bash / find / grep / ls 七个工具与智能权限策略。
 
 ```bash
 aipack                          # 交互模式（REPL + 斜杠命令）
@@ -255,7 +262,7 @@ aipack approvals list           # 跨进程审批单管理
 - **BM25 检索** — 零依赖关键词检索，支持 CJK（中日韩）bigram 分词
 - **混合检索** — BM25 + 向量双路独立召回融合
 - **记忆合并** — 增量去重 / 合并相似记忆，修剪过期低置信度条目
-- **Agent 工具** — save / search / list / delete 4 个可调用工具
+- **Agent 工具** — `save_memory` / `search_memory` / `list_memories` / `delete_memory` 4 个可调用工具
 
 详见 [packages/memory](./packages/memory)。
 
@@ -320,7 +327,7 @@ const runtime = createRuntime({ extensions: plugin.extensions });
 
 **服务端方向** — `createMcpServerHost({ tools, resources?, prompts? })` 把 aipack 原生 `Tool[]` 反向暴露为标准 MCP Server，供 Claude Desktop / Cursor 等调用。
 
-**传输层** — 客户端：stdio（child_process + 行分隔 JSON-RPC）· Streamable HTTP（会话管理 / 协议版本头 / SSE）· legacy SSE；服务端：`runStdioServer` + 独立进程入口。
+**传输层** — 客户端：stdio（child_process + 行分隔 JSON-RPC）· Streamable HTTP（会话管理 / 协议版本头 / SSE）· legacy SSE；服务端：`runStdioServer`（入口 `./server/stdio-entry`）+ `runHttpServer`（入口 `./server/http-entry`），均有独立进程入口。
 
 **协议容错** — 版本协商降级、未知 content block 降级为文本、JSON-RPC 错误统一转 `isError`、env `${VAR}` 未定义即跳过该 server。
 
@@ -381,12 +388,40 @@ await runStdioServer(host);
 | 侧         | 能力                                                             |
 | ---------- | ---------------------------------------------------------------- |
 | **SDK**    | `appId + appSecret` 一行接入，失败本地缓存补报                    |
-| **Server** | SQLite 落盘 + 内存聚合 + REST 查询 + Web Dashboard                |
-| **指标**   | Token 用量、调用延迟、工具成功率、错误分布                        |
+| **Server** | MySQL（业务库）+ ClickHouse（明细库）落盘 + 内存 / Redis 聚合 + REST 查询 + Web Dashboard |
+| **指标**   | Token 用量、调用延迟、工具成功率、错误分布、成本                  |
 | **告警**   | 自定义规则 + 通知                                                |
-| **导出**   | Prometheus `/metrics` 端点                                       |
+| **导出**   | Prometheus `/metrics/prometheus` 端点                             |
 
-详见 [packages/observability-server](./packages/observability-server)。
+两种运行模式：**基础部署**（collector 直写 ClickHouse，`./start.sh` 一键起 MySQL + ClickHouse）与**平台模式**（Kafka 解耦 + ingest-worker 批量写 + Redis 聚合），详见 [packages/observability-server](./packages/observability-server)。
+
+</details>
+
+<details>
+<summary><b>⑨ <code>@aipack-ai/eval</code> — Eval 评测体系</b></summary>
+
+Agent 效果回归评测：**EvalCase（用例）→ Runner（执行）→ Scorer（评分）→ Report（报告 + baseline 门禁）**
+
+- **用例格式** — `EvalCase`（`id` / `suite` / `input` / `expected` / `scorers` / `origin`），内置套件 `tool-calling` / `text-output` / `agent-e2e`
+- **mock 回放** — `createMockStreamFn` + `createMockTools` 用 fixture 重放模型响应，免 API Key、结果确定，适合 PR 级 CI
+- **规则评分器** — 字符串包含 / 正则 / 工具调用名与参数匹配（`RULE_SCORER_TYPES`），零 LLM 成本
+- **报告与门禁** — Markdown / JSON 报告 + baseline 对比，`--threshold` 控制通过率回归容差，回归即非零退出码
+
+```bash
+# CLI（mock 模式，离线可运行）
+pnpm --filter @aipack-ai/eval eval -- --suite tool-calling
+pnpm --filter @aipack-ai/eval eval -- --report-dir ./eval-results --baseline ./baseline.json --update-baseline
+```
+
+```typescript
+import { loadCases, runEval, renderMarkdown } from '@aipack-ai/eval';
+
+const { cases } = await loadCases();                 // 默认 packages/eval/eval/cases
+const report = await runEval(cases, { mode: 'mock' });
+console.log(renderMarkdown(report));
+```
+
+详见 [packages/eval](./packages/eval)。
 
 </details>
 
@@ -411,7 +446,7 @@ await runStdioServer(host);
 ```
 aipack/
 ├── packages/                    # 核心包（详见「核心包」章节）
-│   ├── agent/                  # Agent 框架核心（Runtime + Extension + Transformer）
+│   ├── agent/                  # Agent 框架核心（Runtime + Extension + Transformer + Permission）
 │   ├── cli/                    # 命令行工具（aipack 命令）
 │   ├── memory/                 # 持久化记忆插件（BM25 + 向量检索）
 │   ├── compression/            # 多级上下文压缩插件
@@ -419,13 +454,16 @@ aipack/
 │   ├── multi-agent/            # 多 Agent 编排图
 │   ├── mcp/                    # MCP 插件（客户端 + 服务端）
 │   ├── observability/          # 可观测性上报 SDK
-│   └── observability-server/   # 可观测性收集服务 + Dashboard
+│   ├── observability-server/   # 可观测性收集服务 + Dashboard
+│   └── eval/                   # Eval 评测体系（用例 + 评分器 + Runner + 门禁）
 ├── examples/                    # 可运行代码示例
 │   ├── deepseek.ts             # DeepSeek 模型接入示例
 │   ├── agent-memory.ts         # Agent 记忆插件示例
 │   ├── compression-demo.ts     # 上下文压缩示例
+│   ├── permission-approval.ts  # 权限裁决与审批单示例（离线可运行）
 │   ├── mcp-client.ts           # MCP 客户端方向示例（连接外部 MCP Server）
-│   └── mcp-server.ts           # MCP 服务端方向示例（把工具暴露为 MCP Server）
+│   ├── mcp-server.ts           # MCP 服务端方向示例（把工具暴露为 MCP Server）
+│   └── model.config.ts         # 示例统一模型配置（本地私有，cp model.config.example.ts 生成）
 ├── web-docs/                    # 官方文档网站（Vite + React）
 └── image/                       # 资源图片
 ```
@@ -460,6 +498,9 @@ pnpm example:agent-memory
 # 上下文压缩示例
 pnpm example:compression
 
+# 权限裁决与审批单示例（脚本化 streamFn，离线可运行）
+pnpm example:permission
+
 # MCP 客户端示例（连接本地 echo MCP server，离线可运行）
 pnpm example:mcp
 
@@ -467,16 +508,31 @@ pnpm example:mcp
 pnpm example:mcp-server
 ```
 
+> 示例统一从 `examples/model.config.ts` 读取模型配置，首次运行前执行
+> `cp examples/model.config.example.ts examples/model.config.ts` 并填入 Key。
+
 ### 类型检查 & 测试
 
 ```bash
 # 全量 TypeScript 类型检查（noEmit）
 pnpm lint
 
-# 各包测试
+# 各包测试（所有包均提供 test 脚本）
 pnpm --filter @aipack-ai/agent test
 pnpm --filter @aipack-ai/memory test
 pnpm --filter @aipack-ai/mcp test
+pnpm --filter @aipack-ai/eval test
+```
+
+### Eval 评测
+
+```bash
+# 跑全部用例（mock 模式，无需 API Key）
+pnpm --filter @aipack-ai/eval eval
+
+# 只跑某个套件 / 更新 baseline
+pnpm --filter @aipack-ai/eval eval -- --suite tool-calling
+pnpm --filter @aipack-ai/eval eval -- --update-baseline
 ```
 
 ### 文档网站
@@ -513,13 +569,16 @@ pnpm release           # 3. 构建 & 发布
 | `pnpm example:deepseek`     | 运行 DeepSeek 示例                                   |
 | `pnpm example:agent-memory` | 运行 Agent 记忆示例                                  |
 | `pnpm example:compression`  | 运行上下文压缩示例                                   |
+| `pnpm example:permission`   | 运行权限裁决与审批单示例（离线可运行）               |
 | `pnpm example:mcp`          | 运行 MCP 客户端示例（本地 echo server，离线可运行） |
 | `pnpm example:mcp-server`   | 以 stdio MCP Server 模式拉起 aipack 工具             |
 | `pnpm lint`                 | 全量 TypeScript 类型检查（noEmit）                   |
 | `pnpm docs:dev`             | 启动文档网站开发服务器                               |
 | `pnpm docs:build`           | 构建文档网站                                         |
 | `pnpm docs:preview`         | 预览文档网站构建产物                                 |
+| `pnpm docs:typecheck`       | 文档网站类型检查（noEmit）                           |
 | `pnpm docs:deploy`          | 部署文档网站（生产）                                 |
+| `pnpm docs:deploy:preview`  | 部署文档网站预览环境                                 |
 | `pnpm changeset`            | 添加 changeset 变更记录                              |
 | `pnpm version-packages`     | 根据 changeset 更新版本号                            |
 | `pnpm release`              | 构建 + 发布所有包到 npm                              |
@@ -559,12 +618,16 @@ API Key 支持以下方式（优先级从高到低）：
 
 | 文档                                                                  | 说明                                        |
 | --------------------------------------------------------------------- | ------------------------------------------- |
-| [Agent 框架](./packages/agent/README.md)                              | 核心 Runtime / Extension / Transformer 详细 API |
+| [Agent 框架](./packages/agent/README.md)                              | 核心 Runtime / Extension / Transformer / Permission 详细 API |
 | [CLI](./packages/cli/README.md)                                       | `aipack` 命令完整参考与配置说明             |
 | [记忆插件](./packages/memory/README.md)                               | 持久化记忆检索原理与自定义扩展              |
+| [上下文压缩](./packages/compression)                                  | L1–L5 压缩策略与配置                       |
 | [Skills 插件](./packages/skills/README.md)                            | `SKILL.md` 规范与渐进式披露机制             |
+| [多 Agent 编排](./packages/multi-agent)                               | 编排模式与 MCPBridge 桥接                   |
 | [MCP 插件](./packages/mcp/README.md)                                  | 客户端 / 服务端双向接入与传输层细节         |
-| [可观测性服务](./packages/observability-server/README.md)             | Server 部署与 Dashboard 使用                |
+| [可观测性服务](./packages/observability-server/README.md)             | Server 部署（MySQL / ClickHouse）与 Dashboard 使用 |
+| [Eval 评测](./packages/eval)                                          | EvalCase 格式、评分器与 baseline 门禁       |
+| [示例应用仓库](https://github.com/luoguoxiong/llm-awesome-apps)       | 基于 aipack 的 LLM 应用合集                 |
 
 ---
 
