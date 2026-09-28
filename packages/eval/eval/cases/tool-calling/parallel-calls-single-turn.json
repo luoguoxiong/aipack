@@ -1,0 +1,29 @@
+{
+  "id": "tool-calling/parallel-calls-single-turn",
+  "suite": "tool-calling",
+  "description": "单轮并行工具调用：两个 readFile 在同一 assistant 轮",
+  "origin": "handwritten",
+  "input": {
+    "message": "同时读取 a.txt 和 b.txt",
+    "fs": { "a.txt": "aaa", "b.txt": "bbb" },
+    "mock": {
+      "turns": [
+        {
+          "toolCalls": [
+            { "name": "readFile", "args": { "path": "a.txt" } },
+            { "name": "readFile", "args": { "path": "b.txt" } }
+          ]
+        },
+        { "text": "两个文件都读到了" }
+      ]
+    }
+  },
+  "expected": {
+    "type": "tool-call",
+    "calls": [
+      { "tool": "readFile", "args": { "path": "a.txt" } },
+      { "tool": "readFile", "args": { "path": "b.txt" } }
+    ],
+    "order": "exact"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "tool-calling/single-echo",
+  "suite": "tool-calling",
+  "description": "单工具调用 + 参数精确断言",
+  "origin": "handwritten",
+  "input": {
+    "message": "帮我回显 ping",
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "echo", "args": { "message": "ping" } }] },
+        { "text": "pong" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "echo", "args": { "message": "ping" } }], "order": "exact" } },
+    { "type": "contains", "params": { "value": "pong" } }
+  ]
+}

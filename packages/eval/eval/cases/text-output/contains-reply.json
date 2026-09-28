@@ -1,0 +1,13 @@
+{
+  "id": "text-output/contains-reply",
+  "suite": "text-output",
+  "description": "关键词包含断言",
+  "origin": "handwritten",
+  "input": {
+    "message": "aipack 是什么？",
+    "mock": {
+      "turns": [{ "text": "aipack 是一个轻量、可扩展、零魔法的 TypeScript Agent 框架。" }]
+    }
+  },
+  "expected": { "type": "contains", "value": "轻量" }
+}

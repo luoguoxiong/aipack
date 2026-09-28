@@ -1,0 +1,20 @@
+{
+  "id": "agent-e2e/search-todo",
+  "suite": "agent-e2e",
+  "description": "全文检索定位 TODO",
+  "origin": "handwritten",
+  "input": {
+    "message": "找出代码里的 TODO",
+    "fs": { "app.ts": "// TODO: refactor\nconst x = 1;", "util.ts": "const y = 2;" },
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "search", "args": { "query": "TODO" } }] },
+        { "text": "发现 1 处 TODO：app.ts:1" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "search", "args": { "query": "TODO" } }] } },
+    { "type": "contains", "params": { "value": "app.ts" } }
+  ]
+}

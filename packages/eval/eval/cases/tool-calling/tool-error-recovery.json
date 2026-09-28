@@ -1,0 +1,20 @@
+{
+  "id": "tool-calling/tool-error-recovery",
+  "suite": "tool-calling",
+  "description": "工具失败后框架继续循环，最终正常完成",
+  "origin": "handwritten",
+  "input": {
+    "message": "执行一个注定失败的操作",
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "fail" }] },
+        { "text": "工具失败但我已恢复" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "fail", "isError": true }] } },
+    { "type": "contains", "params": { "value": "恢复" } },
+    { "type": "success", "params": { "value": true } }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "id": "tool-calling/exact-order",
+  "suite": "tool-calling",
+  "description": "轨迹精确断言：顺序与数量完全一致",
+  "origin": "handwritten",
+  "input": {
+    "message": "先读 a.txt 再读 b.txt，不要做别的",
+    "fs": { "a.txt": "alpha", "b.txt": "beta" },
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "a.txt" } }] },
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "b.txt" } }] },
+        { "text": "读取完成" }
+      ]
+    }
+  },
+  "expected": {
+    "type": "tool-call",
+    "calls": [
+      { "tool": "readFile", "args": { "path": "a.txt" } },
+      { "tool": "readFile", "args": { "path": "b.txt" } }
+    ],
+    "order": "exact"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "id": "agent-e2e/multi-file-aggregate",
+  "suite": "agent-e2e",
+  "description": "多文件信息聚合",
+  "origin": "handwritten",
+  "input": {
+    "message": "对比 a.txt 和 b.txt 的内容",
+    "fs": { "a.txt": "alpha", "b.txt": "beta" },
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "a.txt" } }] },
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "b.txt" } }] },
+        { "text": "两份文件分别是 alpha 和 beta" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "readFile", "args": { "path": "a.txt" } }, { "tool": "readFile", "args": { "path": "b.txt" } }] } },
+    { "type": "contains", "params": { "value": "alpha" } },
+    { "type": "contains", "params": { "value": "beta" } }
+  ]
+}

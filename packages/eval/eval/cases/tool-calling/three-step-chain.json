@@ -1,0 +1,26 @@
+{
+  "id": "tool-calling/three-step-chain",
+  "suite": "tool-calling",
+  "description": "三步链式调用：search → readFile → echo",
+  "origin": "handwritten",
+  "input": {
+    "message": "找 TODO 并读出来",
+    "fs": { "notes.md": "TODO: 写文档" },
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "search", "args": { "query": "TODO" } }] },
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "notes.md" } }] },
+        { "toolCalls": [{ "name": "echo", "args": { "message": "done" } }] },
+        { "text": "找到 1 条 TODO 并已读取" }
+      ]
+    }
+  },
+  "expected": {
+    "type": "tool-call",
+    "calls": [
+      { "tool": "search", "args": { "query": "TODO" } },
+      { "tool": "readFile", "args": { "path": "notes.md" } },
+      { "tool": "echo" }
+    ]
+  }
+}

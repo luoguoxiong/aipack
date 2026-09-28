@@ -1,0 +1,17 @@
+{
+  "id": "agent-e2e/system-prompt-flow",
+  "suite": "agent-e2e",
+  "description": "systemPrompt 配置通道冒烟",
+  "origin": "handwritten",
+  "input": {
+    "message": "收到吗？",
+    "systemPrompt": "你是简洁的助手",
+    "mock": {
+      "turns": [{ "text": "好的。" }]
+    }
+  },
+  "scorers": [
+    { "type": "exact", "params": { "value": "好的。" } },
+    { "type": "success", "params": { "value": true } }
+  ]
+}

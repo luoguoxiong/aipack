@@ -1,0 +1,22 @@
+{
+  "id": "agent-e2e/budget-max-tokens",
+  "suite": "agent-e2e",
+  "description": "预算熔断冒烟：usage 在 maxTokens 内通过",
+  "origin": "handwritten",
+  "input": {
+    "message": "快速回答",
+    "mock": {
+      "turns": [
+        {
+          "text": "ok",
+          "usage": { "input": 10, "output": 5, "total": 15 }
+        }
+      ]
+    }
+  },
+  "metadata": { "tags": ["smoke", "budget"], "maxTokens": 100 },
+  "scorers": [
+    { "type": "exact", "params": { "value": "ok" } },
+    { "type": "success", "params": { "value": true } }
+  ]
+}

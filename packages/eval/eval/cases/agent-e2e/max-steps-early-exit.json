@@ -1,0 +1,20 @@
+{
+  "id": "agent-e2e/max-steps-early-exit",
+  "suite": "agent-e2e",
+  "description": "e2e 死循环防护：maxSteps=2 截断",
+  "origin": "handwritten",
+  "input": {
+    "message": "循环读取同一个文件",
+    "fs": { "loop.txt": "x" },
+    "mock": {
+      "turns": [{ "toolCalls": [{ "name": "readFile", "args": { "path": "loop.txt" } }] }],
+      "infiniteTool": "readFile",
+      "infiniteToolArgs": { "path": "loop.txt" }
+    }
+  },
+  "metadata": { "maxSteps": 2 },
+  "scorers": [
+    { "type": "stop-reason", "params": { "value": "max_turns" } },
+    { "type": "tools-used", "params": { "tools": ["readFile"] } }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "id": "tool-calling/max-steps-termination",
+  "suite": "tool-calling",
+  "description": "死循环被 maxTurns 截断：stopReason = max_turns",
+  "origin": "handwritten",
+  "input": {
+    "message": "不停地回显",
+    "mock": {
+      "turns": [{ "toolCalls": [{ "name": "echo", "args": { "message": "loop" } }] }],
+      "infiniteTool": "echo",
+      "infiniteToolArgs": { "message": "loop" }
+    }
+  },
+  "metadata": { "maxSteps": 3 },
+  "scorers": [
+    { "type": "stop-reason", "params": { "value": "max_turns" } },
+    { "type": "tools-used", "params": { "tools": ["echo"] } }
+  ]
+}

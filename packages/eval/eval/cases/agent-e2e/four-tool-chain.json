@@ -1,0 +1,23 @@
+{
+  "id": "agent-e2e/four-tool-chain",
+  "suite": "agent-e2e",
+  "description": "四工具长链：listDir → readFile → search → echo",
+  "origin": "handwritten",
+  "input": {
+    "message": "全面检查 data.csv：列目录、读文件、查 foo、回显 done",
+    "fs": { "data.csv": "id,name\n1,foo" },
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "listDir", "args": { "path": "" } }] },
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "data.csv" } }] },
+        { "toolCalls": [{ "name": "search", "args": { "query": "foo" } }] },
+        { "toolCalls": [{ "name": "echo", "args": { "message": "done" } }] },
+        { "text": "处理完成" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "listDir" }, { "tool": "readFile", "args": { "path": "data.csv" } }, { "tool": "search", "args": { "query": "foo" } }, { "tool": "echo" }] } },
+    { "type": "stop-reason", "params": { "value": "stop" } }
+  ]
+}

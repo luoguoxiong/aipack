@@ -1,0 +1,13 @@
+{
+  "id": "text-output/success-true",
+  "suite": "text-output",
+  "description": "运行成功标志断言",
+  "origin": "handwritten",
+  "input": {
+    "message": "ping",
+    "mock": {
+      "turns": [{ "text": "ok" }]
+    }
+  },
+  "expected": { "type": "success", "value": true }
+}

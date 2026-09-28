@@ -1,0 +1,21 @@
+{
+  "id": "tool-calling/sequential-read-write",
+  "suite": "tool-calling",
+  "description": "顺序工具调用：读后写（子序列断言）",
+  "origin": "handwritten",
+  "input": {
+    "message": "读 a.txt 然后写入 b.txt",
+    "fs": { "a.txt": "alpha" },
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "a.txt" } }] },
+        { "toolCalls": [{ "name": "writeFile", "args": { "path": "b.txt", "content": "beta" } }] },
+        { "text": "已读取 a.txt 并写入 b.txt" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "readFile", "args": { "path": "a.txt" } }, { "tool": "writeFile", "args": { "path": "b.txt" } }] } },
+    { "type": "contains", "params": { "value": "写入" } }
+  ]
+}

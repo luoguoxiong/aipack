@@ -1,0 +1,24 @@
+{
+  "id": "agent-e2e/tool-error-then-success",
+  "suite": "agent-e2e",
+  "description": "同轮 fail + echo：失败与成功调用并存",
+  "origin": "handwritten",
+  "input": {
+    "message": "先试主方案，失败就用 fallback",
+    "mock": {
+      "turns": [
+        {
+          "toolCalls": [
+            { "name": "fail" },
+            { "name": "echo", "args": { "message": "fallback" } }
+          ]
+        },
+        { "text": "用 fallback 完成" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "fail", "isError": true }, { "tool": "echo", "args": { "message": "fallback" }, "isError": false }] } },
+    { "type": "contains", "params": { "value": "fallback" } }
+  ]
+}

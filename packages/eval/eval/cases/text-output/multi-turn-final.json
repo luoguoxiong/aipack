@@ -1,0 +1,19 @@
+{
+  "id": "text-output/multi-turn-final",
+  "suite": "text-output",
+  "description": "多轮对话取最终 assistant 文本（中间轮由工具调用驱动）",
+  "origin": "handwritten",
+  "input": {
+    "message": "aipack 支持多少家模型提供商？",
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "echo", "args": { "message": "查资料" } }] },
+        { "text": "最终答案：aipack 支持 13 家模型提供商。" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "contains", "params": { "value": "最终答案" } },
+    { "type": "regex", "params": { "value": "13 家模型提供商" } }
+  ]
+}

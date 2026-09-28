@@ -1,0 +1,18 @@
+{
+  "id": "tool-calling/tools-used-dedup",
+  "suite": "tool-calling",
+  "description": "去重工具集合断言（对齐 Result.toolsUsed）",
+  "origin": "handwritten",
+  "input": {
+    "message": "分别读取两个文件",
+    "fs": { "a.txt": "x", "b.txt": "y" },
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "a.txt" } }] },
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "b.txt" } }] },
+        { "text": "两个文件都读到了" }
+      ]
+    }
+  },
+  "expected": { "type": "tools-used", "tools": ["readFile"] }
+}

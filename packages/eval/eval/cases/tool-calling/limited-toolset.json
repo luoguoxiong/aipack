@@ -1,0 +1,17 @@
+{
+  "id": "tool-calling/limited-toolset",
+  "suite": "tool-calling",
+  "description": "受限工具集：集合相等断言可证明未用其他工具",
+  "origin": "handwritten",
+  "input": {
+    "message": "只允许用回显工具",
+    "tools": ["echo"],
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "echo", "args": { "message": "only tool" } }] },
+        { "text": "ok" }
+      ]
+    }
+  },
+  "expected": { "type": "tools-used", "tools": ["echo"] }
+}

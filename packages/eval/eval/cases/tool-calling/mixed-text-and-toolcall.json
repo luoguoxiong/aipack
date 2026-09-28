@@ -1,0 +1,22 @@
+{
+  "id": "tool-calling/mixed-text-and-toolcall",
+  "suite": "tool-calling",
+  "description": "同一轮中文本与工具调用并存",
+  "origin": "handwritten",
+  "input": {
+    "message": "说明一下并回显 hi",
+    "mock": {
+      "turns": [
+        {
+          "text": "我先说明一下：",
+          "toolCalls": [{ "name": "echo", "args": { "message": "hi" } }]
+        },
+        { "text": "完成" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "echo", "args": { "message": "hi" } }] } },
+    { "type": "exact", "params": { "value": "完成" } }
+  ]
+}

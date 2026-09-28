@@ -1,0 +1,20 @@
+{
+  "id": "agent-e2e/read-summarize",
+  "suite": "agent-e2e",
+  "description": "读取文件后总结（README 承诺的基本能力）",
+  "origin": "handwritten",
+  "input": {
+    "message": "总结 notes.md 的内容",
+    "fs": { "notes.md": "aipack 是轻量、可扩展、零魔法的 TypeScript Agent 框架" },
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "notes.md" } }] },
+        { "text": "总结：aipack 是一个轻量级 TypeScript Agent 框架" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "readFile", "args": { "path": "notes.md" } }] } },
+    { "type": "contains", "params": { "value": "轻量" } }
+  ]
+}

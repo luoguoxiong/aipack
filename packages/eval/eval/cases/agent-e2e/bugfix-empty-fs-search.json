@@ -1,0 +1,20 @@
+{
+  "id": "agent-e2e/bugfix-empty-fs-search",
+  "suite": "agent-e2e",
+  "description": "空文件系统检索：应返回无匹配而非报错（bugfix 回归）",
+  "origin": "bugfix",
+  "input": {
+    "message": "在项目里搜 something",
+    "fs": {},
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "search", "args": { "query": "something" } }] },
+        { "text": "没有找到匹配内容" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "search", "args": { "query": "something" }, "isError": false }] } },
+    { "type": "contains", "params": { "value": "没有找到" } }
+  ]
+}

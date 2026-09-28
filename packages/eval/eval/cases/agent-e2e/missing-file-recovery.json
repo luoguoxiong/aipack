@@ -1,0 +1,22 @@
+{
+  "id": "agent-e2e/missing-file-recovery",
+  "suite": "agent-e2e",
+  "description": "部分文件缺失时的降级策略",
+  "origin": "handwritten",
+  "input": {
+    "message": "读取 config.json 和 env.json",
+    "fs": { "config.json": "{}" },
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "config.json" } }] },
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "env.json" } }] },
+        { "text": "env.json 不存在，使用默认值" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "readFile", "args": { "path": "env.json" }, "isError": true }] } },
+    { "type": "contains", "params": { "value": "默认值" } },
+    { "type": "success", "params": { "value": true } }
+  ]
+}

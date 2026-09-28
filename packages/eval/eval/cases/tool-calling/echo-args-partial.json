@@ -1,0 +1,19 @@
+{
+  "id": "tool-calling/echo-args-partial",
+  "suite": "tool-calling",
+  "description": "参数部分匹配：只断言列出的字段",
+  "origin": "handwritten",
+  "input": {
+    "message": "回显三次 tick",
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "echo", "args": { "message": "tick", "count": 3 } }] },
+        { "text": "tock" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "echo", "args": { "count": 3 } }] } },
+    { "type": "contains", "params": { "value": "tock" } }
+  ]
+}

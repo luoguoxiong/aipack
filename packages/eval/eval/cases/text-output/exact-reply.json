@@ -1,0 +1,13 @@
+{
+  "id": "text-output/exact-reply",
+  "suite": "text-output",
+  "description": "最终文本完全相等断言",
+  "origin": "handwritten",
+  "input": {
+    "message": "你好",
+    "mock": {
+      "turns": [{ "text": "你好！我是 aipack 助手。" }]
+    }
+  },
+  "expected": { "type": "exact", "value": "你好！我是 aipack 助手。" }
+}

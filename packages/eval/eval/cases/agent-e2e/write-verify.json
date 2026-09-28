@@ -1,0 +1,21 @@
+{
+  "id": "agent-e2e/write-verify",
+  "suite": "agent-e2e",
+  "description": "写入后读回验证",
+  "origin": "handwritten",
+  "input": {
+    "message": "把 {\"a\":1} 写入 config.json 并验证",
+    "fs": {},
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "writeFile", "args": { "path": "config.json", "content": "{\"a\":1}" } }] },
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "config.json" } }] },
+        { "text": "写入并验证成功，内容为 {\"a\":1}" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "writeFile", "args": { "path": "config.json" } }, { "tool": "readFile", "args": { "path": "config.json" } }] } },
+    { "type": "contains", "params": { "value": "{\"a\":1}" } }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "agent-e2e/write-list-verify",
+  "suite": "agent-e2e",
+  "description": "写入新文件后列目录验证存在",
+  "origin": "handwritten",
+  "input": {
+    "message": "生成 out/result.txt 并确认它存在",
+    "fs": {},
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "writeFile", "args": { "path": "out/result.txt", "content": "ok" } }] },
+        { "toolCalls": [{ "name": "listDir", "args": { "path": "out/" } }] },
+        { "text": "out/result.txt 已生成" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "writeFile", "args": { "path": "out/result.txt" } }, { "tool": "listDir", "args": { "path": "out/" } }] } },
+    { "type": "contains", "params": { "value": "out/result.txt" } }
+  ]
+}

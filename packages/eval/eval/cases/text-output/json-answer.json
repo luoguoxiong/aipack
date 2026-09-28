@@ -1,0 +1,13 @@
+{
+  "id": "text-output/json-answer",
+  "suite": "text-output",
+  "description": "结构化输出断言：顶层字段",
+  "origin": "handwritten",
+  "input": {
+    "message": "以 JSON 返回重量",
+    "mock": {
+      "turns": [{ "text": "{\"answer\": 42, \"unit\": \"kg\"}" }]
+    }
+  },
+  "expected": { "type": "json-field", "path": "answer", "value": 42 }
+}

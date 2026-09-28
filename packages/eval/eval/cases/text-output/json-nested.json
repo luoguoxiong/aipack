@@ -1,0 +1,16 @@
+{
+  "id": "text-output/json-nested",
+  "suite": "text-output",
+  "description": "结构化输出断言：嵌套路径与数组值",
+  "origin": "handwritten",
+  "input": {
+    "message": "以 JSON 返回处理结果",
+    "mock": {
+      "turns": [{ "text": "{\"result\":{\"status\":\"ok\",\"items\":[1,2,3]}}" }]
+    }
+  },
+  "scorers": [
+    { "type": "json-field", "params": { "path": "result.status", "value": "ok" } },
+    { "type": "json-field", "params": { "path": "result.items", "value": [1, 2, 3] } }
+  ]
+}

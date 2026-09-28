@@ -1,0 +1,20 @@
+{
+  "id": "tool-calling/read-missing-file-error",
+  "suite": "tool-calling",
+  "description": "读取不存在文件：toolResult 标记 isError，轨迹可断言",
+  "origin": "handwritten",
+  "input": {
+    "message": "读取 missing.txt",
+    "fs": {},
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "missing.txt" } }] },
+        { "text": "文件不存在，改用默认配置" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "readFile", "args": { "path": "missing.txt" }, "isError": true }] } },
+    { "type": "contains", "params": { "value": "默认配置" } }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "agent-e2e/overwrite-file",
+  "suite": "agent-e2e",
+  "description": "文件覆盖写入后读回新内容",
+  "origin": "handwritten",
+  "input": {
+    "message": "把 draft.md 更新为 v2",
+    "fs": { "draft.md": "v1" },
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "writeFile", "args": { "path": "draft.md", "content": "v2 内容" } }] },
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "draft.md" } }] },
+        { "text": "draft.md 已更新为 v2 内容" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "writeFile", "args": { "path": "draft.md", "content": "v2 内容" } }] } },
+    { "type": "contains", "params": { "value": "v2" } }
+  ]
+}

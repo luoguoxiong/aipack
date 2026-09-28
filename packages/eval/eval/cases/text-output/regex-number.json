@@ -1,0 +1,13 @@
+{
+  "id": "text-output/regex-number",
+  "suite": "text-output",
+  "description": "正则断言：纯数字回答",
+  "origin": "handwritten",
+  "input": {
+    "message": "6 乘以 7 等于多少？",
+    "mock": {
+      "turns": [{ "text": "42" }]
+    }
+  },
+  "expected": { "type": "regex", "value": "^\\d+$" }
+}

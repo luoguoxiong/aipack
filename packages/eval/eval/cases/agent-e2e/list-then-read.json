@@ -1,0 +1,21 @@
+{
+  "id": "agent-e2e/list-then-read",
+  "suite": "agent-e2e",
+  "description": "列目录后选择读取其中一个文件",
+  "origin": "handwritten",
+  "input": {
+    "message": "看看 src 目录下有什么，然后读取 a.ts",
+    "fs": { "src/a.ts": "export const A = 1;", "src/b.ts": "export const B = 2;", "README.md": "docs" },
+    "mock": {
+      "turns": [
+        { "toolCalls": [{ "name": "listDir", "args": { "path": "src/" } }] },
+        { "toolCalls": [{ "name": "readFile", "args": { "path": "src/a.ts" } }] },
+        { "text": "src 下有 a.ts 和 b.ts，读取了 a.ts" }
+      ]
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "listDir", "args": { "path": "src/" } }, { "tool": "readFile", "args": { "path": "src/a.ts" } }] } },
+    { "type": "contains", "params": { "value": "a.ts" } }
+  ]
+}

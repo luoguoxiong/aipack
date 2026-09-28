@@ -1,0 +1,13 @@
+{
+  "id": "text-output/stop-reason-stop",
+  "suite": "text-output",
+  "description": "正常结束的 stopReason 断言",
+  "origin": "handwritten",
+  "input": {
+    "message": "任务完成了吗？",
+    "mock": {
+      "turns": [{ "text": "完成了", "stopReason": "stop" }]
+    }
+  },
+  "expected": { "type": "stop-reason", "value": "stop" }
+}
