@@ -1,0 +1,6 @@
+# 源码目录散落的 tsc 编译产物
+# 合法构建产物输出在 dist/（已被根 .gitignore 的 dist/ 规则忽略）
+# 防止误运行 `tsc`（非 --noEmit）后散落产物被提交
+*.js
+*.js.map
+*.d.ts
