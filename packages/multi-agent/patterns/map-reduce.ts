@@ -6,13 +6,15 @@
 
 import type { AgentNode, AgentGraph, MapReduceOpts, EventListener, MultiAgentResult, MultiAgentEvent } from '../core/types';
 import { MapReduceExecutor } from '../core/map-reduce-executor';
+import { SimpleEventBus } from '../core/context';
 import type { Request } from '@aipack-ai/agent';
 
 // ─── MapReduceGraphImpl ──────────────────────────────────────────
 
 class MapReduceGraphImpl implements AgentGraph {
   private executor: MapReduceExecutor;
-  private eventListeners = new Map<string, Set<EventListener>>();
+  /** on() 注册的监听器，按 MultiAgentEvent.type 分发 */
+  private bus = new SimpleEventBus();
 
   constructor(mapper: AgentNode, reducer: AgentNode, opts: MapReduceOpts) {
     this.executor = new MapReduceExecutor(mapper, reducer, opts);
@@ -24,20 +26,20 @@ class MapReduceGraphImpl implements AgentGraph {
   setFinish(): this { throw new Error('MapReduce 模式不支持 setFinish'); }
 
   async run(input: string | Request): Promise<MultiAgentResult> {
+    this.executor.setEventSink(event => this.bus.emit(event.type, event));
     return this.executor.run(input);
   }
 
   async *stream(input: string | Request): AsyncGenerator<MultiAgentEvent> {
+    this.executor.setEventSink(event => this.bus.emit(event.type, event));
     yield* this.executor.stream(input);
   }
 
   getState() { return this.executor.getState(); }
-  abort(): void {}
+  abort(): void { this.executor.abort(); }
 
   on(event: string, listener: EventListener): this {
-    let set = this.eventListeners.get(event);
-    if (!set) { set = new Set(); this.eventListeners.set(event, set); }
-    set.add(listener);
+    this.bus.on(event, listener);
     return this;
   }
 }

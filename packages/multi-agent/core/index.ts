@@ -14,6 +14,8 @@ export type {
   MultiAgentEvent,
   NodeExecutionState,
   GraphExecutionState,
+  GraphExecutionOpts,
+  NodeRetryOpts,
   PipelineOpts,
   RouterOpts,
   SupervisorOpts,
@@ -27,7 +29,8 @@ export type {
 
 export { createSharedContext, SimpleEventBus, SimpleToolRegistry } from './context';
 export { createAgentGraph } from './graph';
-export { GraphExecutor, ensureRuntime, executeNode, findNextEdges, resolveInput } from './executor';
+export { GraphExecutor, ensureRuntime, executeNode, findNextEdges, resolveInput, GraphAbortedError, NodeTimeoutError, toInputText } from './executor';
+export { createEventStream } from './event-stream';
 export { SupervisorExecutor } from './supervisor-executor';
 export { DebateExecutor } from './debate-executor';
 export { MapReduceExecutor } from './map-reduce-executor';

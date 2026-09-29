@@ -6,14 +6,23 @@
  */
 
 import type { Request } from '@aipack-ai/agent';
-import type { AgentNode, AgentEdge, AgentGraph, SharedContext, EventListener, MultiAgentResult, MultiAgentEvent, GraphExecutionState } from './types';
+import type { AgentNode, AgentEdge, AgentGraph, SharedContext, EventListener, MultiAgentResult, MultiAgentEvent, GraphExecutionState, GraphExecutionOpts } from './types';
 import { GraphExecutor } from './executor';
+import { SimpleEventBus } from './context';
+
+// 中止错误类型透传导出（供使用方 instanceof 判断）
+export { GraphAbortedError } from './executor';
 
 // ─── AgentGraphImpl ──────────────────────────────────────────────
 
 class AgentGraphImpl implements AgentGraph {
-  private executor = new GraphExecutor();
-  private eventListeners = new Map<string, Set<EventListener>>();
+  private executor: GraphExecutor;
+  /** on() 注册的监听器，按 MultiAgentEvent.type 分发 */
+  private bus = new SimpleEventBus();
+
+  constructor(opts?: GraphExecutionOpts) {
+    this.executor = new GraphExecutor(opts);
+  }
 
   addNode(node: AgentNode): this {
     this.executor.addNode(node);
@@ -36,10 +45,12 @@ class AgentGraphImpl implements AgentGraph {
   }
 
   async run(input: string | Request): Promise<MultiAgentResult> {
+    this.executor.setEventSink(event => this.bus.emit(event.type, event));
     return this.executor.run(input);
   }
 
   async *stream(input: string | Request): AsyncGenerator<MultiAgentEvent> {
+    this.executor.setEventSink(event => this.bus.emit(event.type, event));
     yield* this.executor.stream(input);
   }
 
@@ -52,12 +63,7 @@ class AgentGraphImpl implements AgentGraph {
   }
 
   on(event: string, listener: EventListener): this {
-    let set = this.eventListeners.get(event);
-    if (!set) {
-      set = new Set();
-      this.eventListeners.set(event, set);
-    }
-    set.add(listener);
+    this.bus.on(event, listener);
     return this;
   }
 }
@@ -65,6 +71,6 @@ class AgentGraphImpl implements AgentGraph {
 // ─── createAgentGraph 工厂函数 ───────────────────────────────────
 
 /** 创建空的 AgentGraph，通过链式调用定义图结构 */
-export function createAgentGraph(): AgentGraph {
-  return new AgentGraphImpl();
+export function createAgentGraph(opts?: GraphExecutionOpts): AgentGraph {
+  return new AgentGraphImpl(opts);
 }

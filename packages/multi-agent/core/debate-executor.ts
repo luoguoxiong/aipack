@@ -17,8 +17,9 @@ import type {
   DebateOpts,
   GraphExecutionState,
 } from './types';
-import { createSharedContext } from './context';
-import { executeNode } from './executor';
+import { createSharedContext, storeOriginalInput } from './context';
+import { executeNode, GraphAbortedError, toInputText } from './executor';
+import { createEventStream } from './event-stream';
 
 // ─── DebateExecutor ──────────────────────────────────────────────
 
@@ -28,6 +29,9 @@ export class DebateExecutor {
   private maxRounds: number;
   private convergeWhen: (reviewerResult: Result) => boolean;
   private feedbackTransform: (reviewerResult: Result, proposerResult: Result) => string;
+  private abortController = new AbortController();
+  /** 外部事件监听（on() API 的底层接线） */
+  private eventSink?: (event: MultiAgentEvent) => void;
   private state: GraphExecutionState = {
     nodeStates: new Map(),
     nodeResults: new Map(),
@@ -49,54 +53,82 @@ export class DebateExecutor {
   }
 
   getState(): GraphExecutionState {
-    return { ...this.state };
+    // 深拷贝快照：防止外部通过返回值篡改内部状态
+    return {
+      ...this.state,
+      nodeStates: new Map(this.state.nodeStates),
+      nodeResults: new Map(this.state.nodeResults),
+    };
+  }
+
+  /** 注入外部事件监听（由 AgentGraph 实现的 on() 接线） */
+  setEventSink(sink?: (event: MultiAgentEvent) => void): this {
+    this.eventSink = sink;
+    return this;
+  }
+
+  abort(): void {
+    this.abortController.abort();
+  }
+
+  /** 每次 run/stream 前重置中止信号与执行状态 */
+  private resetAbortController(): void {
+    this.abortController = new AbortController();
+    this.state = {
+      nodeStates: new Map(),
+      nodeResults: new Map(),
+      stepsCompleted: 0,
+      finished: false,
+    };
+    this.state.nodeStates.set(this.proposerNode.id, 'pending');
+    this.state.nodeStates.set(this.reviewerNode.id, 'pending');
+  }
+
+  private throwIfAborted(): void {
+    if (this.abortController.signal.aborted) {
+      throw new GraphAbortedError();
+    }
   }
 
   /** 执行 Debate */
   async run(input: string | Request): Promise<MultiAgentResult> {
+    this.resetAbortController();
     const ctx = createSharedContext({
       meta: { traceId: `debate-${Date.now()}`, startTime: Date.now() },
     });
+    storeOriginalInput(ctx, input);
+
+    const emit = this.eventSink ?? (() => {});
 
     try {
-      return await this.executeDebate(input, ctx, () => {});
+      const result = await this.executeDebate(input, ctx, emit);
+      emit({ type: 'graph_done', result });
+      return result;
     } catch (err) {
-      return this.buildErrorResult(ctx, err);
+      const result = this.buildErrorResult(ctx, err);
+      emit({ type: 'graph_error', error: result.error ?? '' });
+      return result;
     }
   }
 
   /** 流式执行 Debate */
-  async *stream(input: string | Request): AsyncGenerator<MultiAgentEvent> {
+  stream(input: string | Request): AsyncGenerator<MultiAgentEvent> {
+    this.resetAbortController();
     const ctx = createSharedContext({
       meta: { traceId: `debate-${Date.now()}`, startTime: Date.now() },
     });
+    storeOriginalInput(ctx, input);
 
-    const eventQueue: MultiAgentEvent[] = [];
-    let resolveEvent: (() => void) | null = null;
-    let done = false;
-
-    const emit = (event: MultiAgentEvent) => {
-      eventQueue.push(event);
-      resolveEvent?.();
-    };
-
-    const graphPromise = this.executeDebate(input, ctx, emit).then(
-      (result) => { emit({ type: 'graph_done', result }); },
-      (err) => { emit({ type: 'graph_error', error: err instanceof Error ? err.message : String(err) }); },
-    ).finally(() => {
-      done = true;
-      resolveEvent?.();
-    });
-
-    while (!done || eventQueue.length > 0) {
-      if (eventQueue.length > 0) {
-        yield eventQueue.shift()!;
-      } else {
-        await new Promise<void>(resolve => { resolveEvent = resolve; });
-      }
-    }
-
-    await graphPromise;
+    return createEventStream(
+      emit => this.executeDebate(input, ctx, emit).then(
+        (result) => { emit({ type: 'graph_done', result }); },
+        (err) => {
+          this.state.error = err instanceof Error ? err.message : String(err);
+          emit({ type: 'graph_error', error: this.state.error });
+        },
+      ),
+      this.eventSink,
+    );
   }
 
   /** 核心执行逻辑 */
@@ -114,12 +146,13 @@ export class DebateExecutor {
     let currentInput: string | Request = input;
 
     for (let round = 1; round <= this.maxRounds; round++) {
+      this.throwIfAborted();
       emit({ type: 'round_start', round });
 
       // ── 执行 Proposer ──────────────────────────────────────
       this.state.currentAgentId = this.proposerNode.id;
       this.state.nodeStates.set(this.proposerNode.id, 'running');
-      emit({ type: 'agent_start', agentId: this.proposerNode.id, agentName: this.proposerNode.name });
+      emit({ type: 'agent_start', agentId: this.proposerNode.id, agentName: this.proposerNode.name, input: toInputText(currentInput) });
 
       try {
         lastProposerResult = await executeNode(this.proposerNode, currentInput, ctx);
@@ -139,7 +172,7 @@ export class DebateExecutor {
       // ── 执行 Reviewer ──────────────────────────────────────
       this.state.currentAgentId = this.reviewerNode.id;
       this.state.nodeStates.set(this.reviewerNode.id, 'running');
-      emit({ type: 'agent_start', agentId: this.reviewerNode.id, agentName: this.reviewerNode.name });
+      emit({ type: 'agent_start', agentId: this.reviewerNode.id, agentName: this.reviewerNode.name, input: lastProposerResult.content });
 
       try {
         lastReviewerResult = await executeNode(this.reviewerNode, lastProposerResult.content, ctx);
@@ -189,16 +222,20 @@ export class DebateExecutor {
 
   private buildErrorResult(ctx: SharedContext, err: unknown): MultiAgentResult {
     this.state.finished = true;
+    const aborted = err instanceof GraphAbortedError;
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    this.state.error = errorMsg;
+    const lastCompleted = [...this.state.nodeResults.values()].at(-1);
     return {
-      content: '',
+      content: aborted ? (lastCompleted?.content ?? '') : '',
       lastAgentId: this.proposerNode.id,
       agentResults: new Map(this.state.nodeResults),
       totalUsage: {},
       stepsCompleted: this.state.stepsCompleted,
-      stopReason: 'error',
+      stopReason: aborted ? 'aborted' : 'error',
       context: ctx,
       success: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMsg,
     };
   }
 

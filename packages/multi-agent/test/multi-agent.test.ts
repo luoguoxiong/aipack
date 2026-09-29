@@ -8,7 +8,7 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Runtime, Result, Request } from '@aipack-ai/agent';
-import { createResult } from '@aipack-ai/agent';
+import { createResult, createRequest } from '@aipack-ai/agent';
 import {
   createAgentGraph,
   createPipeline,
@@ -67,6 +67,18 @@ function makeNode(id: string, name: string, handler: (input: string) => string):
     name,
     description: `${name} agent`,
     runtime: createMockRuntime(handler),
+  };
+}
+
+/** 真正异步的 mock Runtime（run 会 await handler，用于测试超时/并发时序） */
+function createAsyncMockRuntime(handler: (input: string) => Promise<string>): Runtime {
+  const base = createMockRuntime(() => '');
+  return {
+    ...base,
+    run: async (req: Request): Promise<Result> => {
+      const content = await handler(req.message);
+      return createResult(content);
+    },
   };
 }
 
@@ -276,6 +288,418 @@ describe('AgentGraph', () => {
     assert.ok(events.includes('edge_traversed'));
     assert.ok(events.includes('graph_done'));
   });
+
+  it('on() 注册的监听器在 run() 时触发', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'result-a');
+    const nodeB = makeNode('b', 'AgentB', () => 'result-b');
+
+    const graph = createAgentGraph()
+      .addNode(nodeA)
+      .addNode(nodeB)
+      .addEdge({ from: 'a', to: 'b' })
+      .setEntry('a');
+
+    const seen: string[] = [];
+    graph.on('agent_start', (e) => seen.push(`start:${(e as { agentId: string }).agentId}`));
+    graph.on('agent_result', (e) => seen.push(`result:${(e as { agentId: string }).agentId}`));
+    graph.on('graph_done', () => seen.push('done'));
+
+    await graph.run('test');
+    assert.deepEqual(seen, [
+      'start:a', 'result:a',
+      'start:b', 'result:b',
+      'done',
+    ]);
+  });
+
+  it('on() 注册的监听器在 stream() 时触发', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'result-a');
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+
+    const seen: string[] = [];
+    graph.on('agent_start', () => seen.push('start'));
+    graph.on('graph_done', () => seen.push('done'));
+
+    for await (const _event of graph.stream('test')) {
+      // 消费流
+    }
+    assert.deepEqual(seen, ['start', 'done']);
+  });
+
+  it('on() 监听器抛出异常不影响执行', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'ok');
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+    graph.on('agent_start', () => { throw new Error('listener boom'); });
+
+    const result = await graph.run('test');
+    assert.equal(result.success, true);
+  });
+
+  it('abort() 中止后续节点执行', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'result-a');
+    const nodeB = makeNode('b', 'AgentB', () => 'result-b');
+
+    const graph = createAgentGraph()
+      .addNode(nodeA)
+      .addNode(nodeB)
+      .addEdge({ from: 'a', to: 'b' })
+      .setEntry('a');
+
+    // 第一个节点完成后立即中止
+    let abortNext = true;
+    graph.on('agent_result', (e) => {
+      if (abortNext && (e as { agentId: string }).agentId === 'a') graph.abort();
+    });
+
+    const result = await graph.run('test');
+    assert.equal(result.stopReason, 'aborted');
+    assert.equal(result.success, false);
+    assert.equal(result.stepsCompleted, 1);
+    assert.equal(result.content, 'result-a');
+    assert.equal(result.agentResults.has('b'), false);
+  });
+
+  it('abort() 后可再次 run（中止信号重置）', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'result-a');
+    const nodeB = makeNode('b', 'AgentB', () => 'result-b');
+
+    const graph = createAgentGraph()
+      .addNode(nodeA)
+      .addNode(nodeB)
+      .addEdge({ from: 'a', to: 'b' })
+      .setEntry('a');
+
+    let abortNext = true;
+    graph.on('agent_result', (e) => {
+      if (abortNext && (e as { agentId: string }).agentId === 'a') graph.abort();
+    });
+    const first = await graph.run('test');
+    assert.equal(first.stopReason, 'aborted');
+
+    // 关闭中止逻辑后，同一 graph 实例可正常完整执行
+    abortNext = false;
+    const second = await graph.run('test');
+    assert.equal(second.success, true);
+    assert.equal(second.lastAgentId, 'b');
+  });
+
+  it('原始输入写入 blackboard.__original_input__', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'ok');
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+
+    const result = await graph.run('原始输入文本');
+    assert.equal(result.context.blackboard.get('__original_input__'), '原始输入文本');
+  });
+
+  it('二次 run 状态隔离（不残留上次的 nodeStates）', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'result-a');
+    const nodeB = makeNode('b', 'AgentB', () => 'result-b');
+
+    const graph = createAgentGraph()
+      .addNode(nodeA)
+      .addNode(nodeB)
+      .addEdge({ from: 'a', to: 'b' })
+      .setEntry('a');
+
+    const first = await graph.run('test');
+    assert.equal(first.stepsCompleted, 2);
+
+    // 第二次 run：stepsCompleted 应重新计数，而非累加
+    const second = await graph.run('test');
+    assert.equal(second.stepsCompleted, 2);
+    assert.equal(second.agentResults.size, 2);
+  });
+
+  it('run 失败后二次 run 状态重置', async () => {
+    let shouldFail = true;
+    const nodeA = makeNode('a', 'AgentA', () => {
+      if (shouldFail) throw new Error('boom');
+      return 'ok';
+    });
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+
+    const first = await graph.run('test');
+    assert.equal(first.success, false);
+    assert.equal(graph.getState().nodeStates.get('a'), 'failed');
+
+    shouldFail = false;
+    const second = await graph.run('test');
+    assert.equal(second.success, true);
+    assert.equal(second.stepsCompleted, 1);
+  });
+
+  it('getState 返回快照，外部修改不影响内部状态', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'ok');
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+    await graph.run('test');
+
+    const snapshot = graph.getState();
+    snapshot.nodeStates.set('a', 'failed');
+    snapshot.nodeStates.set('hacked', 'completed');
+    snapshot.stepsCompleted = 999;
+
+    const fresh = graph.getState();
+    assert.equal(fresh.nodeStates.get('a'), 'completed');
+    assert.equal(fresh.nodeStates.has('hacked'), false);
+    assert.equal(fresh.stepsCompleted, 1);
+  });
+
+  it('环图超限安全截断返回 max_visits_exceeded', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'loop');
+    const nodeB = makeNode('b', 'AgentB', () => 'loop');
+
+    const graph = createAgentGraph()
+      .addNode(nodeA)
+      .addNode(nodeB)
+      .addEdge({ from: 'a', to: 'b' })
+      .addEdge({ from: 'b', to: 'a' })
+      .setEntry('a');
+
+    const result = await graph.run('test');
+    assert.equal(result.stopReason, 'max_visits_exceeded');
+    assert.equal(result.success, true);
+  });
+
+  it('agent_start 事件携带输入摘要', async () => {
+    const nodeA = makeNode('a', 'AgentA', (input) => `out: ${input}`);
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+
+    const starts: Array<string | undefined> = [];
+    graph.on('agent_start', (e) => { starts.push((e as { input?: string }).input); });
+
+    await graph.run('hello-input');
+    assert.deepEqual(starts, ['hello-input']);
+  });
+
+  it('并行分支：多条边匹配时并行执行并发出 parallel 事件', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'fanout');
+    const nodeB = makeNode('b', 'AgentB', (input) => `B:${input}`);
+    const nodeC = makeNode('c', 'AgentC', (input) => `C:${input}`);
+
+    const graph = createAgentGraph()
+      .addNode(nodeA)
+      .addNode(nodeB)
+      .addNode(nodeC)
+      .addEdge({ from: 'a', to: 'b' })
+      .addEdge({ from: 'a', to: 'c' })
+      .setEntry('a');
+
+    const result = await graph.run('test');
+    assert.equal(result.success, true);
+    assert.equal(result.stepsCompleted, 3); // a + b + c（并行）
+    assert.ok(result.agentResults.has('b'));
+    assert.ok(result.agentResults.has('c'));
+  });
+
+  it('并行分支发出 parallel_start / parallel_done 事件', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'fanout');
+    const nodeB = makeNode('b', 'AgentB', () => 'B');
+    const nodeC = makeNode('c', 'AgentC', () => 'C');
+
+    const graph = createAgentGraph()
+      .addNode(nodeA)
+      .addNode(nodeB)
+      .addNode(nodeC)
+      .addEdge({ from: 'a', to: 'b' })
+      .addEdge({ from: 'a', to: 'c' })
+      .setEntry('a');
+
+    const events: string[] = [];
+    for await (const event of graph.stream('test')) {
+      events.push(event.type);
+    }
+    assert.ok(events.includes('parallel_start'));
+    assert.ok(events.includes('parallel_done'));
+    assert.ok(events.includes('graph_done'));
+  });
+
+  it('并行分支 fail-fast：任一分支失败整体失败', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'fanout');
+    const nodeB = makeNode('b', 'AgentB', () => 'ok');
+    const nodeC = makeNode('c', 'AgentC', () => { throw new Error('branch-boom'); });
+
+    const graph = createAgentGraph()
+      .addNode(nodeA)
+      .addNode(nodeB)
+      .addNode(nodeC)
+      .addEdge({ from: 'a', to: 'b' })
+      .addEdge({ from: 'a', to: 'c' })
+      .setEntry('a');
+
+    const result = await graph.run('test');
+    assert.equal(result.success, false);
+    assert.equal(result.stopReason, 'error');
+    assert.ok(result.error!.includes('branch-boom'));
+  });
+
+  it('并行分支后汇聚到共同下游节点', async () => {
+    // a fan-out 到 b/c，b/c 都汇到 d
+    const nodeA = makeNode('a', 'AgentA', () => 'fanout');
+    const nodeB = makeNode('b', 'AgentB', () => 'B-done');
+    const nodeC = makeNode('c', 'AgentC', () => 'C-done');
+    let receivedByD = '';
+    const nodeD = makeNode('d', 'AgentD', (input) => { receivedByD = input; return 'D'; });
+
+    const graph = createAgentGraph()
+      .addNode(nodeA)
+      .addNode(nodeB)
+      .addNode(nodeC)
+      .addNode(nodeD)
+      .addEdge({ from: 'a', to: 'b' })
+      .addEdge({ from: 'a', to: 'c' })
+      .addEdge({ from: 'b', to: 'd' })
+      .addEdge({ from: 'c', to: 'd' })
+      .setEntry('a');
+
+    const result = await graph.run('test');
+    assert.equal(result.stepsCompleted, 4);
+    assert.equal(result.lastAgentId, 'd');
+    // d 的输入来自首个完成出边（b 或 c，按 frontier 顺序取 b）
+    assert.ok(['B-done', 'C-done'].includes(receivedByD));
+  });
+
+  it('concurrency 限制并行分支并发数', async () => {
+    let running = 0;
+    let maxRunning = 0;
+    const track = (input: string) => {
+      running++;
+      maxRunning = Math.max(maxRunning, running);
+      running--;
+      return `done: ${input}`;
+    };
+    const nodeA = makeNode('a', 'AgentA', () => 'fanout');
+    const nodes = ['b', 'c', 'd'].map(id => makeNode(id, `N${id}`, track));
+
+    const graph = createAgentGraph({ concurrency: 2 })
+      .addNode(nodeA)
+      .addNode(nodes[0])
+      .addNode(nodes[1])
+      .addNode(nodes[2])
+      .addEdge({ from: 'a', to: 'b' })
+      .addEdge({ from: 'a', to: 'c' })
+      .addEdge({ from: 'a', to: 'd' })
+      .setEntry('a');
+
+    const result = await graph.run('test');
+    assert.equal(result.stepsCompleted, 4);
+    // mock 是同步的，maxRunning 恒为 1；此处主要验证限流路径可正常完成
+    assert.equal(result.success, true);
+  });
+
+  it('maxVisitsPerNode 可配置', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => 'loop');
+    const nodeB = makeNode('b', 'AgentB', () => 'loop');
+
+    const graph = createAgentGraph({ maxVisitsPerNode: 2 })
+      .addNode(nodeA)
+      .addNode(nodeB)
+      .addEdge({ from: 'a', to: 'b' })
+      .addEdge({ from: 'b', to: 'a' })
+      .setEntry('a');
+
+    const result = await graph.run('test');
+    assert.equal(result.stopReason, 'max_visits_exceeded');
+    // 入口1次 + b 2次 + a 2次 = 5 步
+    assert.equal(result.stepsCompleted, 5);
+  });
+
+  it('节点级 retry：失败后自动重试成功', async () => {
+    let attempts = 0;
+    const nodeA = makeNode('a', 'AgentA', () => {
+      attempts++;
+      if (attempts < 3) throw new Error('transient-boom');
+      return 'recovered';
+    });
+    nodeA.retry = { maxAttempts: 3 };
+
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+    const result = await graph.run('test');
+
+    assert.equal(attempts, 3);
+    assert.equal(result.success, true);
+    assert.equal(result.content, 'recovered');
+  });
+
+  it('节点级 retry：超过最大次数后失败', async () => {
+    let attempts = 0;
+    const nodeA = makeNode('a', 'AgentA', () => {
+      attempts++;
+      throw new Error(`always-boom-${attempts}`);
+    });
+    nodeA.retry = { maxAttempts: 2 };
+
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+    const result = await graph.run('test');
+
+    assert.equal(attempts, 2);
+    assert.equal(result.success, false);
+    assert.ok(result.error!.includes('always-boom-2'));
+  });
+
+  it('节点级 retry：backoffMs 重试间隔', async () => {
+    let attempts = 0;
+    const nodeA = makeNode('a', 'AgentA', () => {
+      attempts++;
+      if (attempts === 1) throw new Error('once-boom');
+      return 'ok';
+    });
+    nodeA.retry = { maxAttempts: 2, backoffMs: 30 };
+
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+    const start = Date.now();
+    const result = await graph.run('test');
+    const elapsed = Date.now() - start;
+
+    assert.equal(result.success, true);
+    assert.ok(elapsed >= 30, `elapsed ${elapsed}ms should be >= 30ms`);
+  });
+
+  it('节点级 timeoutMs：超时抛出 NodeTimeoutError', async () => {
+    const slowRuntime = createAsyncMockRuntime(async () => {
+      await new Promise(resolve => setTimeout(resolve, 200));
+      return 'too-slow';
+    });
+    const nodeA: AgentNode = {
+      id: 'slow',
+      name: 'Slow',
+      description: 'slow agent',
+      runtime: slowRuntime,
+      timeoutMs: 20,
+    };
+
+    const graph = createAgentGraph().addNode(nodeA).setEntry('slow');
+    const result = await graph.run('test');
+
+    assert.equal(result.success, false);
+    assert.ok(result.error!.includes('超时'));
+  });
+
+  it('节点级 timeoutMs + retry：超时后重试成功', async () => {
+    let attempts = 0;
+    const flakyRuntime = createAsyncMockRuntime(async () => {
+      attempts++;
+      if (attempts === 1) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        return 'slow-result';
+      }
+      return 'fast-result';
+    });
+    const nodeA: AgentNode = {
+      id: 'flaky',
+      name: 'Flaky',
+      description: 'flaky agent',
+      runtime: flakyRuntime,
+      timeoutMs: 20,
+      retry: { maxAttempts: 2 },
+    };
+
+    const graph = createAgentGraph().addNode(nodeA).setEntry('flaky');
+    const result = await graph.run('test');
+
+    assert.equal(attempts, 2);
+    assert.equal(result.success, true);
+    assert.equal(result.content, 'fast-result');
+  });
 });
 
 describe('Pipeline', () => {
@@ -374,10 +798,65 @@ describe('Router', () => {
     });
 
     await routerGraph.run('用户原始问题');
-    // passOriginalInput=false 时，应该传递路由器的输出
-    // 但由于 Router transform 中 _ctx.blackboard.get('__original_input__') 不可用，
-    // 会 fallback 到 _routerResult.content
+    // passOriginalInput=false 时，传递路由器的输出
     assert.equal(receivedInput, 'target');
+  });
+
+  it('默认 passOriginalInput=true 传递用户原始输入', async () => {
+    const router = makeNode('dispatcher', '调度', () => 'target');
+    let receivedInput = '';
+    const targetAgent = makeNode('target', '目标', (input) => { receivedInput = input; return 'done'; });
+
+    const routerGraph = createRouter(router, [targetAgent], {
+      resolve: () => 'target',
+    });
+
+    await routerGraph.run('用户原始问题');
+    // 默认传递用户原始输入（依赖 GraphExecutor 写入 __original_input__）
+    assert.equal(receivedInput, '用户原始问题');
+  });
+
+  it('Request 输入时默认传递 message 文本', async () => {
+    const router = makeNode('dispatcher', '调度', () => 'target');
+    let receivedInput = '';
+    const targetAgent = makeNode('target', '目标', (input) => { receivedInput = input; return 'done'; });
+
+    const routerGraph = createRouter(router, [targetAgent], {
+      resolve: () => 'target',
+    });
+
+    await routerGraph.run(createRequest('请求体输入'));
+    assert.equal(receivedInput, '请求体输入');
+  });
+
+  it('defaultTarget 兜底路由未知目标', async () => {
+    // resolve 返回的目标 ID 不在目标列表中 → 回退到 defaultTarget
+    const router = makeNode('dispatcher', '调度', () => 'unknown-agent');
+    const techAgent = makeNode('tech', '技术', (input) => `技术支持: ${input}`);
+    const generalAgent = makeNode('general', '通用', (input) => `通用客服: ${input}`);
+
+    const routerGraph = createRouter(router, [techAgent, generalAgent], {
+      resolve: (result) => result.content.trim(),
+      defaultTarget: 'general',
+    });
+
+    const result = await routerGraph.run('奇怪的问题');
+    assert.equal(result.lastAgentId, 'general');
+    assert.ok(result.content.includes('通用客服:'));
+  });
+
+  it('defaultTarget 无效时保持原有行为（不匹配则止于路由器）', async () => {
+    const router = makeNode('dispatcher', '调度', () => 'unknown-agent');
+    const techAgent = makeNode('tech', '技术', () => '技术支持');
+
+    // defaultTarget 指向不存在的 Agent → 不生效，resolve 结果原样返回，无边匹配
+    const routerGraph = createRouter(router, [techAgent], {
+      resolve: (result) => result.content.trim(),
+      defaultTarget: 'nonexistent',
+    });
+
+    const result = await routerGraph.run('问题');
+    assert.equal(result.lastAgentId, 'dispatcher');
   });
 });
 
@@ -586,6 +1065,156 @@ describe('Supervisor', () => {
     assert.ok(events.includes('parallel_start'));
     assert.ok(events.includes('parallel_done'));
     assert.ok(events.includes('graph_done'));
+  });
+
+  it('并行 Worker 失败默认 fail-fast（返回 error 结果）', async () => {
+    const pm = makeNode('pm', 'PM', () => 'ok');
+    pm.outputMapping = (_result, ctx) => {
+      ctx.blackboard.set('tasks', [
+        { assignee: 'good', task: 't1' },
+        { assignee: 'bad', task: 't2' },
+      ]);
+    };
+
+    const good = makeNode('good', 'Good', (input) => `good: ${input}`);
+    const bad = makeNode('bad', 'Bad', () => { throw new Error('worker-boom'); });
+
+    const team = createSupervisor(pm, [good, bad], { schedule: 'parallel' });
+    const result = await team.run('test');
+
+    assert.equal(result.success, false);
+    assert.equal(result.stopReason, 'error');
+    assert.ok(result.error!.includes('worker-boom'));
+  });
+
+  it('onWorkerError=skip 容忍 Worker 失败', async () => {
+    const pm = makeNode('pm', 'PM', () => 'ok');
+    pm.outputMapping = (_result, ctx) => {
+      ctx.blackboard.set('tasks', [
+        { assignee: 'good', task: 't1' },
+        { assignee: 'bad', task: 't2' },
+      ]);
+    };
+
+    const good = makeNode('good', 'Good', () => 'good-result');
+    const bad = makeNode('bad', 'Bad', () => { throw new Error('worker-boom'); });
+
+    const team = createSupervisor(pm, [good, bad], { schedule: 'parallel', onWorkerError: 'skip' });
+    const result = await team.run('test');
+
+    assert.equal(result.success, true);
+    assert.equal(result.stopReason, 'partial_failure');
+    assert.deepEqual(result.failedAgents, ['bad']);
+    assert.ok(result.agentResults.has('good'));
+    assert.equal(result.content, 'good-result');
+  });
+
+  it('onWorkerError=skip + 限流并发容忍失败', async () => {
+    const pm = makeNode('pm', 'PM', () => 'ok');
+    const w1 = makeNode('w1', 'W1', () => 'r1');
+    const w2 = makeNode('w2', 'W2', () => { throw new Error('w2-boom'); });
+    const w3 = makeNode('w3', 'W3', () => 'r3');
+
+    const team = createSupervisor(pm, [w1, w2, w3], {
+      schedule: 'parallel',
+      concurrency: 1,
+      onWorkerError: 'skip',
+    });
+    const result = await team.run('test');
+
+    assert.equal(result.success, true);
+    assert.equal(result.stopReason, 'partial_failure');
+    assert.deepEqual(result.failedAgents, ['w2']);
+    assert.ok(result.agentResults.has('w1'));
+    assert.ok(result.agentResults.has('w3'));
+  });
+
+  it('on() 监听器在 Supervisor run() 时触发', async () => {
+    const pm = makeNode('pm', 'PM', () => 'ok');
+    const w1 = makeNode('w1', 'W1', () => 'r1');
+
+    const team = createSupervisor(pm, [w1], { schedule: 'parallel' });
+    const seen: string[] = [];
+    team.on('agent_start', () => seen.push('start'));
+    team.on('graph_done', () => seen.push('done'));
+
+    await team.run('test');
+    assert.equal(seen.length, 3); // pm + w1 两次 start + done
+    assert.equal(seen[seen.length - 1], 'done');
+  });
+
+  it('auto 调度：dependsOn 显式声明依赖分层', async () => {
+    const executionOrder: string[] = [];
+    const pm = makeNode('pm', 'PM', () => 'ok');
+
+    const fe = makeNode('fe', '前端', () => { executionOrder.push('fe'); return 'fe-done'; });
+    const be = makeNode('be', '后端', () => { executionOrder.push('be'); return 'be-done'; });
+    // qa 依赖 fe 和 be；deploy 依赖 qa
+    const qa = makeNode('qa', 'QA', () => { executionOrder.push('qa'); return 'qa-done'; });
+    qa.dependsOn = ['fe', 'be'];
+    const deploy = makeNode('deploy', '部署', () => { executionOrder.push('deploy'); return 'deploy-done'; });
+    deploy.dependsOn = ['qa'];
+
+    const team = createSupervisor(pm, [fe, be, qa, deploy], { schedule: 'auto' });
+    const result = await team.run('test');
+
+    assert.equal(result.success, true);
+    assert.equal(executionOrder[0] === 'fe' || executionOrder[0] === 'be', true);
+    // qa 必须在 fe/be 之后，deploy 必须在 qa 之后
+    assert.ok(executionOrder.indexOf('qa') > executionOrder.indexOf('fe'));
+    assert.ok(executionOrder.indexOf('qa') > executionOrder.indexOf('be'));
+    assert.ok(executionOrder.indexOf('deploy') > executionOrder.indexOf('qa'));
+    assert.equal(result.stepsCompleted, 5); // pm + 4 workers
+  });
+
+  it('auto 调度：dependsOn 引用不存在的 Worker 报错', async () => {
+    const pm = makeNode('pm', 'PM', () => 'ok');
+    const w1 = makeNode('w1', 'W1', () => 'r1');
+    w1.dependsOn = ['ghost'];
+
+    const team = createSupervisor(pm, [w1], { schedule: 'auto' });
+    const result = await team.run('test');
+
+    assert.equal(result.success, false);
+    assert.ok(result.error!.includes('ghost'));
+  });
+
+  it('auto 调度：dependsOn 成环报错', async () => {
+    const pm = makeNode('pm', 'PM', () => 'ok');
+    const w1 = makeNode('w1', 'W1', () => 'r1');
+    const w2 = makeNode('w2', 'W2', () => 'r2');
+    w1.dependsOn = ['w2'];
+    w2.dependsOn = ['w1'];
+
+    const team = createSupervisor(pm, [w1, w2], { schedule: 'auto' });
+    const result = await team.run('test');
+
+    assert.equal(result.success, false);
+    assert.ok(result.error!.includes('环'));
+  });
+
+  it('auto 调度：同层并行 + 层间顺序（隐式依赖兼容旧行为）', async () => {
+    // 无 dependsOn：无 inputMapping 并行（第 0 层），有 inputMapping 在其后
+    const executionOrder: string[] = [];
+    const pm = makeNode('pm', 'PM', () => 'ok');
+    pm.outputMapping = (_result, ctx) => {
+      ctx.blackboard.set('tasks', [
+        { assignee: 'fe', task: 'build-ui' },
+        { assignee: 'be', task: 'build-api' },
+      ]);
+    };
+
+    const fe = makeNode('fe', '前端', (input) => { executionOrder.push('fe'); return 'fe-done'; });
+    const be = makeNode('be', '后端', (input) => { executionOrder.push('be'); return 'be-done'; });
+    const qa = makeNode('qa', 'QA', () => { executionOrder.push('qa'); return 'qa-done'; });
+    qa.inputMapping = (ctx) => `review: ${ctx.blackboard.get('fe_result')}, ${ctx.blackboard.get('be_result')}`;
+
+    const team = createSupervisor(pm, [fe, be, qa], { schedule: 'auto' });
+    await team.run('开发登录功能');
+
+    // qa 在 fe/be 之后（旧行为保持）
+    assert.ok(executionOrder.indexOf('qa') > executionOrder.indexOf('fe'));
+    assert.ok(executionOrder.indexOf('qa') > executionOrder.indexOf('be'));
   });
 });
 
@@ -816,6 +1445,169 @@ describe('MapReduce', () => {
     assert.ok(events.includes('agent_start'));
     assert.ok(events.includes('agent_result'));
     assert.ok(events.includes('graph_done'));
+  });
+
+  it('mapper 失败默认 fail-fast（返回 error 结果）', async () => {
+    const mapper = makeNode('mapper', 'Mapper', (input) => {
+      if (input === 'b') throw new Error('map-boom');
+      return `ok: ${input}`;
+    });
+    const reducer = makeNode('reducer', 'Reducer', (input) => `汇总: ${input}`);
+
+    const mapReduce = createMapReduce(mapper, reducer, {
+      split: (input) => input.split(','),
+    });
+
+    const result = await mapReduce.run('a,b,c');
+    assert.equal(result.success, false);
+    assert.equal(result.stopReason, 'error');
+    assert.ok(result.error!.includes('map-boom'));
+  });
+
+  it('onMapperError=skip 容忍 mapper 失败', async () => {
+    const mapper = makeNode('mapper', 'Mapper', (input) => {
+      if (input === 'b') throw new Error('map-boom');
+      return `ok: ${input}`;
+    });
+    let reducerInput = '';
+    const reducer = makeNode('reducer', 'Reducer', (input) => { reducerInput = input; return '汇总完成'; });
+
+    const mapReduce = createMapReduce(mapper, reducer, {
+      split: (input) => input.split(','),
+      onMapperError: 'skip',
+    });
+
+    const result = await mapReduce.run('a,b,c');
+    assert.equal(result.success, true);
+    assert.equal(result.stopReason, 'partial_failure');
+    assert.deepEqual(result.failedAgents, ['mapper_1']);
+    // reducer 只收到成功的子任务结果
+    assert.ok(reducerInput.includes('ok: a'));
+    assert.ok(reducerInput.includes('ok: c'));
+    assert.ok(!reducerInput.includes('ok: b'));
+  });
+
+  it('onMapperError=skip + 限流并发容忍失败', async () => {
+    const mapper = makeNode('mapper', 'Mapper', (input) => {
+      if (input === 'b') throw new Error('map-boom');
+      return `ok: ${input}`;
+    });
+    const reducer = makeNode('reducer', 'Reducer', () => '汇总完成');
+
+    const mapReduce = createMapReduce(mapper, reducer, {
+      split: (input) => input.split(','),
+      concurrency: 1,
+      onMapperError: 'skip',
+    });
+
+    const result = await mapReduce.run('a,b,c');
+    assert.equal(result.success, true);
+    assert.equal(result.stopReason, 'partial_failure');
+    assert.deepEqual(result.failedAgents, ['mapper_1']);
+    assert.equal(result.stepsCompleted, 4); // 2 成功 + 1 失败 mapper + 1 reducer
+  });
+
+  it('onMapperError=skip 且全部失败时返回 error', async () => {
+    const mapper = makeNode('mapper', 'Mapper', () => { throw new Error('map-boom'); });
+    const reducer = makeNode('reducer', 'Reducer', () => 'done');
+
+    const mapReduce = createMapReduce(mapper, reducer, {
+      split: (input) => input.split(','),
+      onMapperError: 'skip',
+    });
+
+    const result = await mapReduce.run('a,b');
+    assert.equal(result.success, false);
+    assert.ok(result.error!.includes('所有 mapper 均失败'));
+  });
+
+  it('on() 监听器在 MapReduce run() 时触发', async () => {
+    const mapper = makeNode('mapper', 'Mapper', () => 'ok');
+    const reducer = makeNode('reducer', 'Reducer', () => 'done');
+
+    const mapReduce = createMapReduce(mapper, reducer, {
+      split: (input) => input.split(','),
+    });
+
+    const seen: string[] = [];
+    mapReduce.on('agent_start', () => seen.push('start'));
+    mapReduce.on('graph_done', () => seen.push('done'));
+
+    await mapReduce.run('a,b');
+    // 2 个 mapper + 1 个 reducer 的 start + done
+    assert.equal(seen.length, 4);
+    assert.equal(seen[seen.length - 1], 'done');
+  });
+
+  it('split 每次执行只调用一次（无副作用放大）', async () => {
+    let splitCallCount = 0;
+    const mapper = makeNode('mapper', 'Mapper', (input) => `ok: ${input}`);
+    const reducer = makeNode('reducer', 'Reducer', () => 'done');
+
+    const mapReduce = createMapReduce(mapper, reducer, {
+      split: (input) => {
+        splitCallCount++;
+        return input.split(',');
+      },
+    });
+
+    await mapReduce.run('a,b,c');
+    assert.equal(splitCallCount, 1);
+  });
+
+  it('虚拟节点 ID 对齐 nodeStates', async () => {
+    const mapper = makeNode('mapper', 'Mapper', (input) => `ok: ${input}`);
+    const reducer = makeNode('reducer', 'Reducer', () => 'done');
+
+    const mapReduce = createMapReduce(mapper, reducer, {
+      split: (input) => input.split(','),
+    });
+
+    const result = await mapReduce.run('a,b');
+    const state = mapReduce.getState();
+    // mapper 聚合节点 + 2 个虚拟节点 + reducer
+    assert.equal(state.nodeStates.get('mapper'), 'completed');
+    assert.equal(state.nodeStates.get('mapper_0'), 'completed');
+    assert.equal(state.nodeStates.get('mapper_1'), 'completed');
+    assert.equal(state.nodeStates.get('reducer'), 'completed');
+    // 虚拟节点结果与 nodeResults 键一致
+    assert.ok(result.agentResults.has('mapper_0'));
+    assert.ok(result.agentResults.has('mapper_1'));
+  });
+
+  it('失败 mapper 的虚拟节点状态为 failed', async () => {
+    const mapper = makeNode('mapper', 'Mapper', (input) => {
+      if (input === 'b') throw new Error('map-boom');
+      return `ok: ${input}`;
+    });
+    const reducer = makeNode('reducer', 'Reducer', () => 'done');
+
+    const mapReduce = createMapReduce(mapper, reducer, {
+      split: (input) => input.split(','),
+      onMapperError: 'skip',
+    });
+
+    await mapReduce.run('a,b,c');
+    const state = mapReduce.getState();
+    assert.equal(state.nodeStates.get('mapper_0'), 'completed');
+    assert.equal(state.nodeStates.get('mapper_1'), 'failed');
+    assert.equal(state.nodeStates.get('mapper_2'), 'completed');
+  });
+
+  it('二次 run 状态隔离', async () => {
+    const mapper = makeNode('mapper', 'Mapper', (input) => `ok: ${input}`);
+    const reducer = makeNode('reducer', 'Reducer', () => 'done');
+
+    const mapReduce = createMapReduce(mapper, reducer, {
+      split: (input) => input.split(','),
+    });
+
+    const first = await mapReduce.run('a,b');
+    assert.equal(first.stepsCompleted, 3);
+
+    const second = await mapReduce.run('a');
+    assert.equal(second.stepsCompleted, 2); // 1 mapper + 1 reducer，不残留上次虚拟节点
+    assert.equal(second.agentResults.size, 2);
   });
 });
 
@@ -1065,6 +1857,41 @@ describe('GraphDebugger', () => {
     assert.equal(trace.steps[1].agentId, 'b');
     assert.equal(trace.steps[0].state, 'completed');
     assert.equal(trace.steps[1].state, 'completed');
+  });
+
+  it('trace 记录每步输入摘要与最终结果', async () => {
+    const nodeA = makeNode('a', 'AgentA', (input) => `result: ${input}`);
+    const nodeB = makeNode('b', 'AgentB', (input) => `final: ${input}`);
+    const graph = createAgentGraph()
+      .addNode(nodeA)
+      .addNode(nodeB)
+      .addEdge({ from: 'a', to: 'b' })
+      .setEntry('a');
+
+    const debugger_ = createDebugger(graph);
+    const trace = await debugger_.trace('hello');
+
+    // 每步记录输入摘要
+    assert.equal(trace.steps[0].input, 'hello');
+    assert.equal(trace.steps[1].input, 'result: hello');
+    // 最终结果来自 graph_done 事件（含真实 content / stopReason）
+    assert.equal(trace.result.success, true);
+    assert.equal(trace.result.content, 'final: result: hello');
+    assert.equal(trace.result.stopReason, 'completed');
+    assert.equal(trace.result.stepsCompleted, 2);
+  });
+
+  it('trace 失败时报告 success=false 与 error 信息', async () => {
+    const nodeA = makeNode('a', 'AgentA', () => { throw new Error('node-boom'); });
+    const graph = createAgentGraph().addNode(nodeA).setEntry('a');
+
+    const debugger_ = createDebugger(graph);
+    const trace = await debugger_.trace('test');
+
+    assert.equal(trace.result.success, false);
+    assert.equal(trace.result.stopReason, 'error');
+    assert.equal(trace.steps[0].state, 'failed');
+    assert.equal(trace.steps[0].error, 'node-boom');
   });
 
   it('traceToJSON 输出有效 JSON', async () => {

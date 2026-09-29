@@ -4,7 +4,7 @@
  * 提供 EventBus、ToolRegistry 和 SharedContext 的默认实现。
  */
 
-import type { Tool } from '@aipack-ai/agent';
+import type { Tool, Request } from '@aipack-ai/agent';
 import type { EventBus, ToolRegistry, SharedContext, EventListener } from './types';
 
 // ─── SimpleEventBus ──────────────────────────────────────────────
@@ -84,4 +84,16 @@ export function createSharedContext(init?: Partial<SharedContext>): SharedContex
     toolRegistry: init?.toolRegistry ?? new SimpleToolRegistry(),
     meta: init?.meta ?? {},
   };
+}
+
+// ─── storeOriginalInput: 统一写入原始输入 ──────────────────────
+
+/**
+ * 将原始用户输入写入 blackboard['__original_input__']。
+ * 所有执行器（Graph/Supervisor/Debate/MapReduce）在 run/stream 入口统一调用，
+ * 保证 Router 等模式的 passOriginalInput 语义可用。
+ */
+export function storeOriginalInput(ctx: SharedContext, input: string | Request): void {
+  const inputText = typeof input === 'string' ? input : input.message;
+  ctx.blackboard.set('__original_input__', inputText);
 }

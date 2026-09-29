@@ -6,13 +6,15 @@
 
 import type { AgentNode, AgentGraph, DebateOpts, EventListener, MultiAgentResult, MultiAgentEvent } from '../core/types';
 import { DebateExecutor } from '../core/debate-executor';
+import { SimpleEventBus } from '../core/context';
 import type { Request } from '@aipack-ai/agent';
 
 // ─── DebateGraphImpl ─────────────────────────────────────────────
 
 class DebateGraphImpl implements AgentGraph {
   private executor: DebateExecutor;
-  private eventListeners = new Map<string, Set<EventListener>>();
+  /** on() 注册的监听器，按 MultiAgentEvent.type 分发 */
+  private bus = new SimpleEventBus();
 
   constructor(proposer: AgentNode, reviewer: AgentNode, opts: DebateOpts) {
     this.executor = new DebateExecutor(proposer, reviewer, opts);
@@ -24,20 +26,20 @@ class DebateGraphImpl implements AgentGraph {
   setFinish(): this { throw new Error('Debate 模式不支持 setFinish'); }
 
   async run(input: string | Request): Promise<MultiAgentResult> {
+    this.executor.setEventSink(event => this.bus.emit(event.type, event));
     return this.executor.run(input);
   }
 
   async *stream(input: string | Request): AsyncGenerator<MultiAgentEvent> {
+    this.executor.setEventSink(event => this.bus.emit(event.type, event));
     yield* this.executor.stream(input);
   }
 
   getState() { return this.executor.getState(); }
-  abort(): void {}
+  abort(): void { this.executor.abort(); }
 
   on(event: string, listener: EventListener): this {
-    let set = this.eventListeners.get(event);
-    if (!set) { set = new Set(); this.eventListeners.set(event, set); }
-    set.add(listener);
+    this.bus.on(event, listener);
     return this;
   }
 }

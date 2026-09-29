@@ -69,6 +69,23 @@ export interface AgentNode {
   inputMapping?: (ctx: SharedContext) => string | Request;
   /** 输出转换：将Agent结果写入SharedContext */
   outputMapping?: (result: Result, ctx: SharedContext) => void;
+  /** 节点级重试配置（失败/超时自动重试，默认不重试） */
+  retry?: NodeRetryOpts;
+  /** 节点级超时（ms）：单次执行超过该时长抛出超时错误（可与 retry 配合重试） */
+  timeoutMs?: number;
+  /**
+   * 依赖的其他节点 ID（仅 Supervisor auto 调度使用）：
+   * 声明后该 Worker 在所依赖的 Worker 全部完成后再执行。
+   */
+  dependsOn?: string[];
+}
+
+/** 节点级重试配置 */
+export interface NodeRetryOpts {
+  /** 最大尝试次数（含首次执行，默认 1 即不重试） */
+  maxAttempts?: number;
+  /** 重试间隔（ms，默认 0 立即重试） */
+  backoffMs?: number;
 }
 
 // ─── AgentEdge: Agent间流转边 ───────────────────────────────────
@@ -130,13 +147,15 @@ export interface MultiAgentResult {
   success: boolean;
   /** 错误信息 */
   error?: string;
+  /** 失败的 Agent ID 列表（onWorkerError/onMapperError='skip' 容忍失败时暴露） */
+  failedAgents?: string[];
 }
 
 // ─── 多Agent流式事件 ─────────────────────────────────────────────
 
 /** 多Agent流式事件类型 */
 export type MultiAgentEvent =
-  | { type: 'agent_start'; agentId: string; agentName: string }
+  | { type: 'agent_start'; agentId: string; agentName: string; /** 该节点的输入摘要（文本） */ input?: string }
   | { type: 'agent_result'; agentId: string; agentName: string; result: Result }
   | { type: 'agent_error'; agentId: string; agentName: string; error: string }
   | { type: 'edge_traversed'; from: string; to: string }
@@ -148,6 +167,19 @@ export type MultiAgentEvent =
   | { type: 'graph_error'; error: string };
 
 // ─── AgentGraph: 编排核心接口 ────────────────────────────────────
+
+/** 图执行配置选项（createAgentGraph 参数） */
+export interface GraphExecutionOpts {
+  /**
+   * 并行分支（多条出边同时匹配）执行时的最大并发数（默认 Infinity，不限制）
+   */
+  concurrency?: number;
+  /**
+   * 单个节点的最大访问次数（环图防死循环安全阀，默认 10）。
+   * 超限时图以 stopReason='max_visits_exceeded' 安全截断
+   */
+  maxVisitsPerNode?: number;
+}
 
 /** AgentGraph: 编排核心 */
 export interface AgentGraph {
@@ -167,7 +199,10 @@ export interface AgentGraph {
   getState(): GraphExecutionState;
   /** 中止执行 */
   abort(): void;
-  /** 事件监听 */
+  /**
+   * 事件监听：事件名对应 MultiAgentEvent 的 type 字段
+   * （如 'agent_start' / 'agent_result' / 'graph_done'），run 与 stream 均会触发
+   */
   on(event: string, listener: EventListener): this;
 }
 
@@ -187,7 +222,10 @@ export interface PipelineOpts {
 export interface RouterOpts {
   /** 从路由Agent输出中解析目标Agent ID */
   resolve: (routerResult: Result) => string;
-  /** 未匹配到目标时的默认路由Agent ID */
+  /**
+   * 未匹配到目标时的默认路由Agent ID。
+   * resolve 返回的 ID 不在目标列表中时，自动回退路由到该 Agent
+   */
   defaultTarget?: string;
   /** 是否将原始输入传递给目标Agent（默认true），否则传递路由Agent的输出 */
   passOriginalInput?: boolean;
@@ -218,6 +256,12 @@ export interface SupervisorOpts {
    * 默认 true
    */
   passOriginalInput?: boolean;
+  /**
+   * Worker 失败策略：
+   * - 'fail-fast': 任一 Worker 失败立即中止（默认，与 sequential 模式语义一致）
+   * - 'skip': 容忍失败，跳过失败的 Worker 继续，失败的 Worker ID 暴露在 result.failedAgents
+   */
+  onWorkerError?: 'fail-fast' | 'skip';
 }
 
 // ─── Debate 选项 ─────────────────────────────────────────────────
@@ -242,6 +286,12 @@ export interface MapReduceOpts {
   concurrency?: number;
   /** Reducer 的输入格式化（默认将所有 mapper 结果用分隔符连接） */
   reduceInputFormat?: (mapperResults: Map<number, Result>) => string;
+  /**
+   * Mapper 失败策略：
+   * - 'fail-fast': 任一子任务失败立即中止（默认）
+   * - 'skip': 容忍失败，仅汇总成功的子任务，失败的虚拟 Agent ID 暴露在 result.failedAgents
+   */
+  onMapperError?: 'fail-fast' | 'skip';
 }
 
 // ─── MCPBridge 选项 ─────────────────────────────────────────────

@@ -14,6 +14,7 @@ import type {
   GraphTrace,
   TraceStep,
   MultiAgentEvent,
+  MultiAgentResult,
   NodeExecutionState,
 } from '../core/types';
 
@@ -103,6 +104,7 @@ export class GraphDebugger {
     const graphStartTime = Date.now();
     const steps: TraceStep[] = [];
     let stepIndex = 0;
+    let finalResult: MultiAgentResult | undefined;
 
     // 收集事件
     for await (const event of this.graph.stream(input)) {
@@ -114,7 +116,7 @@ export class GraphDebugger {
           agentName: event.agentName,
           startTime: Date.now(),
           duration: 0,
-          input: '',
+          input: event.input ?? '',
           output: '',
           state: 'running',
         });
@@ -141,6 +143,8 @@ export class GraphDebugger {
           step.error = event.error;
           step.state = 'failed';
         }
+      } else if (event.type === 'graph_done') {
+        finalResult = event.result;
       }
     }
 
@@ -154,10 +158,10 @@ export class GraphDebugger {
       duration: graphDuration,
       steps,
       result: {
-        success: !state.error,
-        content: state.error ?? '',
-        stopReason: state.error ? 'error' : 'completed',
-        stepsCompleted: state.stepsCompleted,
+        success: finalResult ? finalResult.success : !state.error,
+        content: finalResult?.content ?? '',
+        stopReason: finalResult?.stopReason ?? (state.error ? 'error' : 'completed'),
+        stepsCompleted: finalResult?.stepsCompleted ?? state.stepsCompleted,
       },
     };
   }

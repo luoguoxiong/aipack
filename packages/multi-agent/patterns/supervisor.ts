@@ -7,13 +7,15 @@
 
 import type { AgentNode, AgentGraph, SupervisorOpts, EventListener, MultiAgentResult, MultiAgentEvent } from '../core/types';
 import { SupervisorExecutor } from '../core/supervisor-executor';
+import { SimpleEventBus } from '../core/context';
 import type { Request } from '@aipack-ai/agent';
 
 // ─── SupervisorGraphImpl ─────────────────────────────────────────
 
 class SupervisorGraphImpl implements AgentGraph {
   private executor: SupervisorExecutor;
-  private eventListeners = new Map<string, Set<EventListener>>();
+  /** on() 注册的监听器，按 MultiAgentEvent.type 分发 */
+  private bus = new SimpleEventBus();
 
   constructor(supervisor: AgentNode, workers: AgentNode[], opts?: SupervisorOpts) {
     this.executor = new SupervisorExecutor(supervisor, workers, opts);
@@ -34,10 +36,12 @@ class SupervisorGraphImpl implements AgentGraph {
   }
 
   async run(input: string | Request): Promise<MultiAgentResult> {
+    this.executor.setEventSink(event => this.bus.emit(event.type, event));
     return this.executor.run(input);
   }
 
   async *stream(input: string | Request): AsyncGenerator<MultiAgentEvent> {
+    this.executor.setEventSink(event => this.bus.emit(event.type, event));
     yield* this.executor.stream(input);
   }
 
@@ -46,16 +50,11 @@ class SupervisorGraphImpl implements AgentGraph {
   }
 
   abort(): void {
-    // SupervisorExecutor 当前未实现 abort，预留接口
+    this.executor.abort();
   }
 
   on(event: string, listener: EventListener): this {
-    let set = this.eventListeners.get(event);
-    if (!set) {
-      set = new Set();
-      this.eventListeners.set(event, set);
-    }
-    set.add(listener);
+    this.bus.on(event, listener);
     return this;
   }
 }

@@ -20,6 +20,8 @@ export type {
   MultiAgentEvent,
   NodeExecutionState,
   GraphExecutionState,
+  GraphExecutionOpts,
+  NodeRetryOpts,
   PipelineOpts,
   RouterOpts,
   SupervisorOpts,
@@ -37,7 +39,9 @@ export {
   SimpleToolRegistry,
 } from './core/context';
 
-export { createAgentGraph } from './core/graph';
+export { createAgentGraph, GraphAbortedError } from './core/graph';
+export { NodeTimeoutError } from './core/executor';
+export { createEventStream } from './core/event-stream';
 
 // ─── 编排模式 ────────────────────────────────────────────────────
 export { createPipeline } from './patterns/pipeline';

@@ -7,6 +7,7 @@
 
 import type { AgentNode, AgentGraph, RouterOpts } from '../core/types';
 import { createAgentGraph } from '../core/graph';
+import type { Result } from '@aipack-ai/agent';
 
 /**
  * 创建 Router 条件路由
@@ -38,18 +39,27 @@ export function createRouter(
   // 设置入口为路由器
   graph.setEntry(router.id);
 
-  // 构建目标 ID 集合，用于校验
+  // 构建目标 ID 集合，用于校验与兜底路由
   const targetIds = new Set(targets.map(t => t.id));
+
+  // resolve 包装：resolve 返回未知 ID 时回退到 defaultTarget（兜底路由）
+  const defaultTarget = opts.defaultTarget && targetIds.has(opts.defaultTarget)
+    ? opts.defaultTarget
+    : undefined;
+  const resolveTarget = (routerResult: Result): string => {
+    const resolvedId = opts.resolve(routerResult);
+    if (targetIds.has(resolvedId)) return resolvedId;
+    return defaultTarget ?? resolvedId;
+  };
 
   // 路由器到每个目标的条件边
   for (const target of targets) {
     graph.addEdge({
       from: router.id,
       to: target.id,
-      // 条件：从路由器结果中解析目标ID，匹配当前目标
+      // 条件：从路由器结果中解析目标ID（含 defaultTarget 兜底），匹配当前目标
       condition: (routerResult, _ctx) => {
-        const resolvedId = opts.resolve(routerResult);
-        return resolvedId === target.id;
+        return resolveTarget(routerResult) === target.id;
       },
       // 转换：决定传给目标Agent的输入
       transform: (_routerResult, _ctx) => {
@@ -63,12 +73,6 @@ export function createRouter(
         return (originalInput as string) ?? _routerResult.content;
       },
     });
-  }
-
-  // 默认路由边（如果指定了 defaultTarget）
-  if (opts.defaultTarget && targetIds.has(opts.defaultTarget)) {
-    // 默认边已在上面添加，这里无需额外处理
-    // resolve 函数应返回 defaultTarget 作为兜底
   }
 
   return graph;
