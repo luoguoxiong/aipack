@@ -1,0 +1,19 @@
+{
+  "id": "agent-e2e-live/echo-args",
+  "suite": "agent-e2e-live",
+  "description": "live：参数传递是否保真（echo 回显指定字符串）",
+  "mode": "live",
+  "origin": "handwritten",
+  "input": {
+    "message": "调用 echo 工具，message 参数填 'pong'，然后把工具返回的内容原样复述给我。",
+    "systemPrompt": "你是评测用的 agent。必须调用 echo 工具，且 message 必须是 pong。",
+    "tools": ["echo"],
+    "fs": {}
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "echo", "args": { "message": "pong" } }] } },
+    { "type": "regex", "params": { "value": "pong", "flags": "i" } },
+    { "type": "success", "params": { "value": true } }
+  ],
+  "metadata": { "maxSteps": 5, "timeoutMs": 60000, "tags": ["live", "args"] }
+}

@@ -1,0 +1,93 @@
+name: Eval (live)
+
+# 每日真实 LLM 回归：跑 agent-e2e-live 套件，出趋势报告并对 baseline 门禁。
+# 与 CI 的 mock 模式（PR 触发、秒级）互补：这里慢、贵、有随机性，靠 repeats + pass@k 消噪。
+on:
+  schedule:
+    # 每日 UTC 03:00
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      model:
+        description: '被测模型（provider/modelId，留空用 AIPACK_EVAL_MODEL 或自动探测）'
+        required: false
+        default: ''
+      repeats:
+        description: '每用例重复次数（pass@k 判定）'
+        required: false
+        default: '3'
+
+permissions:
+  contents: read
+
+jobs:
+  live-eval:
+    name: live eval + baseline gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # 未配置任何 provider key（fork PR / 未设 secrets）时直接跳过，不浪费 runner
+    if: >-
+      ${{ secrets.OPENAI_API_KEY != '' ||
+          secrets.DEEPSEEK_API_KEY != '' ||
+          secrets.ANTHROPIC_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build agent package
+        run: pnpm --filter @aipack-ai/agent build
+
+      # history.jsonl 靠 cache 跨运行续接（日环比需要至少两条记录）
+      - name: Restore eval history
+        uses: actions/cache@v4
+        with:
+          path: eval-results
+          key: eval-history-${{ github.run_id }}
+          restore-keys: |
+            eval-history-
+
+      - name: Run live eval
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AIPACK_EVAL_MODEL: ${{ inputs.model }}
+        run: |
+          set -o pipefail
+          mkdir -p eval-results
+          ROOT="${{ github.workspace }}"
+          # eval CLI 在 packages/eval 下执行，路径一律用绝对路径
+          BASE_ARGS="--mode live --suite agent-e2e-live"
+          BASE_ARGS="$BASE_ARGS --repeats ${{ inputs.repeats || '3' }}"
+          BASE_ARGS="$BASE_ARGS --report-dir $ROOT/eval-results --history $ROOT/eval-results/history.jsonl"
+          BASE_ARGS="$BASE_ARGS --max-tokens 2000000 --timeout 120000"
+          if [ -f "$ROOT/eval-baseline.json" ]; then
+            pnpm --filter @aipack-ai/eval eval -- $BASE_ARGS --baseline "$ROOT/eval-baseline.json" --threshold 0.05 | tee eval-results/latest.md
+          else
+            # 首次运行（仓库里还没有 baseline）：只建基线，不做门禁
+            pnpm --filter @aipack-ai/eval eval -- $BASE_ARGS --baseline "$ROOT/eval-baseline.json" --update-baseline | tee eval-results/latest.md
+          fi
+
+      - name: Publish report to job summary
+        if: always()
+        run: |
+          if [ -f eval-results/latest.md ]; then
+            cat eval-results/latest.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results-${{ github.run_id }}
+          path: eval-results
+          retention-days: 90

@@ -1,0 +1,19 @@
+{
+  "id": "agent-e2e-live/write-confirm",
+  "suite": "agent-e2e-live",
+  "description": "live：写入文件并确认结果（参数构造能力）",
+  "mode": "live",
+  "origin": "handwritten",
+  "input": {
+    "message": "用 writeFile 工具把 'status: green' 写入 report.md，然后告诉我写成功了。",
+    "systemPrompt": "你是评测用的 agent。必须使用工具完成任务。回答用中文。",
+    "tools": ["writeFile"],
+    "fs": {}
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "writeFile", "args": { "path": "report.md" } }] } },
+    { "type": "contains", "params": { "value": "green" } },
+    { "type": "success", "params": { "value": true } }
+  ],
+  "metadata": { "maxSteps": 6, "timeoutMs": 60000, "tags": ["live", "args"] }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "agent-e2e-live/json-output",
+  "suite": "agent-e2e-live",
+  "description": "live：结构化输出是否可被解析（JSON 契约）",
+  "mode": "live",
+  "origin": "handwritten",
+  "input": {
+    "message": "用 readFile 读取 pkg.json，然后只输出一个 JSON 对象：{\"name\": <项目名>, \"version\": <版本号>}，不要输出其它文字。",
+    "systemPrompt": "你是评测用的 agent。最终回答必须是且仅是一个合法 JSON 对象，不要使用代码块。",
+    "tools": ["readFile"],
+    "fs": { "pkg.json": "{\"name\": \"aipack\", \"version\": \"1.1.6\", \"private\": true}" }
+  },
+  "scorers": [
+    { "type": "json-field", "params": { "path": "name", "value": "aipack" } },
+    { "type": "json-field", "params": { "path": "version", "value": "1.1.6" } },
+    { "type": "success", "params": { "value": true } }
+  ],
+  "metadata": { "maxSteps": 6, "timeoutMs": 60000, "tags": ["live", "structured-output"] }
+}

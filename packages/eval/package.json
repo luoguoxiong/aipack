@@ -28,7 +28,8 @@
     "prebuild": "[ -f ../agent/dist/index.d.ts ] || pnpm --filter @aipack-ai/agent build",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
-    "eval": "node --import tsx src/cli.ts run"
+    "eval": "node --import tsx src/cli.ts run",
+    "eval:live": "node --import tsx src/cli.ts run --mode live"
   },
   "keywords": [
     "aipack",

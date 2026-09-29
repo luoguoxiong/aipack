@@ -3,9 +3,11 @@
  * packages/eval/src/cli.ts - aipack-eval 命令行入口
  *
  * 用法：
- *   aipack-eval run [--suite <name>]... [--cases-dir <dir>] [--repeats <n>]
- *                   [--report-dir <dir>] [--baseline <path>]
- *                   [--update-baseline] [--threshold <0.02>]
+ *   aipack-eval run [--suite <name>]... [--mode mock|live] [--model provider/id]
+ *                   [--api-key <key>] [--base-url <url>] [--temperature <0>]
+ *                   [--repeats <n>] [--cases-dir <dir>] [--report-dir <dir>]
+ *                   [--history <path>] [--baseline <path>] [--update-baseline]
+ *   aipack-eval history [--path <file>] [--limit <n>] [--json]
  *
  * 退出码：0 = 全过且无回归；1 = 有失败或回归；2 = 用法错误。
  */
@@ -13,34 +15,68 @@
 import { loadCases } from './core/loader';
 import { runEval } from './core/runner';
 import { finalizeReport, renderMarkdown } from './core/report';
-import type { RunConfig } from './core/types';
+import { readHistory, renderHistoryTrend } from './core/history';
+import type { EvalReport, RunConfig } from './core/types';
 
-interface CliArgs {
-  command?: string;
+type Mode = 'mock' | 'live';
+
+interface RunArgs {
   suites: string[];
+  mode: Mode;
+  model?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  temperature?: number;
   casesDir?: string;
   reportDir?: string;
+  historyPath?: string;
   baselinePath?: string;
   updateBaseline: boolean;
   threshold: number;
   repeats?: number;
+  concurrency?: number;
+  timeoutMs?: number;
+  maxTotalTokens?: number;
 }
 
-const USAGE = `用法: aipack-eval run [options]
+const USAGE = `用法: aipack-eval <run|history> [options]
 
-选项:
+run 选项:
   --suite <name>         只跑指定套件（可多次）
+  --mode <mock|live>     运行模式（缺省 mock；live = 真实 LLM）
+  --model <provider/id>  live 模型，如 deepseek/deepseek-chat（或 AIPACK_EVAL_MODEL）
+  --api-key <key>        live API Key（或 <PROVIDER>_API_KEY）
+  --base-url <url>       live 端点覆盖（代理 / 兼容网关）
+  --temperature <x>      live 采样温度（缺省 0）
+  --repeats <n>          每用例重复次数（live 缺省 3，pass@k 判定）
+  --concurrency <n>      并发用例数（缺省 8）
+  --timeout <ms>         单用例墙钟超时（缺省 30000）
+  --max-tokens <n>       全局 token 预算，超限熔断剩余用例
   --cases-dir <dir>      用例目录（缺省 <包根>/eval/cases）
-  --report-dir <dir>     报告输出目录（缺省 ./eval-results；'none' 不写盘）
+  --report-dir <dir>     报告输出目录（缺省不写盘；'none' 不写盘）
+  --history <path>       历史趋势 JSONL（缺省 <report-dir>/history.jsonl）
   --baseline <path>      baseline 文件（门禁对比）
   --update-baseline      用本次结果更新 baseline
   --threshold <x>        通过率回归阈值（缺省 0.02）
-  --repeats <n>          每用例重复次数（缺省 1）
+
+history 选项:
+  --path <file>          历史文件（缺省 ./eval-results/history.jsonl）
+  --limit <n>            展示最近 N 次（缺省 15）
+  --json                 输出原始 JSONL 条目
+
+公共:
   -h, --help             显示帮助`;
 
-function parseArgs(argv: string[]): CliArgs | { error: string } {
-  const args: CliArgs = {
+function num(raw: string, label: string): number {
+  const v = Number(raw);
+  if (!Number.isFinite(v)) throw new Error(`${label} 必须为数字`);
+  return v;
+}
+
+function parseRunArgs(argv: string[]): RunArgs | { error: string } {
+  const args: RunArgs = {
     suites: [],
+    mode: 'mock',
     updateBaseline: false,
     threshold: 0.02,
   };
@@ -54,17 +90,59 @@ function parseArgs(argv: string[]): CliArgs | { error: string } {
     };
     try {
       switch (a) {
-        case 'run':
-          args.command = 'run';
-          break;
         case '--suite':
           args.suites.push(next());
           break;
+        case '--mode': {
+          const v = next();
+          if (v !== 'mock' && v !== 'live') throw new Error('--mode 只能为 mock 或 live');
+          args.mode = v;
+          break;
+        }
+        case '--model':
+          args.model = next();
+          break;
+        case '--api-key':
+          args.apiKey = next();
+          break;
+        case '--base-url':
+          args.baseUrl = next();
+          break;
+        case '--temperature':
+          args.temperature = num(next(), '--temperature');
+          break;
+        case '--repeats': {
+          const v = Number(next());
+          if (!Number.isInteger(v) || v < 1) throw new Error('repeats 须为正整数');
+          args.repeats = v;
+          break;
+        }
+        case '--concurrency': {
+          const v = Number(next());
+          if (!Number.isInteger(v) || v < 1) throw new Error('concurrency 须为正整数');
+          args.concurrency = v;
+          break;
+        }
+        case '--timeout': {
+          const v = Number(next());
+          if (!Number.isFinite(v) || v <= 0) throw new Error('timeout 须为正数(ms)');
+          args.timeoutMs = v;
+          break;
+        }
+        case '--max-tokens': {
+          const v = Number(next());
+          if (!Number.isFinite(v) || v <= 0) throw new Error('max-tokens 须为正数');
+          args.maxTotalTokens = v;
+          break;
+        }
         case '--cases-dir':
           args.casesDir = next();
           break;
         case '--report-dir':
           args.reportDir = next();
+          break;
+        case '--history':
+          args.historyPath = next();
           break;
         case '--baseline':
           args.baselinePath = next();
@@ -78,12 +156,6 @@ function parseArgs(argv: string[]): CliArgs | { error: string } {
           args.threshold = v;
           break;
         }
-        case '--repeats': {
-          const v = Number(next());
-          if (!Number.isInteger(v) || v < 1) throw new Error('repeats 须为正整数');
-          args.repeats = v;
-          break;
-        }
         case '-h':
         case '--help':
           return { error: 'HELP' };
@@ -95,12 +167,11 @@ function parseArgs(argv: string[]): CliArgs | { error: string } {
     }
     i += 1;
   }
-  if (args.command !== 'run') return { error: `缺少子命令 'run'\n${USAGE}` };
   return args;
 }
 
-async function main(): Promise<number> {
-  const parsed = parseArgs(process.argv.slice(2));
+async function cmdRun(argv: string[]): Promise<number> {
+  const parsed = parseRunArgs(argv);
   if ('error' in parsed) {
     if (parsed.error === 'HELP') {
       console.log(USAGE);
@@ -121,26 +192,53 @@ async function main(): Promise<number> {
     return 1;
   }
 
+  const reportDir = parsed.reportDir === 'none' ? undefined : parsed.reportDir;
+  const historyPath =
+    parsed.historyPath ?? (reportDir ? `${reportDir.replace(/\/$/, '')}/history.jsonl` : undefined);
+
   const config: RunConfig = {
-    mode: 'mock',
+    mode: parsed.mode,
+    model: parsed.model,
+    apiKey: parsed.apiKey,
+    baseUrl: parsed.baseUrl,
+    temperature: parsed.temperature,
     suites: parsed.suites,
     repeats: parsed.repeats,
+    concurrency: parsed.concurrency,
+    timeoutMs: parsed.timeoutMs,
+    maxTotalTokens: parsed.maxTotalTokens,
     casesDir: parsed.casesDir,
-    reportDir: parsed.reportDir === 'none' ? undefined : parsed.reportDir,
+    reportDir,
+    historyPath,
     baselinePath: parsed.baselinePath,
     updateBaseline: parsed.updateBaseline,
     regressionThreshold: parsed.threshold,
   };
 
   console.error(
-    `加载 ${cases.length} 个用例${parsed.suites.length ? `（套件: ${parsed.suites.join(', ')}）` : ''}，mode=mock`,
+    `加载 ${cases.length} 个用例${parsed.suites.length ? `（套件: ${parsed.suites.join(', ')}）` : ''}，mode=${parsed.mode}`,
   );
-  const report = await runEval(cases, config);
-  const finalized = await finalizeReport(report, config);
 
-  console.log(renderMarkdown(report));
+  let report: EvalReport;
+  try {
+    report = await runEval(cases, config);
+  } catch (e) {
+    // live 装配失败（缺模型 / 缺 Key）属于使用错误
+    console.error(`live 模式配置错误: ${(e as Error).message}`);
+    return 2;
+  }
+
+  const finalized = await finalizeReport(report, config);
+  console.log(renderMarkdown(report, { history: finalized.history }));
+
+  if (report.totals.cases === 0) {
+    console.error(
+      `\n⚠️  当前 mode=${parsed.mode} 下没有可运行的用例（${report.totals.skipped} 个被跳过），检查 --suite 与 --mode 是否匹配`,
+    );
+  }
 
   if (finalized.jsonPath) console.error(`\n报告已写入: ${finalized.jsonPath}`);
+  if (finalized.historyPath) console.error(`历史已追加: ${finalized.historyPath}`);
   if (config.updateBaseline && finalized.baseline === undefined) {
     console.error(`baseline 已更新: ${config.baselinePath}`);
   }
@@ -150,7 +248,9 @@ async function main(): Promise<number> {
   if (finalized.comparison && !finalized.comparison.ok) {
     exitCode = 1;
     const { overallDelta, regressions } = finalized.comparison;
-    console.error(`\n⚠️  baseline 回归（整体 ${overallDelta >= 0 ? '+' : ''}${(overallDelta * 100).toFixed(1)}%）:`);
+    console.error(
+      `\n⚠️  baseline 回归（整体 ${overallDelta >= 0 ? '+' : ''}${(overallDelta * 100).toFixed(1)}%）:`,
+    );
     for (const r of regressions) {
       console.error(
         `  - ${r.suite}: ${(r.baseline * 100).toFixed(1)}% → ${(r.current * 100).toFixed(1)}%（${(r.delta * 100).toFixed(1)}%）`,
@@ -161,6 +261,52 @@ async function main(): Promise<number> {
   }
 
   return exitCode;
+}
+
+async function cmdHistory(argv: string[]): Promise<number> {
+  let path = 'eval-results/history.jsonl';
+  let limit = 15;
+  let asJson = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--json') {
+      asJson = true;
+    } else if (a === '--path') {
+      path = argv[++i] ?? path;
+    } else if (a === '--limit') {
+      limit = Number(argv[++i] ?? limit);
+    } else if (a === '-h' || a === '--help') {
+      console.log(USAGE);
+      return 0;
+    } else {
+      console.error(`未知参数: ${a}\n${USAGE}`);
+      return 2;
+    }
+  }
+
+  const entries = await readHistory(path, limit);
+  if (entries.length === 0) {
+    console.error(`历史文件为空或不存在: ${path}`);
+    return 1;
+  }
+  if (asJson) {
+    console.log(entries.map((e) => JSON.stringify(e)).join('\n'));
+    return 0;
+  }
+  console.log(renderHistoryTrend(entries, limit));
+  return 0;
+}
+
+async function main(): Promise<number> {
+  const [command, ...rest] = process.argv.slice(2);
+  if (command === undefined || command === '-h' || command === '--help') {
+    console.log(USAGE);
+    return command === undefined ? 2 : 0;
+  }
+  if (command === 'run') return cmdRun(rest);
+  if (command === 'history') return cmdHistory(rest);
+  console.error(`未知子命令: ${command}\n${USAGE}`);
+  return 2;
 }
 
 main().then(

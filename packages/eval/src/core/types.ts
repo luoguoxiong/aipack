@@ -13,7 +13,7 @@
  *   - origin 标识：报告按数据来源分组，诊断 eval 集与真实分布的漂移
  */
 
-import type { Message, Result } from '@aipack-ai/agent';
+import type { Message, Model, Result, StreamFn } from '@aipack-ai/agent';
 
 // ─── 用例来源 ─────────────────────────────────────────────────────
 
@@ -124,10 +124,17 @@ export interface ScorerConfig {
 export interface EvalCase {
   /** 全局唯一，如 'tool-calling/single-echo' */
   id: string;
-  /** 套件名：'agent-e2e' | 'tool-calling' | 'text-output' | ... */
+  /** 套件名：'agent-e2e' | 'agent-e2e-live' | 'tool-calling' | 'text-output' | ... */
   suite: string;
   /** 一句话描述（报告展示用） */
   description?: string;
+  /**
+   * 运行模式约束：
+   *   'mock' —— 仅 fixture replay（需要 input.mock）
+   *   'live' —— 仅真实 LLM（不需要 input.mock，工具仍走 mock 工具集保证确定性）
+   *   缺省 —— 两者皆可（按是否有 input.mock 判定）
+   */
+  mode?: 'mock' | 'live';
   input: AgentInput;
   /** 声明式期望（归一化为 scorers，与 scorers 字段可并存） */
   expected?: ExpectedResult;
@@ -138,10 +145,12 @@ export interface EvalCase {
     tags?: string[];
     /** 工具调用步数上限（映射 RuntimeOptions.maxTurns，缺省 50） */
     maxSteps?: number;
-    /** 单用例墙钟超时 ms（缺省 30000） */
+    /** 单用例墙钟超时 ms（缺省 30000；live 用例建议 60000+） */
     timeoutMs?: number;
     /** usage.total token 上限（预算熔断） */
     maxTokens?: number;
+    /** 覆盖全局 repeats（live 用例可单独放宽/收紧消噪次数） */
+    repeats?: number;
   };
 }
 
@@ -190,7 +199,7 @@ export interface CaseResult {
   suite: string;
   origin: CaseOrigin;
   passed: boolean;
-  /** 加权平均分 0~1 */
+  /** 加权平均分 0~1（live 多 repeat 时为均值） */
   score: number;
   scores: ScoreResult[];
   /** 运行错误（超时 / 熔断 / 框架异常） */
@@ -199,6 +208,10 @@ export interface CaseResult {
   /** 工具调用步数 */
   steps: number;
   usageTotal: number;
+  /** 实际重复次数（live 模式缺省 3） */
+  repeats?: number;
+  /** repeats 中通过的次数（live 判定 pass@k：passCount > 0 即通过） */
+  passCount?: number;
 }
 
 export interface SuiteSummary {
@@ -217,19 +230,38 @@ export interface EvalReport {
   totals: {
     cases: number;
     passed: number;
+    /** 因模式不匹配（mock-only / live-only）被跳过的用例数，不计入通过率 */
+    skipped: number;
     passRate: number;
     avgScore: number;
     usageTotal: number;
   };
   bySuite: Record<string, SuiteSummary>;
-  byOrigin: Record<string, SuiteSummary>;
-  results: CaseResult[];
+  byOrigin: Record<string, SuiteSummary>;   // 分布漂移诊断
+  results: CaseResult[];                    // 每 case 的明细（含 repeats 聚合）
+  /** 因模式不匹配被跳过的用例（不进 results，不计入通过率） */
+  skipped?: Array<{ caseId: string; suite: string; reason: string }>;
 }
 
 // ─── 运行配置 ─────────────────────────────────────────────────────
 
 export interface RunConfig {
   mode: 'mock' | 'live';
+  /**
+   * live 模式被测模型（'provider/modelId'）；缺省读 AIPACK_EVAL_MODEL。
+   * mock 模式忽略。
+   */
+  model?: string;
+  /** live 模式 API Key（缺省 <PROVIDER>_API_KEY） */
+  apiKey?: string;
+  /** live 模式端点覆盖（代理 / 兼容网关） */
+  baseUrl?: string;
+  /** live 模式采样温度（缺省 0，消随机性） */
+  temperature?: number;
+  /** 直接注入 StreamFn（自托管 provider / 测试用），优先级高于 model 装配 */
+  streamFn?: StreamFn;
+  /** 与 streamFn 配套的框架 Model；缺省用内置目录按 model 解析 */
+  frameworkModel?: Model;
   /** 只跑指定套件；缺省全部 */
   suites?: string[];
   /** 每用例重复次数（消随机性）；mock 模式缺省 1 */
@@ -250,6 +282,12 @@ export interface RunConfig {
   regressionThreshold?: number;
   /** 更新 baseline 文件 */
   updateBaseline?: boolean;
+  /** 历史趋势 JSONL 路径（缺省 eval-results/history.jsonl 由调用方决定；不配则不记录） */
+  historyPath?: string;
+  /** 全局 token 预算：累计 usage.total 超限时，未开始的用例直接判失败（防烧钱） */
+  maxTotalTokens?: number;
+  /** live 模式单请求超时 ms */
+  requestTimeoutMs?: number;
 }
 
 // ─── Baseline 门禁 ────────────────────────────────────────────────

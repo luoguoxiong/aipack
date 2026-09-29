@@ -1,44 +1,94 @@
 /**
  * packages/eval/src/core/runner.ts - Eval Runner
  *
- * mock 模式：每个用例构造独立 Runtime（createMockStreamFn 注入
- * streamFn + createMockTools 提供工具），run() 后经 getMessages()
- * 重建完整轨迹，再交给规则评分器。
+ * 两种模式共用同一条执行链路（Runtime → 轨迹 → 评分器）：
+ *   mock —— fixture replay：createMockStreamFn 注入脚本化 LLM 响应
+ *   live —— 真实 LLM：createLiveLlm 装配 provider streamFn（M3）
  *
  * 工程保障：
  *   - 用例间完全隔离（独立 runtime / 独立 fs 副本 / 独立 sessionKey）
  *   - 墙钟超时（Promise.race）
  *   - 步数上限（映射 RuntimeOptions.maxTurns）
- *   - 预算熔断（usage.total 超 case.metadata.maxTokens 判失败）
- *   - repeats 消随机性（live 模式用；mock 模式缺省 1）
+ *   - 预算熔断（case.metadata.maxTokens + RunConfig.maxTotalTokens 全局）
+ *   - repeats 消随机性：mock 1；live 默认 3 并取 pass@k（适配层不支持 seed）
  *   - 并发受控（简单队列实现）
  */
 
-import {
-  createRuntime,
-  createRequest,
-} from '@aipack-ai/agent';
-import type { Tool } from '@aipack-ai/agent';
+import { createRuntime, createRequest } from '@aipack-ai/agent';
+import type { Model, StreamFn, Tool } from '@aipack-ai/agent';
 import { createMockStreamFn } from './mock-stream';
 import { createMockTools } from './mock-tools';
 import { countTurns, extractTrajectory } from './trajectory';
 import { resolveScorers, scoreTrace } from './scorer';
+import {
+  assertLiveReady,
+  describeLiveLlm,
+  resolveLiveLlm,
+} from './live';
 import type {
   CaseResult,
   EvalCase,
   EvalReport,
   RunConfig,
   RunTrace,
+  ScoreResult,
   SuiteSummary,
 } from './types';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_STEPS = 50;
 const DEFAULT_CONCURRENCY = 8;
+/** live 模式缺省 repeats：无 seed 可用，靠多次采样消噪 */
+const LIVE_DEFAULT_REPEATS = 3;
+
+/** live 模式装配产物 */
+interface RuntimeBundle {
+  streamFn: StreamFn;
+  model?: Model;
+  /** 报告展示的模型标识 */
+  label?: string;
+}
+
+/** 全局 token 预算计数器 */
+interface BudgetState {
+  spent: number;
+}
 
 /** sanitize sessionKey（用例 id 可能含 '/'） */
 function sessionKeyFor(caseId: string, repeat: number): string {
   return `eval:${caseId.replace(/[^a-zA-Z0-9_-]/g, '_')}#r${repeat}`;
+}
+
+/**
+ * 模式不匹配 → 跳过（不计入通过率，避免出现"必然失败"的噪音）。
+ * 返回 undefined 表示该用例在当前模式下可跑。
+ */
+export function skipReason(c: EvalCase, mode: 'mock' | 'live'): string | undefined {
+  if (mode === 'mock' && c.mode === 'live') return 'live-only 用例（mock 模式跳过）';
+  if (mode === 'live' && c.mode === 'mock') return 'mock-only 用例（live 模式跳过）';
+  if (mode === 'live' && c.input.mock) return 'fixture replay 用例（live 模式跳过）';
+  return undefined;
+}
+
+/** live 模式：装配真实 LLM（缺配置直接抛错，由 CLI 转 usage 错误） */
+function resolveRuntimeBundle(config: RunConfig): RuntimeBundle | undefined {
+  if (config.mode !== 'live') return undefined;
+  if (config.streamFn) {
+    return { streamFn: config.streamFn, model: config.frameworkModel };
+  }
+  const llm = resolveLiveLlm({
+    model: config.model,
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+    temperature: config.temperature,
+    timeoutMs: config.requestTimeoutMs,
+  });
+  assertLiveReady(llm.spec);
+  return {
+    streamFn: llm.streamFn,
+    model: llm.model,
+    label: describeLiveLlm(llm.spec),
+  };
 }
 
 /** 单用例单次运行：返回轨迹（失败时返回 error 字符串） */
@@ -46,9 +96,11 @@ async function runCaseOnce(
   c: EvalCase,
   config: RunConfig,
   repeat: number,
+  bundle?: RuntimeBundle,
 ): Promise<{ trace?: RunTrace; error?: string }> {
-  if (!c.input.mock) {
-    return { error: 'mock 模式要求 input.mock 脚本（live 模式 M3 接入）' };
+  const isLive = config.mode === 'live';
+  if (!isLive && !c.input.mock) {
+    return { error: 'mock 模式要求 input.mock 脚本（live 模式用 --mode live）' };
   }
 
   const timeoutMs = c.metadata?.timeoutMs ?? config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -57,7 +109,8 @@ async function runCaseOnce(
   const tools: Tool[] = createMockTools(c.input.fs ?? {}, c.input.tools);
   const runtime = createRuntime({
     systemPrompt: c.input.systemPrompt ?? '',
-    streamFn: createMockStreamFn(c.input.mock),
+    streamFn: isLive ? bundle!.streamFn : createMockStreamFn(c.input.mock!),
+    ...(isLive && bundle?.model ? { model: bundle.model } : {}),
     tools,
     maxTurns: maxSteps,
     traceIdGenerator: () => sessionKeyFor(c.id, repeat),
@@ -144,48 +197,87 @@ async function runCaseOnce(
 async function runCase(
   c: EvalCase,
   config: RunConfig,
+  bundle: RuntimeBundle | undefined,
+  budget: BudgetState,
 ): Promise<CaseResult> {
-  const repeats = config.mode === 'mock' ? (config.repeats ?? 1) : (config.repeats ?? 1);
+  const isLive = config.mode === 'live';
+  const repeats =
+    c.metadata?.repeats ?? config.repeats ?? (isLive ? LIVE_DEFAULT_REPEATS : 1);
   const scorers = resolveScorers(c.expected, c.scorers);
-  const startedAt = Date.now();
 
-  let passed = true;
-  let score = 0;
+  // 全局预算熔断：已超限时剩余用例直接判失败，不再烧钱
+  if (config.maxTotalTokens !== undefined && budget.spent > config.maxTotalTokens) {
+    return {
+      caseId: c.id,
+      suite: c.suite,
+      origin: c.origin,
+      passed: false,
+      score: 0,
+      scores: [],
+      error: `总预算熔断：累计 usage.total=${budget.spent} > maxTotalTokens=${config.maxTotalTokens}`,
+      durationMs: 0,
+      steps: 0,
+      usageTotal: 0,
+      repeats,
+      passCount: 0,
+    };
+  }
+
+  let scoreSum = 0;
   let scoreCount = 0;
-  const scoreResults: CaseResult['scores'] = [];
+  let passCount = 0;
+  const failedScores: ScoreResult[] = [];
   let runError: string | undefined;
   let steps = 0;
   let usageTotal = 0;
   let durationMs = 0;
+  let lastTraceUsage = 0;
 
   for (let r = 0; r < repeats; r++) {
-    const { trace, error } = await runCaseOnce(c, config, r);
-    durationMs += Date.now() - startedAt;
+    const t0 = Date.now();
+    const { trace, error } = await runCaseOnce(c, config, r, bundle);
+    durationMs += Date.now() - t0;
+
     if (error || !trace) {
-      passed = false;
-      runError = error;
-      scoreResults.push({
-        scorer: 'success',
-        score: 0,
-        passed: false,
-        reason: `运行失败: ${error ?? '未知错误'}`,
-      });
-      break;
+      runError = runError ?? error;
+      continue;
     }
+
     steps = trace.trajectory.length;
+    lastTraceUsage = trace.usageTotal;
     usageTotal += trace.usageTotal;
+    budget.spent += trace.usageTotal;
+
     const caseScore = scoreTrace(trace, scorers);
-    passed = passed && caseScore.passed;
-    score += caseScore.score;
+    scoreSum += caseScore.score;
     scoreCount += 1;
-    if (!caseScore.passed) {
-      scoreResults.push(
-        ...caseScore.scores.filter((s) => !s.passed).map((s) => ({
-          ...s,
-          reason: s.reason,
-        })),
-      );
-    }
+    if (caseScore.passed) passCount += 1;
+    else failedScores.push(...caseScore.scores.filter((s) => !s.passed));
+  }
+
+  if (scoreCount === 0 && runError) {
+    return {
+      caseId: c.id,
+      suite: c.suite,
+      origin: c.origin,
+      passed: false,
+      score: 0,
+      scores: [
+        { scorer: 'success', score: 0, passed: false, reason: `运行失败: ${runError}` },
+      ],
+      error: runError,
+      durationMs,
+      steps,
+      usageTotal,
+      repeats,
+      passCount: 0,
+    };
+  }
+
+  // live：pass@k（k 次里至少过一次）；mock：每次都必须过
+  const passed = isLive ? passCount > 0 : passCount === scoreCount && scoreCount > 0;
+  if (scoreCount < repeats) {
+    runError = runError ?? `${repeats - scoreCount}/${repeats} 次运行异常`;
   }
 
   return {
@@ -193,12 +285,14 @@ async function runCase(
     suite: c.suite,
     origin: c.origin,
     passed,
-    score: scoreCount === 0 ? 0 : score / scoreCount,
-    scores: scoreResults,
+    score: scoreCount === 0 ? 0 : scoreSum / scoreCount,
+    scores: passed ? [] : failedScores,
     error: runError,
     durationMs,
     steps,
-    usageTotal,
+    usageTotal: usageTotal || lastTraceUsage,
+    repeats,
+    passCount,
   };
 }
 
@@ -247,14 +341,27 @@ export async function runEval(
   config: RunConfig,
 ): Promise<EvalReport> {
   const startedAt = Date.now();
-  const filtered =
+  const bundle = resolveRuntimeBundle(config);
+
+  const bySuite =
     config.suites && config.suites.length > 0
       ? cases.filter((c) => config.suites!.includes(c.suite))
       : cases;
 
+  const skipped: NonNullable<EvalReport['skipped']> = [];
+  const runnable = bySuite.filter((c) => {
+    const reason = skipReason(c, config.mode);
+    if (reason) {
+      skipped.push({ caseId: c.id, suite: c.suite, reason });
+      return false;
+    }
+    return true;
+  });
+
   const concurrency = config.concurrency ?? DEFAULT_CONCURRENCY;
-  const results = await runAllConcurrent(filtered, concurrency, (c) =>
-    runCase(c, config),
+  const budget: BudgetState = { spent: 0 };
+  const results = await runAllConcurrent(runnable, concurrency, (c) =>
+    runCase(c, config, bundle, budget),
   );
 
   const casesPassed = results.filter((r) => r.passed).length;
@@ -263,9 +370,11 @@ export async function runEval(
     startedAt: new Date(startedAt).toISOString(),
     durationMs: Date.now() - startedAt,
     mode: config.mode,
+    model: bundle?.label ?? (config.mode === 'live' ? config.model : undefined),
     totals: {
       cases: results.length,
       passed: casesPassed,
+      skipped: skipped.length,
       passRate: results.length === 0 ? 0 : casesPassed / results.length,
       avgScore:
         results.length === 0
@@ -276,5 +385,6 @@ export async function runEval(
     bySuite: summarize(results),
     byOrigin: summarize(results.map((r) => ({ ...r, suite: r.origin }))),
     results,
+    skipped,
   };
 }

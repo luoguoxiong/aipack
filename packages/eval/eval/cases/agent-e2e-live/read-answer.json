@@ -1,0 +1,19 @@
+{
+  "id": "agent-e2e-live/read-answer",
+  "suite": "agent-e2e-live",
+  "description": "live：读取文件后回答（真实 LLM 是否能选对工具）",
+  "mode": "live",
+  "origin": "handwritten",
+  "input": {
+    "message": "用 readFile 工具读取 notes.md，然后一句话总结它讲了什么。",
+    "systemPrompt": "你是评测用的 agent。必须先调用工具获取信息，再回答。回答用中文。",
+    "tools": ["readFile"],
+    "fs": { "notes.md": "aipack 是轻量、可扩展、零魔法的 TypeScript Agent 框架。" }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "readFile", "args": { "path": "notes.md" } }] } },
+    { "type": "contains", "params": { "value": "TypeScript" } },
+    { "type": "success", "params": { "value": true } }
+  ],
+  "metadata": { "maxSteps": 6, "timeoutMs": 60000, "tags": ["live", "tool-selection"] }
+}

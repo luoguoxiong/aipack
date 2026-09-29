@@ -67,7 +67,7 @@ export {
 export type { LoadCasesResult } from './src/core/loader';
 
 // ─── Runner 与报告 ────────────────────────────────────────────────
-export { runEval } from './src/core/runner';
+export { runEval, skipReason } from './src/core/runner';
 export {
   renderMarkdown,
   writeReport,
@@ -77,3 +77,26 @@ export {
   compareBaseline,
   finalizeReport,
 } from './src/core/report';
+export type { RenderOptions } from './src/core/report';
+
+// ─── live 模式（真实 LLM，M3）─────────────────────────────────────
+export {
+  LIVE_ENV_KEYS,
+  parseModelSpec,
+  resolveLiveSpec,
+  createLiveLlm,
+  resolveLiveLlm,
+  describeLiveLlm,
+  assertLiveReady,
+} from './src/core/live';
+export type { LiveLlmSpec, LiveLlm, ResolveLiveOptions } from './src/core/live';
+
+// ─── 历史趋势（日环比可视化，M3）───────────────────────────────────
+export {
+  appendHistory,
+  readHistory,
+  renderHistoryTrend,
+  reportToHistoryEntry,
+  sparkline,
+} from './src/core/history';
+export type { HistoryEntry } from './src/core/history';

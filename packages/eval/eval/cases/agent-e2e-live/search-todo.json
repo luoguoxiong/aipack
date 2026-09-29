@@ -1,0 +1,22 @@
+{
+  "id": "agent-e2e-live/search-todo",
+  "suite": "agent-e2e-live",
+  "description": "live：全文检索定位 TODO（跨文件检索是否被调用）",
+  "mode": "live",
+  "origin": "handwritten",
+  "input": {
+    "message": "用 search 工具检索 TODO，告诉我出现在哪个文件的第几行。",
+    "systemPrompt": "你是评测用的 agent。必须使用工具，不要凭空回答。回答用中文。",
+    "tools": ["search"],
+    "fs": {
+      "app.ts": "const a = 1;\n// TODO: refactor this\nconst b = 2;",
+      "util.ts": "export const noop = () => {};"
+    }
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "search", "args": { "query": "TODO" } }] } },
+    { "type": "contains", "params": { "value": "app.ts" } },
+    { "type": "success", "params": { "value": true } }
+  ],
+  "metadata": { "maxSteps": 6, "timeoutMs": 60000, "tags": ["live", "retrieval"] }
+}

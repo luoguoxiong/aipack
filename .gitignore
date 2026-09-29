@@ -15,6 +15,9 @@ sessions
 acr-compare-output/
 acr-real-session-compare/
 
+# Eval 运行产物（报告 / 历史趋势）；baseline 入库
+eval-results/
+
 # IDE
 .trae/
 /.vscode/launch.json

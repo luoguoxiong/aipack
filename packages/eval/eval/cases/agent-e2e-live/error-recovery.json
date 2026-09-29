@@ -1,0 +1,19 @@
+{
+  "id": "agent-e2e-live/error-recovery",
+  "suite": "agent-e2e-live",
+  "description": "live：工具报错后能否恢复并给出结论",
+  "mode": "live",
+  "origin": "handwritten",
+  "input": {
+    "message": "调用 fail 工具尝试一次（它一定会失败），然后告诉我最终结果，以 RECOVERED 结尾。",
+    "systemPrompt": "你是评测用的 agent。工具失败不要重试超过 1 次，最后必须给出以 RECOVERED 结尾的结论。",
+    "tools": ["fail"],
+    "fs": {}
+  },
+  "scorers": [
+    { "type": "tool-call", "params": { "calls": [{ "tool": "fail", "isError": true }] } },
+    { "type": "contains", "params": { "value": "RECOVERED" } },
+    { "type": "success", "params": { "value": true } }
+  ],
+  "metadata": { "maxSteps": 6, "timeoutMs": 60000, "tags": ["live", "error-recovery"] }
+}

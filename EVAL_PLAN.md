@@ -1,6 +1,6 @@
 # aipack Eval 体系方案
 
-> 状态：待评审（M1 已落地）
+> 状态：待评审（M1 / M3 已落地，M2 取消）
 > 范围：新增 `packages/eval`（接线 `packages/agent` / `packages/observability` / `packages/cli`）
 > 参考：τ-bench / BFCL / OpenAI Evals / promptfoo 的分层思路，结合 aipack 三段式架构落地
 
@@ -134,8 +134,12 @@ export interface RunConfig {
   cacheDir?: string;              // (caseId + prompt 版本 + 模型) 为 key 的响应缓存
   budget?: { maxTotalCost?: number; wallClockMs?: number };
   baselinePath?: string;          // 与上次结果对比，超阈值失败
+  historyPath?: string;           // 历史趋势 JSONL（日环比可视化，M3）
+  // live 模式：model / apiKey / baseUrl / temperature / streamFn / frameworkModel
 }
 ```
+
+实测取舍：适配层**不支持 seed**，因此 `repeats` 是唯一消噪手段 —— live 默认跑 3 次并按 pass@k 判定（详见 8.1）。
 
 必须解决的工程问题：
 
@@ -249,18 +253,20 @@ packages/eval/
         rule.ts          # 规则评分器（字符串 / regex / JSON Schema / 工具轨迹）
         semantic.ts      # embedding 相似度
         llm-judge.ts     # 异源 judge + 强制 JSON 输出
-      runner.ts          # 并发 / 缓存 / 预算熔断 / repeats
+      runner.ts          # 并发 / 缓存 / 预算熔断 / repeats（mock + live 两模式）
       report.ts          # JSON + Markdown 双格式 / baseline 对比
+      live.ts            # live 模式：provider/model → model + streamFn 装配
+      history.ts         # 历史趋势 JSONL + 日环比渲染（M3）
       cache.ts           # (caseId + prompt 版本 + 模型) 响应缓存
     datasets/            # 开源数据集下载器与转换器
     synth/               # 工具 schema / SKILL.md 合成器
     cli.ts               # aipack eval run --suite --mode --baseline
   eval/
     cases/               # 按套件组织的用例 JSON
-      agent-e2e/
-      memory-recall/
-      compression/
+      agent-e2e/         # mock（fixture replay）
+      agent-e2e-live/    # live（真实 LLM，mode: 'live'）
       tool-calling/
+      text-output/
     fixtures/            # 录制的 LLM 响应 / mock 文件系统
   package.json
 ```
@@ -272,10 +278,43 @@ packages/eval/
 | 阶段 | 内容 | 验收 |
 |---|---|---|
 | M1 ✅ | `packages/eval` 骨架：类型 + Runner（复用 `runtime.run()`）+ 规则评分器；Runtime 加 LLM mock 注入点 | 手工 golden 34 case 全 mock 跑通（35/35 测试 272ms；CLI 34/34 0.01s） |
-| M2 | memory / compression 组件套件 + 数据集适配（HotpotQA / LongBench）+ 响应缓存 | CI PR 流程接入 mock 模式 |
-| M3 | agent e2e 套件（真实 LLM）+ `--baseline` 回归门禁 + 每日 cron 报告 | 通过率日环比可视化 |
+| M2 ❌ | ~~memory / compression 组件套件 + 数据集适配（HotpotQA / LongBench）+ 响应缓存~~ **已取消，不做** | — |
+| M3 ✅ | agent e2e-live 套件（真实 LLM）+ `--baseline` 回归门禁 + 每日 cron 报告 + 历史趋势 | 通过率日环比可视化（sparkline + 环比 Δ）；42 case 加载、8 条 live 用例、34 条 mock 全通过；65 单测通过 |
 | M4 | observability-server `POST /export-eval` trace 回流 + 脱敏 | 首批 trace/bfix case 入库 |
 | M5 | LLM-as-judge + 语义评分器 + L4 provider 对比报告 | 开放性回答套件上线 |
+
+### 8.1 M3 落地说明
+
+**live 模式装配**（`packages/eval/src/core/live.ts`）
+
+```
+'--model deepseek/deepseek-chat'  ──►  getBuiltinModel（内置目录）
+                                        │ 未命中则按 provider 推断 api 兜底（代理 / 兼容网关）
+                                        ▼
+                          adaptAiModel → RuntimeOptions.model
+                          createStreamFnFromAi → RuntimeOptions.streamFn（temperature 默认 0）
+```
+
+- env 覆盖：`AIPACK_EVAL_MODEL` / `AIPACK_EVAL_PROVIDER` / `AIPACK_EVAL_API_KEY` / `AIPACK_EVAL_BASE_URL` / `AIPACK_EVAL_TEMPERATURE`，`<PROVIDER>_API_KEY` 兜底
+- 适配层不支持 seed → **repeats 默认 3 + pass@k 判定**（k 次里至少过一次即通过，score 取均值）；mock 模式仍是每次都必须过
+- 工具仍是 `createMockTools`（内存文件系统）：真实 LLM 只替换 LLM 侧，环境保持确定，不碰真实文件系统
+- `EvalCase.mode`（`mock` / `live`）决定用例归属：mock 模式跳过 live-only，live 模式跳过 fixture replay，计入 `totals.skipped` 且不影响通过率
+
+**套件**：`agent-e2e-live` 8 条（工具选择、参数保真、多步链式、错误恢复、不该调工具的克制、结构化输出），断言以 `tool-call` / `contains` / `json-field` / `success` 为主，避免对真实模型的措辞过拟合。
+
+**baseline 门禁**
+
+```bash
+aipack-eval run --mode live --suite agent-e2e-live \
+  --repeats 3 --report-dir eval-results --history eval-results/history.jsonl \
+  --baseline eval-baseline.json --threshold 0.05
+```
+
+整体通过率下降或任一套件下降超阈值 → 退出码 1；baseline 缺失时 `--update-baseline` 建基线（快照式更新需人工评审 diff）。
+
+**日环比可视化**：每次运行向 `eval-results/history.jsonl` 追加一行，报告渲染 sparkline + 逐次通过率 + 环比 Δ + 分套件环比；`aipack-eval history --path ...` 单独查看。
+
+**cron**：`.github/workflows/eval-live.yml`，每日 UTC 03:00（`workflow_dispatch` 可手动指定 model / repeats），无 provider secret 时跳过；history 用 `actions/cache` 跨运行续接，报告进 Job Summary 与 artifact（保留 90 天）。
 
 ## 9. 风险与对策
 

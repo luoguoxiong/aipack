@@ -1,0 +1,19 @@
+{
+  "id": "agent-e2e-live/no-tool-plain-qa",
+  "suite": "agent-e2e-live",
+  "description": "live：不该调工具时是否克制（工具集为空的反例）",
+  "mode": "live",
+  "origin": "handwritten",
+  "input": {
+    "message": "3 加 5 等于几？只回答数字。",
+    "systemPrompt": "你是评测用的 agent。这是个纯算术问题，不要调用任何工具，直接回答。",
+    "tools": ["echo", "readFile"],
+    "fs": {}
+  },
+  "scorers": [
+    { "type": "tools-used", "params": { "tools": [] } },
+    { "type": "regex", "params": { "value": "8" } },
+    { "type": "success", "params": { "value": true } }
+  ],
+  "metadata": { "maxSteps": 4, "timeoutMs": 60000, "tags": ["live", "negative"] }
+}

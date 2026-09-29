@@ -51,6 +51,12 @@ export function validateEvalCase(c: EvalCase): string[] {
       });
     }
   }
+  if (c.mode !== undefined && c.mode !== 'mock' && c.mode !== 'live') {
+    errors.push(at("mode 只能为 'mock' 或 'live'"));
+  }
+  if (c.mode === 'live' && c.input?.mock) {
+    errors.push(at("mode='live' 的用例走真实 LLM，不应带 input.mock"));
+  }
   if (!c.origin || !ORIGINS.includes(c.origin)) {
     errors.push(at(`origin 必须为: ${ORIGINS.join(' | ')}`));
   }

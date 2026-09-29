@@ -1,0 +1,25 @@
+{
+  "id": "agent-e2e-live/list-then-read",
+  "suite": "agent-e2e-live",
+  "description": "live：先列目录再读文件（多步链式调用）",
+  "mode": "live",
+  "origin": "handwritten",
+  "input": {
+    "message": "先用 listDir 看看 docs/ 下有哪些文件，再用 readFile 读出其中一个文件的内容并复述。",
+    "systemPrompt": "你是评测用的 agent。严格按顺序调用工具，不要跳过 listDir。回答用中文。",
+    "tools": ["listDir", "readFile"],
+    "fs": {
+      "docs/intro.md": "aipack 的三段式架构：配置、执行、扩展。",
+      "docs/faq.md": "常见问题：如何替换 provider。"
+    }
+  },
+  "scorers": [
+    {
+      "type": "tool-call",
+      "params": { "calls": [{ "tool": "listDir", "args": { "path": "docs/" } }, { "tool": "readFile" }] }
+    },
+    { "type": "regex", "params": { "value": "docs/(intro|faq)\\.md", "flags": "i" } },
+    { "type": "success", "params": { "value": true } }
+  ],
+  "metadata": { "maxSteps": 8, "timeoutMs": 60000, "tags": ["live", "multi-step"] }
+}

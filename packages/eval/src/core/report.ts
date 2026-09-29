@@ -7,6 +7,8 @@
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { appendHistory, readHistory, renderHistoryTrend } from './history';
+import type { HistoryEntry } from './history';
 import type {
   BaselineComparison,
   BaselineFile,
@@ -38,14 +40,24 @@ function renderSummaryTable(
   ].join('\n');
 }
 
-export function renderMarkdown(report: EvalReport): string {
+export interface RenderOptions {
+  /** 历史条目（含本次）→ 渲染通过率日环比趋势段 */
+  history?: HistoryEntry[];
+}
+
+export function renderMarkdown(report: EvalReport, opts: RenderOptions = {}): string {
   const lines: string[] = [];
   lines.push(`# aipack Eval 报告`);
   lines.push('');
-  lines.push(`- Run: \`${report.runId}\`（mode: ${report.mode}）`);
+  lines.push(
+    `- Run: \`${report.runId}\`（mode: ${report.mode}${report.model ? `, model: ${report.model}` : ''}）`,
+  );
   lines.push(
     `- 总览: **${report.totals.passed}/${report.totals.cases} 通过（${pct(report.totals.passRate)}）**，平均分 ${report.totals.avgScore.toFixed(2)}，耗时 ${(report.durationMs / 1000).toFixed(2)}s`,
   );
+  if (report.totals.skipped > 0) {
+    lines.push(`- 跳过: ${report.totals.skipped} 个用例（模式不匹配，不计入通过率）`);
+  }
   lines.push('');
   lines.push(`## 按套件`);
   lines.push('');
@@ -55,6 +67,21 @@ export function renderMarkdown(report: EvalReport): string {
   lines.push('');
   lines.push(renderSummaryTable(report.byOrigin, 'origin'));
   lines.push('');
+
+  if (opts.history && opts.history.length > 0) {
+    lines.push(`## 通过率趋势（环比）`);
+    lines.push('');
+    lines.push(renderHistoryTrend(opts.history));
+    lines.push('');
+  }
+
+  const skipped = report.skipped ?? [];
+  if (skipped.length > 0) {
+    lines.push(`## 跳过用例（${skipped.length}）`);
+    lines.push('');
+    for (const s of skipped) lines.push(`- \`${s.caseId}\`: ${s.reason}`);
+    lines.push('');
+  }
 
   const failures = report.results.filter((r) => !r.passed);
   if (failures.length === 0) {
@@ -82,13 +109,14 @@ export function renderMarkdown(report: EvalReport): string {
 export async function writeReport(
   report: EvalReport,
   reportDir: string,
+  opts: RenderOptions = {},
 ): Promise<{ jsonPath: string; mdPath: string }> {
   const dir = resolve(reportDir);
   await mkdir(dir, { recursive: true });
   const jsonPath = join(dir, `${report.runId}.json`);
   const mdPath = join(dir, `${report.runId}.md`);
   await writeFile(jsonPath, JSON.stringify(report, null, 2), 'utf-8');
-  await writeFile(mdPath, renderMarkdown(report), 'utf-8');
+  await writeFile(mdPath, renderMarkdown(report, opts), 'utf-8');
   return { jsonPath, mdPath };
 }
 
@@ -175,16 +203,33 @@ export async function readBaseline(
 export async function finalizeReport(
   report: EvalReport,
   config: RunConfig,
-): Promise<{ jsonPath?: string; mdPath?: string; baseline?: BaselineFile; comparison?: BaselineComparison }> {
+): Promise<{
+  jsonPath?: string;
+  mdPath?: string;
+  baseline?: BaselineFile;
+  comparison?: BaselineComparison;
+  historyPath?: string;
+  history?: HistoryEntry[];
+}> {
   const out: {
     jsonPath?: string;
     mdPath?: string;
     baseline?: BaselineFile;
     comparison?: BaselineComparison;
+    historyPath?: string;
+    history?: HistoryEntry[];
   } = {};
 
+  // 先写盘再读回：趋势段包含本次运行
+  if (config.historyPath) {
+    out.historyPath = await appendHistory(report, config.historyPath);
+    out.history = await readHistory(out.historyPath);
+  }
+
   if (config.reportDir) {
-    const { jsonPath, mdPath } = await writeReport(report, config.reportDir);
+    const { jsonPath, mdPath } = await writeReport(report, config.reportDir, {
+      history: out.history,
+    });
     out.jsonPath = jsonPath;
     out.mdPath = mdPath;
   }
