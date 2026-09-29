@@ -195,16 +195,16 @@ DEEPSEEK_API_KEY=sk-xxx npx tsx your-script.ts
 
 | 包                                                                    | 版本  | 定位         |
 | --------------------------------------------------------------------- | ----- | ------------ |
-| [`@aipack-ai/agent`](./packages/agent)                                | 1.1.6 | 框架内核     |
-| [`@aipack-ai/cli`](./packages/cli)                                    | 1.1.6 | 终端助手     |
-| [`@aipack-ai/memory`](./packages/memory)                              | 1.1.6 | 长期记忆插件 |
-| [`@aipack-ai/compression`](./packages/compression)                    | 1.1.6 | 上下文压缩   |
-| [`@aipack-ai/skills`](./packages/skills)                              | 1.1.6 | Skills 插件  |
-| [`@aipack-ai/multi-agent`](./packages/multi-agent)                    | 1.1.6 | 多 Agent 编排 |
-| [`@aipack-ai/mcp`](./packages/mcp)                                    | 1.1.6 | MCP 双向插件 |
-| [`@aipack-ai/observability`](./packages/observability)                | 1.1.6 | 可观测性 SDK |
-| [`@aipack-ai/observability-server`](./packages/observability-server)  | 1.1.6 | 收集服务 + Dashboard |
-| [`@aipack-ai/eval`](./packages/eval)                                  | 1.1.6 | Eval 评测体系 |
+| [`@aipack-ai/agent`](./packages/agent)                                | 1.1.7 | 框架内核     |
+| [`@aipack-ai/cli`](./packages/cli)                                    | 1.1.7 | 终端助手     |
+| [`@aipack-ai/memory`](./packages/memory)                              | 1.1.7 | 长期记忆插件 |
+| [`@aipack-ai/compression`](./packages/compression)                    | 1.1.7 | 上下文压缩   |
+| [`@aipack-ai/skills`](./packages/skills)                              | 1.1.7 | Skills 插件  |
+| [`@aipack-ai/multi-agent`](./packages/multi-agent)                    | 1.1.7 | 多 Agent 编排 |
+| [`@aipack-ai/mcp`](./packages/mcp)                                    | 1.1.7 | MCP 双向插件 |
+| [`@aipack-ai/observability`](./packages/observability)                | 1.1.7 | 可观测性 SDK |
+| [`@aipack-ai/observability-server`](./packages/observability-server)  | 1.1.7 | 收集服务 + Dashboard |
+| [`@aipack-ai/eval`](./packages/eval)                                  | 1.1.7 | Eval 评测体系 |
 
 > 版本号随 Changesets 发布同步更新，以各包 `package.json` 为准。
 
@@ -463,6 +463,12 @@ aipack/
 │   ├── permission-approval.ts  # 权限裁决与审批单示例（离线可运行）
 │   ├── mcp-client.ts           # MCP 客户端方向示例（连接外部 MCP Server）
 │   ├── mcp-server.ts           # MCP 服务端方向示例（把工具暴露为 MCP Server）
+│   ├── multi-agent-pipeline.ts # 多 Agent：Pipeline 顺序链
+│   ├── multi-agent-router.ts   # 多 Agent：Router 条件路由
+│   ├── multi-agent-supervisor.ts  # 多 Agent：Supervisor 层级委派
+│   ├── multi-agent-debate.ts   # 多 Agent：Debate 对抗评审
+│   ├── multi-agent-mapreduce.ts   # 多 Agent：MapReduce 并行聚合
+│   ├── multi-agent-custom.ts   # 多 Agent：自定义 AgentGraph（并行 + 条件环）
 │   └── model.config.ts         # 示例统一模型配置（本地私有，cp model.config.example.ts 生成）
 ├── web-docs/                    # 官方文档网站（Vite + React）
 └── image/                       # 资源图片
@@ -506,6 +512,24 @@ pnpm example:mcp
 
 # 以 stdio MCP Server 模式拉起 aipack 工具（离线可运行）
 pnpm example:mcp-server
+
+# 多 Agent：Pipeline 顺序链（大纲 → 撰稿 → 润色）
+pnpm example:ma-pipeline
+
+# 多 Agent：Router 条件路由（意图识别 → 专家分发）
+pnpm example:ma-router
+
+# 多 Agent：Supervisor 层级委派（auto 依赖调度 + 并行 Worker）
+pnpm example:ma-supervisor
+
+# 多 Agent：Debate 对抗评审（生成 ↔ 审查直至通过）
+pnpm example:ma-debate
+
+# 多 Agent：MapReduce 并行聚合（章节并发摘要 → 汇总）
+pnpm example:ma-mapreduce
+
+# 多 Agent：自定义 AgentGraph（fan-out 并行 + 条件边 + 返工环）
+pnpm example:ma-custom
 ```
 
 > 示例统一从 `examples/model.config.ts` 读取模型配置，首次运行前执行
