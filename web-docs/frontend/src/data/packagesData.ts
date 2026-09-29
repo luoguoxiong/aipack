@@ -3,7 +3,6 @@ export interface PackageInfo {
   name: string;
   tag: string;
   description: string;
-  icon: string;
   install: string;
   features: string[];
   keyApis: { name: string; desc: string }[];
@@ -15,7 +14,6 @@ export const packages: PackageInfo[] = [
     name: '@aipack-ai/agent',
     tag: '核心框架',
     description: 'Agent 框架：Runtime + Extension + Transformer 三层架构。核心调度、会话持久化、工具执行、上下文转换核心实现，不依赖任何外部 Agent 框架。',
-    icon: '📦',
     install: 'pnpm add @aipack-ai/agent',
     features: [
       'Runtime 核心调度器：请求 → 任务图 → 转换器链 → 模型 → 工具 → 结果',
@@ -43,7 +41,6 @@ export const packages: PackageInfo[] = [
     name: '@aipack-ai/memory',
     tag: '持久化记忆',
     description: '持久化记忆插件：capture → compress → index → recall/inject → consolidate 闭环。自动捕获要点、跨会话检索注入、BM25 + 向量双路混合召回。',
-    icon: '🧠',
     install: 'pnpm add @aipack-ai/memory',
     features: [
       '自动捕获：每轮对话结束自动提取要点存为可检索记忆',
@@ -65,7 +62,6 @@ export const packages: PackageInfo[] = [
     name: '@aipack-ai/compression',
     tag: '上下文压缩',
     description: '五级上下文压缩策略：L1 工具输出裁剪 → L2 消息摘要 → L3 任务状态提取 → L4 会话检查点 → L5 新会话交接。动态 import，默认关闭。',
-    icon: '🗜️',
     install: 'pnpm add @aipack-ai/compression',
     features: [
       'L1 Tool Output Trim：对超大工具输出做结构保留裁剪',
@@ -85,7 +81,6 @@ export const packages: PackageInfo[] = [
     name: '@aipack-ai/multi-agent',
     tag: '多Agent编排',
     description: '多 Agent 编排框架：声明式 AgentGraph + 5 种预设模板（Pipeline / Router / Supervisor / Debate / MapReduce）。Runtime 即 Agent，多个 Runtime 通过图与 SharedContext 协作，复用 @aipack-ai/agent 的会话/权限/压缩能力，零新外部依赖。',
-    icon: '🕸️',
     install: 'pnpm add @aipack-ai/multi-agent',
     features: [
       '声明式 AgentGraph：addNode / addEdge / setEntry / setFinish，条件边实现分支与循环',
@@ -109,7 +104,6 @@ export const packages: PackageInfo[] = [
     name: '@aipack-ai/skills',
     tag: 'Agent Skills',
     description: 'Agent Skills 插件：对齐开放规范（SKILL.md + YAML frontmatter）。渐进式披露——system prompt 只注入目录，全文经内置 skill 工具按需获取；Extension 机制零侵入接入。',
-    icon: '🏷️',
     install: 'pnpm add @aipack-ai/skills',
     features: [
       'SKILL.md 开放规范：name/description/disable-model-invocation，与 pi / Claude Code 生态互通',
@@ -133,7 +127,6 @@ export const packages: PackageInfo[] = [
     name: '@aipack-ai/mcp',
     tag: 'MCP 互操作',
     description: 'MCP（Model Context Protocol）插件，双向打通 MCP 生态：客户端方向连接外部 MCP Server 并把远端工具包装为原生 Tool（继承权限/审批/超时/钩子/telemetry）；服务端方向把 aipack 工具反向暴露为标准 MCP Server，供 Claude Desktop / Cursor 调用。零运行时依赖。',
-    icon: '🔌',
     install: 'pnpm add @aipack-ai/mcp',
     features: [
       '客户端方向：createMcpPlugin 连接外部 MCP Server，远端工具包装为原生 Tool 零成本接入',
@@ -158,7 +151,6 @@ export const packages: PackageInfo[] = [
     name: '@aipack-ai/observability',
     tag: '可观测性',
     description: '可观测性上报 SDK（S2）：埋点上报模式，客户端只需 appId+appSecret 一行接入，6 类 Telemetry 事件自动批量上报，失败本地缓存补报。',
-    icon: '📡',
     install: 'pnpm add @aipack-ai/observability',
     features: [
       '埋点上报：createObservability({ appId, appSecret, endpoint }) 一行接入',
@@ -179,7 +171,6 @@ export const packages: PackageInfo[] = [
     name: '@aipack-ai/observability-server',
     tag: '可观测性',
     description: '可观测性收集服务（S2）：接收 SDK 埋点上报，统一完成 SQLite 落盘（runs/spans/tool_calls）+ 内存聚合（p50/p95/p99）+ REST 查询，appId+Secret 鉴权。',
-    icon: '🗄️',
     install: 'pnpm add @aipack-ai/observability-server',
     features: [
       '独立部署：npm start 一键启动（bin 为 observability-worker），或宿主应用组装 createCollector',
@@ -201,7 +192,6 @@ export const packages: PackageInfo[] = [
     name: '@aipack-ai/cli',
     tag: '命令行工具',
     description: '基于 aipack 框架的终端 AI 编程助手。三种运行模式、内置文件与 shell 工具、智能权限策略（正常操作零打断，仅危险命令需确认），支持 aipack.config.js 扩展。',
-    icon: '⌨️',
     install: 'pnpm add -g @aipack-ai/cli',
     features: [
       'aipack：交互模式（REPL + 斜杠命令，Ctrl+C 中断运行）',

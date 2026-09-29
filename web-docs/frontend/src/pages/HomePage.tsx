@@ -16,6 +16,7 @@ import {
   ExperimentOutlined,
 } from '@ant-design/icons';
 import CodeBlock from '../components/CodeBlock';
+import Logo from '../components/Logo';
 
 const features = [
   {
@@ -403,7 +404,8 @@ export default function HomePage() {
                       <Card
                         title={
                           <span>
-                            📦 aipack <Tag color="blue" style={{ marginLeft: 8 }}>核心</Tag>
+                            <Logo size={20} radius={4} style={{ verticalAlign: -3, marginRight: 6 }} />
+                            aipack <Tag color="blue" style={{ marginLeft: 8 }}>核心</Tag>
                           </span>
                         }
                         bordered
@@ -554,7 +556,10 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="footer">
         <div style={{ maxWidth: 900, margin: '0 auto' }}>
-          <div style={{ fontSize: 24, marginBottom: 12 }}>📦 aipack</div>
+          <div style={{ fontSize: 24, marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <Logo size={28} />
+            aipack
+          </div>
           <p style={{ lineHeight: 1.8 }}>
             一款轻量、可扩展、零魔法的 TypeScript Agent 框架。<br />
             MIT License · 文档构建于 React + Ant Design。

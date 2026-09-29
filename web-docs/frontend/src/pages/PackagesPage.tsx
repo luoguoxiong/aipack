@@ -10,6 +10,7 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import { packages, PackageInfo } from '../data/packagesData';
+import Logo from '../components/Logo';
 import CodeBlock from '../components/CodeBlock';
 
 const { Title, Paragraph } = Typography;
@@ -33,7 +34,7 @@ function PackageCard({ pkg }: { pkg: PackageInfo }) {
       style={{ marginBottom: 32 }}
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 28 }}>{pkg.icon}</span>
+          <Logo size={28} />
           <div>
             <span style={{ fontSize: 18, fontWeight: 700 }}>{pkg.name}</span>
             <Tag color={tagColorMap[pkg.tag] || 'default'} style={{ marginLeft: 12 }}>

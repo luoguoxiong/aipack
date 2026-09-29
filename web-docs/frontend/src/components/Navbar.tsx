@@ -15,6 +15,7 @@ import {
   DeploymentUnitOutlined,
 } from '@ant-design/icons';
 import { useIsMobile } from '../hooks/useIsMobile';
+import Logo from './Logo';
 
 const navItems = [
   { path: '/', label: '首页', icon: <RocketOutlined /> },
@@ -84,7 +85,7 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <div className="navbar-logo" onClick={() => go('/')} style={{ cursor: 'pointer' }}>
-        <span style={{ fontSize: isMobile ? 20 : 24 }}>📦</span>
+        <Logo size={isMobile ? 22 : 28} />
         <span>aipack</span>
         <span
           style={{
