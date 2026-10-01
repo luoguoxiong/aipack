@@ -71,6 +71,13 @@ export type {
 export { createAgentWebhook } from './agent-definition/webhook';
 export type { WebhookOptions } from './agent-definition/webhook';
 export { validateAgentName, validateAgentSpec } from './agent-definition/schema';
+export { createExportEvalHandler, traceDetailToEvalCase, extractUserMessage } from './api/export-eval';
+export type {
+  ExportEvalHandler,
+  ExportEvalBody,
+  ExportedEvalCase,
+  ExportEvalResult,
+} from './api/export-eval';
 
 // Phase 1: 业务库 Store（用户/项目/Agent定义/ACL）+ MySQL 适配
 // Phase 2: 监控库 Store（ClickHouse）+ TraceStore 异步接口

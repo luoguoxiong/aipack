@@ -288,6 +288,26 @@ export interface RunConfig {
   maxTotalTokens?: number;
   /** live 模式单请求超时 ms */
   requestTimeoutMs?: number;
+  // ─── M5：llm-judge / semantic 装配 ─────────────────────────────
+  /**
+   * LLM-as-judge 的异源模型（'provider/modelId'）；缺省读 AIPACK_EVAL_JUDGE_MODEL。
+   * 用例含 llm-judge 评分器时必填；与被测模型相同则拒绝（同源偏置）。
+   */
+  judgeModel?: string;
+  /** judge API Key（缺省 AIPACK_EVAL_JUDGE_API_KEY / <PROVIDER>_API_KEY） */
+  judgeApiKey?: string;
+  /** judge 端点覆盖 */
+  judgeBaseUrl?: string;
+  /** semantic 评分器的 embedding 模型；缺省读 AIPACK_EVAL_EMBEDDING_MODEL */
+  embedModel?: string;
+  /** embedding API Key（缺省 AIPACK_EVAL_EMBEDDING_API_KEY / OPENAI_API_KEY） */
+  embedApiKey?: string;
+  /** embedding 端点覆盖（OpenAI 兼容 /embeddings） */
+  embedBaseUrl?: string;
+  /** 直接注入 judge StreamFn（自托管 / 测试用），配合 judgeFrameworkModel */
+  judgeStreamFn?: StreamFn;
+  /** 与 judgeStreamFn 配套的框架 Model */
+  judgeFrameworkModel?: Model;
 }
 
 // ─── Baseline 门禁 ────────────────────────────────────────────────

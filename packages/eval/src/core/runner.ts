@@ -19,10 +19,15 @@ import type { Model, StreamFn, Tool } from '@aipack-ai/agent';
 import { createMockStreamFn } from './mock-stream';
 import { createMockTools } from './mock-tools';
 import { countTurns, extractTrajectory } from './trajectory';
-import { resolveScorers, scoreTrace } from './scorer';
+import { resolveScorers, scoreTrace, type ScorerDeps } from './scorer';
+import { createOpenAiCompatibleEmbedFn } from './embedding';
+import { createJudgeDeps } from './judge-llm';
 import {
+  assertJudgeDistinct,
   assertLiveReady,
   describeLiveLlm,
+  parseModelSpec,
+  resolveJudgeLlm,
   resolveLiveLlm,
 } from './live';
 import type {
@@ -57,6 +62,15 @@ interface BudgetState {
 /** sanitize sessionKey（用例 id 可能含 '/'） */
 function sessionKeyFor(caseId: string, repeat: number): string {
   return `eval:${caseId.replace(/[^a-zA-Z0-9_-]/g, '_')}#r${repeat}`;
+}
+
+/** bundle.label（'provider/modelId'）→ spec；解析失败不阻断（mock / 注入 streamFn 场景） */
+function parseModelSpecSafe(label: string): { provider: string; modelId: string } | undefined {
+  try {
+    return parseModelSpec(label);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -193,12 +207,48 @@ async function runCaseOnce(
   }
 }
 
+/**
+ * M5：按需装配评分器依赖（lazy 检测——只有用例真的用了 semantic /
+ * llm-judge 才装配，配置缺失时抛可操作错误，由 CLI 转为用法错误）。
+ */
+function resolveScorerDeps(
+  config: RunConfig,
+  needs: { judge: boolean; embed: boolean },
+  targetSpec?: { provider: string; modelId: string },
+): ScorerDeps {
+  const deps: ScorerDeps = {};
+  if (needs.judge) {
+    const judge = config.judgeStreamFn
+      ? { streamFn: config.judgeStreamFn, model: config.judgeFrameworkModel }
+      : (() => {
+          const llm = resolveJudgeLlm({
+            model: config.judgeModel,
+            apiKey: config.judgeApiKey,
+            baseUrl: config.judgeBaseUrl,
+            timeoutMs: config.requestTimeoutMs,
+          });
+          assertJudgeDistinct(targetSpec, llm.spec);
+          return llm;
+        })();
+    deps.judge = createJudgeDeps(judge.streamFn, judge.model, config.judgeStreamFn ? 'injected-judge' : undefined);
+  }
+  if (needs.embed) {
+    deps.embed = createOpenAiCompatibleEmbedFn({
+      model: config.embedModel,
+      apiKey: config.embedApiKey,
+      baseUrl: config.embedBaseUrl,
+    });
+  }
+  return deps;
+}
+
 /** 单用例（含 repeats） */
 async function runCase(
   c: EvalCase,
   config: RunConfig,
   bundle: RuntimeBundle | undefined,
   budget: BudgetState,
+  scorerDeps: ScorerDeps,
 ): Promise<CaseResult> {
   const isLive = config.mode === 'live';
   const repeats =
@@ -248,7 +298,7 @@ async function runCase(
     usageTotal += trace.usageTotal;
     budget.spent += trace.usageTotal;
 
-    const caseScore = scoreTrace(trace, scorers);
+    const caseScore = await scoreTrace(trace, scorers, scorerDeps);
     scoreSum += caseScore.score;
     scoreCount += 1;
     if (caseScore.passed) passCount += 1;
@@ -360,8 +410,18 @@ export async function runEval(
 
   const concurrency = config.concurrency ?? DEFAULT_CONCURRENCY;
   const budget: BudgetState = { spent: 0 };
+
+  // M5：只有用例真的使用 semantic / llm-judge 才装配对应依赖（配置缺失抛错 → CLI 用法错误）
+  const usesScorer = (type: string) =>
+    runnable.some((c) => resolveScorers(c.expected, c.scorers).some((s) => s.type === type));
+  const scorerDeps = resolveScorerDeps(
+    config,
+    { judge: usesScorer('llm-judge'), embed: usesScorer('semantic') },
+    bundle?.label ? parseModelSpecSafe(bundle.label) : undefined,
+  );
+
   const results = await runAllConcurrent(runnable, concurrency, (c) =>
-    runCase(c, config, bundle, budget),
+    runCase(c, config, bundle, budget, scorerDeps),
   );
 
   const casesPassed = results.filter((r) => r.passed).length;

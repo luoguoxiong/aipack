@@ -2,6 +2,7 @@
  * 收集端（createCollector）— 后台统一收集服务 + 面板 API。
  *
  *   POST /api/v1/ingest               客户端埋点上报（appId+Secret 动态鉴权）→ 落盘 + 聚合
+ *   POST /api/v1/export-eval          trace → EvalCase 回流导出（M4，appId+Secret 鉴权，强制脱敏）
  *   POST /api/auth/login|logout       面板登录/登出（ADMIN_USER/ADMIN_PASS）
  *   GET  /api/auth/me                 当前会话
  *   GET/POST/DELETE /api/apps*        应用管理（动态生成 appId/appSecret）
@@ -42,6 +43,7 @@ import {
 } from './api/agent-definitions';
 import { authenticate, writeAuthFailure, authorizeQueryAccess, type AuthContext } from './middleware/auth';
 import { createAgentWebhook } from './agent-definition/webhook';
+import { createExportEvalHandler, type ExportEvalHandler } from './api/export-eval';
 
 export interface RetentionOptions {
   /** 明细保留天数；<=0 或未配置则不启用清理 */
@@ -347,6 +349,8 @@ export function createCollector(opts: CollectorOptions): Collector {
   }
 
   const queryHandler = createApiHandler({ aggregatorFor, store: traceStore, modelPriceStore: opts.modelPriceStore });
+  // M4：trace → EvalCase 导出 handler（依赖与 ingest 相同的 app 鉴权）
+  const exportEvalHandler: ExportEvalHandler = createExportEvalHandler({ traceStore, appStore });
   // admin handler：单用户模式（sessions）或多用户模式（authCtx）二选一；
   // 多用户模式下 admin.ts 仅处理 /api/apps /api/alerts /api/meta（/api/auth/* 由 api/auth.ts 接管）
   const adminHandler: AdminHandler | undefined =
@@ -441,6 +445,11 @@ export function createCollector(opts: CollectorOptions): Collector {
           // Phase 7：注入 aggregatorFactory 即为 redis/hybrid 共享模式
           useSharedAggregator: !!opts.aggregatorFactory,
         });
+      }
+
+      // M4（EVAL_PLAN.md 5.1）：trace → EvalCase 回流导出（鉴权与 ingest 一致）
+      if (req.method === 'POST' && pathname === '/api/v1/export-eval') {
+        return exportEvalHandler(req, res);
       }
 
       // Prometheus 抓取端点：无需登录（只暴露聚合指标），独立于 /metrics/* 面板查询

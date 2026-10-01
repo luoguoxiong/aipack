@@ -2,7 +2,10 @@
  * packages/eval/src/core/scorer/index.ts - 评分入口与 expected 归一化
  *
  * - expected（声明式）→ ScorerConfig[]（与显式 scorers 合并）
- * - scoreCase：依次执行规则评分器，加权合成用例总分
+ * - scoreCase：按类型分发评分器（rule 同步 / semantic & llm-judge 异步），
+ *   加权合成用例总分
+ * - M5：semantic / llm-judge 需要外部装配（embed / judge），缺装配时
+ *   评分器跳过（不判用例失败，见各实现文件）
  */
 
 import type {
@@ -12,8 +15,31 @@ import type {
   ScorerConfig,
 } from '../types';
 import { RULE_SCORER_TYPES, runRuleScorer } from './rule';
+import { runSemanticScorer, type EmbedFn } from './semantic';
+import { runLlmJudge, type JudgeDeps } from './llm-judge';
 
 export { RULE_SCORER_TYPES, runRuleScorer, partialMatch } from './rule';
+export { cosineSimilarity, runSemanticScorer, type EmbedFn, type SemanticParams } from './semantic';
+export {
+  buildJudgePrompt,
+  parseJudgeResponse,
+  runLlmJudge,
+  JUDGE_PROMPT_VERSION,
+  type JudgeDeps,
+  type JudgeParams,
+  type JudgeVerdict,
+} from './llm-judge';
+
+/** 全量评分器类型（rule 8 种 + semantic + llm-judge） */
+export const ALL_SCORER_TYPES = [...RULE_SCORER_TYPES, 'semantic', 'llm-judge'] as const;
+
+/** 评分器外部装配（M5）：缺省时 semantic / llm-judge 跳过 */
+export interface ScorerDeps {
+  /** semantic 评分器的 embedding 函数 */
+  embed?: EmbedFn;
+  /** llm-judge 的异源 judge 装配 */
+  judge?: JudgeDeps;
+}
 
 /** 声明式 expected → 评分器配置 */
 export function expectedToScorers(expected: ExpectedResult): ScorerConfig[] {
@@ -57,22 +83,51 @@ export interface CaseScore {
   passed: boolean;
   score: number;
   scores: ScoreResult[];
+  /** 因缺装配 / judge 解析失败而跳过的评分器（不判用例失败） */
+  skippedScorers: string[];
+}
+
+/** 执行单个评分器（按类型分发）；返回 undefined = 跳过 */
+async function runScorer(
+  trace: RunTrace,
+  s: ScorerConfig,
+  deps: ScorerDeps,
+): Promise<ScoreResult | undefined> {
+  if (s.type === 'semantic') {
+    return runSemanticScorer(trace, s.params as never, deps.embed);
+  }
+  if (s.type === 'llm-judge') {
+    return runLlmJudge(trace, s.params as never, deps.judge);
+  }
+  return runRuleScorer(trace, s.type, s.params);
 }
 
 /** 对一次运行轨迹执行全部评分器 */
-export function scoreTrace(trace: RunTrace, scorers: ScorerConfig[]): CaseScore {
-  const scores: ScoreResult[] = scorers.map((s) =>
-    runRuleScorer(trace, s.type, s.params),
-  );
-  const totalWeight = scorers.reduce((acc, s) => acc + (s.weight ?? 1), 0);
+export async function scoreTrace(
+  trace: RunTrace,
+  scorers: ScorerConfig[],
+  deps: ScorerDeps = {},
+): Promise<CaseScore> {
+  const results = await Promise.all(scorers.map((s) => runScorer(trace, s, deps)));
+
+  // 跳过的评分器（缺装配 / scorer 自身错误）不参与判定
+  const skippedScorers = scorers
+    .filter((_, i) => results[i] === undefined)
+    .map((s) => s.type);
+  const effective = scorers
+    .map((s, i) => ({ s, r: results[i] }))
+    .filter((x): x is { s: ScorerConfig; r: ScoreResult } => x.r !== undefined);
+
+  const totalWeight = effective.reduce((acc, { s }) => acc + (s.weight ?? 1), 0);
   const weighted =
     totalWeight === 0
       ? 0
-      : scores.reduce((acc, r, i) => acc + r.score * (scorers[i].weight ?? 1), 0) /
+      : effective.reduce((acc, { s, r }) => acc + r.score * (s.weight ?? 1), 0) /
         totalWeight;
   return {
-    passed: scores.length > 0 && scores.every((r) => r.passed),
-    score: scorers.length === 0 ? 0 : weighted,
-    scores,
+    passed: effective.length > 0 && effective.every(({ r }) => r.passed),
+    score: effective.length === 0 ? 0 : weighted,
+    scores: effective.map(({ r }) => r),
+    skippedScorers,
   };
 }

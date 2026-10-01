@@ -203,3 +203,71 @@ export function assertLiveReady(spec: LiveLlmSpec): void {
     `provider '${spec.provider}' 未配置 API Key：--api-key <key>、${LIVE_ENV_KEYS.apiKey} 或 ${envName ?? '<PROVIDER>_API_KEY'}`,
   );
 }
+
+// ─── judge 装配（M5：LLM-as-judge）────────────────────────────────
+
+/** judge 模型的 env 覆盖键（与被测模型的键分离，避免混用） */
+export const JUDGE_ENV_KEYS = {
+  model: 'AIPACK_EVAL_JUDGE_MODEL',
+  apiKey: 'AIPACK_EVAL_JUDGE_API_KEY',
+  baseUrl: 'AIPACK_EVAL_JUDGE_BASE_URL',
+} as const;
+
+/**
+ * 解析 judge 模型 spec：显式参数优先，缺省读 AIPACK_EVAL_JUDGE_MODEL。
+ * 复用 parseModelSpec（'provider/modelId' 或探测已配置 Key 的 provider）。
+ */
+export function resolveJudgeSpec(opts: {
+  model?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  timeoutMs?: number;
+}): LiveLlmSpec {
+  const env = process.env;
+  const raw = opts.model ?? env[JUDGE_ENV_KEYS.model];
+  if (!raw) {
+    throw new Error(
+      `llm-judge 需要 judge 模型：--judge-model provider/modelId 或 ${JUDGE_ENV_KEYS.model}（须与被测模型异源）`,
+    );
+  }
+  const { provider, modelId } = parseModelSpec(raw);
+  return {
+    provider,
+    modelId,
+    apiKey: opts.apiKey ?? env[JUDGE_ENV_KEYS.apiKey] ?? getEnvApiKey(provider),
+    baseUrl: opts.baseUrl ?? env[JUDGE_ENV_KEYS.baseUrl],
+    temperature: 0, // judge 要确定性
+    timeoutMs: opts.timeoutMs,
+  };
+}
+
+/**
+ * 异源硬性约束（EVAL_PLAN.md 4.2）：judge 与被测模型完全相同 → 拒绝；
+ * 同 provider 不同模型 → 允许但告警（同源偏置风险低于同模型，仍建议跨 provider）。
+ */
+export function assertJudgeDistinct(
+  target: { provider: string; modelId: string } | undefined,
+  judge: { provider: string; modelId: string },
+): void {
+  if (!target) return;
+  if (target.provider === judge.provider && target.modelId === judge.modelId) {
+    throw new Error(
+      `judge 模型 (${judge.provider}/${judge.modelId}) 与被测模型相同：LLM-as-judge 要求异源（换 provider 或换 modelId）`,
+    );
+  }
+  if (target.provider === judge.provider) {
+    console.warn(
+      `[eval] judge 与被测模型同 provider (${judge.provider})：存在同源偏置风险，建议跨 provider 选取 judge`,
+    );
+  }
+}
+
+/** 从 CLI/库参数一步装配 judge LLM（complete 由调用方基于 streamFn 包装） */
+export function resolveJudgeLlm(opts: {
+  model?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  timeoutMs?: number;
+}): LiveLlm {
+  return createLiveLlm(resolveJudgeSpec(opts));
+}

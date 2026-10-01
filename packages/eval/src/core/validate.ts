@@ -4,8 +4,9 @@
  * loader 加载 JSON 后立即校验，坏用例在运行前暴露（fail fast）。
  */
 
-import type { CaseOrigin, EvalCase } from './types';
+import type { CaseOrigin, EvalCase, ScorerType } from './types';
 import { RULE_SCORER_TYPES } from './scorer/rule';
+import { ALL_SCORER_TYPES } from './scorer';
 
 const ORIGINS: CaseOrigin[] = [
   'handwritten',
@@ -69,8 +70,8 @@ export function validateEvalCase(c: EvalCase): string[] {
   }
 
   for (const s of c.scorers ?? []) {
-    if (!RULE_SCORER_TYPES.includes(s.type)) {
-      errors.push(at(`scorers 含未知类型 '${s.type}'（支持: ${RULE_SCORER_TYPES.join(', ')}）`));
+    if (!ALL_SCORER_TYPES.includes(s.type as ScorerType)) {
+      errors.push(at(`scorers 含未知类型 '${s.type}'（支持: ${ALL_SCORER_TYPES.join(', ')}）`));
     }
   }
 

@@ -1,6 +1,6 @@
 # aipack Eval 体系方案
 
-> 状态：待评审（M1 / M3 已落地，M2 取消）
+> 状态：待评审（M1 / M3 / M4 / M5 已落地，M2 取消）
 > 范围：新增 `packages/eval`（接线 `packages/agent` / `packages/observability` / `packages/cli`）
 > 参考：τ-bench / BFCL / OpenAI Evals / promptfoo 的分层思路，结合 aipack 三段式架构落地
 
@@ -251,13 +251,16 @@ packages/eval/
       case.ts            # EvalCase / ExpectedResult 类型与校验
       scorer/
         rule.ts          # 规则评分器（字符串 / regex / JSON Schema / 工具轨迹）
-        semantic.ts      # embedding 相似度
-        llm-judge.ts     # 异源 judge + 强制 JSON 输出
-      runner.ts          # 并发 / 缓存 / 预算熔断 / repeats（mock + live 两模式）
+        semantic.ts      # embedding 相似度（M5，EmbedFn 注入点）
+        llm-judge.ts     # 异源 judge + 强制 JSON 输出（M5）
+      runner.ts          # 并发 / 预算熔断 / repeats（mock + live 两模式）+ scorer deps 装配
       report.ts          # JSON + Markdown 双格式 / baseline 对比
-      live.ts            # live 模式：provider/model → model + streamFn 装配
+      live.ts            # live 模式装配 + judge 装配与异源校验（M5）
+      judge-llm.ts       # streamFn → complete(prompt)（M5）
+      embedding.ts       # OpenAI 兼容 /embeddings 客户端（M5）
+      compare.ts         # L4 模型 / provider 对比报告（M5）
+      import.ts          # trace 回流导出 JSON → eval/cases 入库（M4）
       history.ts         # 历史趋势 JSONL + 日环比渲染（M3）
-      cache.ts           # (caseId + prompt 版本 + 模型) 响应缓存
     datasets/            # 开源数据集下载器与转换器
     synth/               # 工具 schema / SKILL.md 合成器
     cli.ts               # aipack eval run --suite --mode --baseline
@@ -280,8 +283,34 @@ packages/eval/
 | M1 ✅ | `packages/eval` 骨架：类型 + Runner（复用 `runtime.run()`）+ 规则评分器；Runtime 加 LLM mock 注入点 | 手工 golden 34 case 全 mock 跑通（35/35 测试 272ms；CLI 34/34 0.01s） |
 | M2 ❌ | ~~memory / compression 组件套件 + 数据集适配（HotpotQA / LongBench）+ 响应缓存~~ **已取消，不做** | — |
 | M3 ✅ | agent e2e-live 套件（真实 LLM）+ `--baseline` 回归门禁 + 每日 cron 报告 + 历史趋势 | 通过率日环比可视化（sparkline + 环比 Δ）；42 case 加载、8 条 live 用例、34 条 mock 全通过；65 单测通过 |
-| M4 | observability-server `POST /export-eval` trace 回流 + 脱敏 | 首批 trace/bfix case 入库 |
-| M5 | LLM-as-judge + 语义评分器 + L4 provider 对比报告 | 开放性回答套件上线 |
+| M4 ✅ | observability-server `POST /api/v1/export-eval` trace 回流 + 脱敏 + eval 侧 `import` 入库 | 内存 store 端到端测试（鉴权/归属校验/redact 脱敏）；`aipack-eval import` dry-run / suite / origin / 前缀覆盖 |
+| M5 ✅ | LLM-as-judge + 语义评分器 + L4 provider 对比报告 | 异源校验 + 强制 JSON（解析失败跳过）；`compare` 子命令 + Markdown 对比表；eval 127 测试、server 45 测试全过 |
+
+### 8.2 M4 落地说明
+
+**端点**：`POST /api/v1/export-eval`（`packages/observability-server/src/api/export-eval.ts`，collector 挂载）
+
+- 鉴权与 ingest 一致（`x-app-id` / `x-app-secret`）；显式 traceIds 逐条校验归属，外部 app 的 trace 静默忽略（不暴露存在性）
+- 请求体：`traceIds` 或 `sessionKey / since / until / status / limit` 过滤；`suite`（缺省 `trace-export`）、`origin`（`trace | bugfix`）、`idPrefix`、`userMessage`（人工修正，bugfix 固化用）、`redact`（缺省 true）
+- 产出 EvalCase 骨架：期望轨迹 = 实际轨迹（`tool-call` + `order: 'exact'`，isError 对齐工具状态）；**消息文本不落库** —— 用户消息仅当应用 `obs.emit('user_message', { text })` 上报时提取，否则留占位符由人工补充
+- 脱敏强制过 `redactValue`（`@aipack-ai/observability`）；入库纪律：坏 case 修复后以 `origin: 'bugfix'` + 修正后的 userMessage 重新导出
+
+**入库**：`aipack-eval import --file <export.json> [--out-dir] [--suite] [--origin] [--prefix] [--dry-run]` —— 校验（fail fast）后写入 `eval/cases/<suite>/`，重名自动追加序号，不覆盖人工已修正的用例。
+
+### 8.3 M5 落地说明
+
+**semantic 评分器**（`scorer/semantic.ts`）：期望文本与最终输出各做一次 embedding，余弦相似度 ≥ 阈值（缺省 0.75）即通过。`EmbedFn` 注入点 + OpenAI 兼容实现（`core/embedding.ts`，env：`AIPACK_EVAL_EMBEDDING_MODEL / _API_KEY / _BASE_URL`）。缺装配或 embedding 失败 → 评分器跳过，不判用例失败。
+
+**llm-judge**（`scorer/llm-judge.ts`）：
+
+- rubric（`criteria`）逐条评判，输出强制 JSON（score 0~1 + reason + evidence）；解析失败 / judge 调用失败 → 跳过（对齐 4.2 硬性约束）
+- judge prompt 版本化（`JUDGE_PROMPT_VERSION` / `params.promptVersion`）；judge 装配（`core/judge-llm.ts`）与 live 被测装配对称（streamFn → complete(prompt)）
+- 异源硬性约束（`live.ts assertJudgeDistinct`）：judge 与被测模型完全相同 → 拒绝；同 provider 不同 modelId → 允许但告警
+- env：`AIPACK_EVAL_JUDGE_MODEL / _API_KEY / _BASE_URL`；CLI `--judge-model / --judge-api-key / --judge-base-url`
+
+**分发链路**：`scoreTrace(trace, scorers, deps?)` 按类型分发（rule 同步 / semantic & llm-judge 异步），跳过的评分器记入 `skippedScorers`，不参与 pass 判定与加权分。
+
+**L4 对比**：`aipack-eval compare --models deepseek/deepseek-chat,openai/gpt-4o-mini ...` —— 同组用例逐模型顺序执行 `runEval`，输出总览表（通过率 / 平均分 / token / 耗时）+ 分套件通过率矩阵 + 失败明细，报告写 `eval-results/compare-<ts>.{md,json}`。
 
 ### 8.1 M3 落地说明
 
