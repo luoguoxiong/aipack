@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Button, Drawer } from 'antd';
+import { Button, Drawer, Dropdown } from 'antd';
 import {
   GithubOutlined,
   MenuOutlined,
@@ -13,6 +13,8 @@ import {
   ApartmentOutlined,
   TagsOutlined,
   DeploymentUnitOutlined,
+  ExperimentOutlined,
+  DownOutlined,
 } from '@ant-design/icons';
 import { useIsMobile } from '../hooks/useIsMobile';
 import Logo from './Logo';
@@ -27,11 +29,17 @@ const navItems = [
   { path: '/skills', label: 'Agent Skills', icon: <TagsOutlined /> },
   { path: '/multi-agent', label: '多Agent编排', icon: <ApartmentOutlined /> },
   { path: '/mcp', label: 'MCP 互操作', icon: <DeploymentUnitOutlined /> },
+  { path: '/eval', label: 'Eval 评测', icon: <ExperimentOutlined /> },
   { path: '/examples', label: '示例代码', icon: <GithubOutlined /> },
   { path: '/packages', label: '包介绍', icon: <RocketOutlined /> },
 ];
 
 const GITHUB_URL = 'https://github.com/luoguoxiong/aipack';
+
+// 桌面端导航拆分：高频页面平铺，其余收进「更多」下拉，避免头部拥挤
+const MORE_PATHS = ['/eval', '/mcp', '/multi-agent', '/examples', '/packages'];
+const primaryNavItems = navItems.filter((item) => !MORE_PATHS.includes(item.path));
+const moreNavItems = navItems.filter((item) => MORE_PATHS.includes(item.path));
 
 export default function Navbar() {
   const location = useLocation();
@@ -103,7 +111,7 @@ export default function Navbar() {
 
       {!isMobile && (
         <div className="navbar-links">
-          {navItems.map((item) => {
+          {primaryNavItems.map((item) => {
             const isActive =
               item.path === '/' ? currentPath === '/' : currentPath.startsWith(item.path);
             return (
@@ -116,6 +124,29 @@ export default function Navbar() {
               </span>
             );
           })}
+          <Dropdown
+            menu={{
+              items: moreNavItems.map((item) => ({
+                key: item.path,
+                icon: item.icon,
+                label: item.label,
+              })),
+              selectedKeys: moreNavItems
+                .filter((item) => currentPath.startsWith(item.path))
+                .map((item) => item.path),
+              onClick: ({ key }) => go(key),
+            }}
+            trigger={['click', 'hover']}
+          >
+            <span
+              className={`navbar-link navbar-link-more ${
+                moreNavItems.some((item) => currentPath.startsWith(item.path)) ? 'active' : ''
+              }`}
+              onClick={(e) => e.preventDefault()}
+            >
+              更多 <DownOutlined style={{ fontSize: 10 }} />
+            </span>
+          </Dropdown>
         </div>
       )}
 

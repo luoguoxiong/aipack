@@ -545,6 +545,23 @@ export default function HomePage() {
                         </Button>
                       </Card>
                     </Col>
+                    <Col xs={24} md={8}>
+                      <Card
+                        title={
+                          <span>
+                            🧪 eval <Tag color="purple" style={{ marginLeft: 8 }}>评测</Tag>
+                          </span>
+                        }
+                        bordered
+                      >
+                        <p style={{ color: '#475569', lineHeight: 1.8, fontSize: 14 }}>
+                          评测闭环：mock replay / live 双模式 + 规则与 LLM 评分器 + baseline 门禁 + 历史趋势。
+                        </p>
+                        <Button type="link" icon={<ArrowRightOutlined />} onClick={() => navigate('/eval')}>
+                          查看
+                        </Button>
+                      </Card>
+                    </Col>
                   </Row>
                 ),
               },

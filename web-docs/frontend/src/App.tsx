@@ -12,6 +12,7 @@ import MemoryPage from './pages/MemoryPage';
 import MultiAgentPage from './pages/MultiAgentPage';
 import SkillsPage from './pages/SkillsPage';
 import McpPage from './pages/McpPage';
+import EvalPage from './pages/EvalPage';
 
 export default function App() {
   return (
@@ -79,6 +80,14 @@ export default function App() {
           element={
             <DocsLayout>
               <McpPage />
+            </DocsLayout>
+          }
+        />
+        <Route
+          path="/eval"
+          element={
+            <DocsLayout>
+              <EvalPage />
             </DocsLayout>
           }
         />

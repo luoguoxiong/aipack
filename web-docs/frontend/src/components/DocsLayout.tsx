@@ -196,6 +196,21 @@ const multiAgentMenu: MenuItem[] = [
   { key: '/multi-agent#result', label: '10. 运行结果', icon: <ApiOutlined /> },
 ];
 
+const evalMenu: MenuItem[] = [
+  { key: '/eval#overview', label: '总览', icon: <RocketOutlined /> },
+  { key: '/eval#quickstart', label: '1. 快速开始', icon: <ThunderboltOutlined /> },
+  { key: '/eval#case', label: '2. 用例格式', icon: <FileTextOutlined /> },
+  { key: '/eval#mock', label: '3. Mock 模式', icon: <BugOutlined /> },
+  { key: '/eval#live', label: '4. Live 模式', icon: <CloudServerOutlined /> },
+  { key: '/eval#scorers', label: '5. 评分器', icon: <AimOutlined /> },
+  { key: '/eval#cli', label: '6. CLI 用法', icon: <CodeOutlined /> },
+  { key: '/eval#baseline', label: '7. Baseline 门禁', icon: <SafetyCertificateOutlined /> },
+  { key: '/eval#compare', label: '8. 模型对比', icon: <ApartmentOutlined /> },
+  { key: '/eval#import', label: '9. Trace 回流', icon: <DeploymentUnitOutlined /> },
+  { key: '/eval#history', label: '10. 历史趋势', icon: <LineChartOutlined /> },
+  { key: '/eval#config', label: '11. RunConfig 全览', icon: <SettingOutlined /> },
+];
+
 const examplesMenu: MenuItem[] = [
   { key: '/examples', label: '最小示例', icon: <CodeOutlined /> },
   { key: '/examples#memory', label: '记忆集成', icon: <DatabaseOutlined /> },
@@ -213,6 +228,7 @@ const packagesMenu: MenuItem[] = [
   { key: '/packages#compression', label: 'aipack-compression', icon: <AimOutlined /> },
   { key: '/packages#aipack-multi-agent', label: 'aipack-multi-agent', icon: <ApartmentOutlined /> },
   { key: '/packages#aipack-mcp', label: 'aipack-mcp', icon: <DeploymentUnitOutlined /> },
+  { key: '/packages#aipack-eval', label: 'aipack-eval', icon: <ExperimentOutlined /> },
   { key: '/packages#aipack-observability', label: 'aipack-observability', icon: <LineChartOutlined /> },
   { key: '/packages#aipack-observability-server', label: 'aipack-observability-server', icon: <CloudServerOutlined /> },
   { key: '/packages#cli', label: 'aipack-cli', icon: <SettingOutlined /> },
@@ -239,6 +255,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     else if (path === '/memory' || path.startsWith('/memory')) items = memoryMenu;
     else if (path === '/skills' || path.startsWith('/skills')) items = skillsMenu;
     else if (path === '/mcp' || path.startsWith('/mcp')) items = mcpMenu;
+    else if (path === '/eval' || path.startsWith('/eval')) items = evalMenu;
     else if (path === '/multi-agent' || path.startsWith('/multi-agent')) items = multiAgentMenu;
     else if (path === '/examples' || path.startsWith('/examples')) items = examplesMenu;
     else if (path === '/packages' || path.startsWith('/packages')) items = packagesMenu;
@@ -263,6 +280,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     if (rootPath === '/memory') return memoryMenu;
     if (rootPath === '/skills') return skillsMenu;
     if (rootPath === '/mcp') return mcpMenu;
+    if (rootPath === '/eval') return evalMenu;
     if (rootPath === '/multi-agent') return multiAgentMenu;
     if (rootPath === '/examples') return examplesMenu;
     if (rootPath === '/packages') return packagesMenu;
