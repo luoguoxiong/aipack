@@ -17,7 +17,6 @@
 
 import { BaseTransformer } from '@aipack-ai/agent';
 import type { ContextResource, ContentBlock, TextContent } from '@aipack-ai/agent';
-import { ContextResourceBuilder } from '@aipack-ai/agent';
 import type { HybridRetriever } from '../retrieval/hybrid-retriever';
 import {
   buildMemoryBlock,
@@ -191,13 +190,6 @@ export class MemoryInjectionTransformer extends BaseTransformer {
     resource: ContextResource,
     content: string | ContentBlock[],
   ): ContextResource {
-    return new ContextResourceBuilder()
-      .id(resource.id)
-      .type(resource.type)
-      .role(resource.role)
-      .content(content)
-      .timestamp(resource.timestamp)
-      .pinned(resource.pinned)
-      .build();
+    return { ...resource, content };
   }
 }
