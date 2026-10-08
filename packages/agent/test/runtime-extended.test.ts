@@ -678,6 +678,7 @@ describe('parallelToolCalls=false 串行执行工具', () => {
 
     const runtime = createRuntime({
       streamFn,
+      permissionFailOpen: true,
       tools,
       parallelToolCalls: false,
     });
@@ -704,6 +705,7 @@ describe('prepareArguments', () => {
     };
     const runtime = createRuntime({
       streamFn: toolCallStreamFn([{ id: 'tc1', name: 'echo', args: { original: 1 } }]),
+      permissionFailOpen: true,
       tools: [tool],
     });
     await runtime.run(createRequest('echo'));

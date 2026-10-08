@@ -79,6 +79,7 @@ describe('beforeToolCall', () => {
   it('block: 工具不执行，生成 [blocked] 结果，run 继续完成', async () => {
     const { tool, exec } = makeTool('bash');
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn([{ id: 'tc1', name: 'bash', args: { cmd: 'ls' } }]),
       tools: [tool],
       extensions: [
@@ -107,6 +108,7 @@ describe('beforeToolCall', () => {
   it('terminate: 终止整个 run，stopReason=terminated，execute 不调用', async () => {
     const { tool, exec } = makeTool('bash');
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn([{ id: 'tc1', name: 'bash', args: {} }]),
       tools: [tool],
       extensions: [
@@ -130,6 +132,7 @@ describe('beforeToolCall', () => {
   it('改写 args：execute 收到改写后的参数', async () => {
     const { tool, exec } = makeTool('search');
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn([{ id: 'tc1', name: 'search', args: { q: 'old' } }]),
       tools: [tool],
       extensions: [
@@ -153,6 +156,7 @@ describe('beforeToolCall', () => {
   it('未匹配的 hook 返回 void：工具正常执行', async () => {
     const { tool, exec } = makeTool('safe');
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn([{ id: 'tc1', name: 'safe', args: {} }]),
       tools: [tool],
       extensions: [
@@ -178,6 +182,7 @@ describe('afterToolCall', () => {
   it('替换 result：消息内容变为 override', async () => {
     const { tool } = makeTool('fetch');
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn([{ id: 'tc1', name: 'fetch', args: {} }]),
       tools: [tool],
       extensions: [
@@ -204,6 +209,7 @@ describe('afterToolCall', () => {
     const seen = mock.fn((r: { details: unknown }) => r);
 
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn([{ id: 'tc1', name: 'audit', args: {} }]),
       tools: [tool],
       extensions: [
@@ -236,6 +242,7 @@ describe('afterToolCall', () => {
   it('terminate：execute 已执行后终止 run', async () => {
     const { tool, exec } = makeTool('notify_done');
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn([{ id: 'tc1', name: 'notify_done', args: {} }]),
       tools: [tool],
       extensions: [
@@ -264,6 +271,7 @@ describe('多 tap 串联', () => {
     const rewriterCalled = mock.fn(() => undefined);
 
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn([{ id: 'tc1', name: 'bash', args: { cmd: 'ls' } }]),
       tools: [tool],
       extensions: [
@@ -299,6 +307,7 @@ describe('多 tap 串联', () => {
     const laterCalled = mock.fn(() => undefined);
 
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn([{ id: 'tc1', name: 'bash', args: {} }]),
       tools: [tool],
       extensions: [
@@ -327,6 +336,7 @@ describe('流式事件', () => {
   it('block 时仍 yield tool_start 与 tool_end', async () => {
     const { tool, exec } = makeTool('bash');
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn([{ id: 'tc1', name: 'bash', args: {} }]),
       tools: [tool],
       extensions: [
@@ -368,6 +378,7 @@ describe('流式事件', () => {
     };
 
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn,
       tools: [tool],
       extensions: [
@@ -419,6 +430,7 @@ describe('串行模式 terminate', () => {
     };
 
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn,
       tools: [toolA, toolB, toolC],
       parallelToolCalls: false, // 串行

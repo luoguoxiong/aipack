@@ -37,6 +37,29 @@ export {
   createEmptyUsage,
 } from './types';
 
+// ─── token 估算单一实现（约 4 字符/token，各层共用） ─────────────
+export { estimateTextTokens, estimateMessageTokens } from './tokens';
+
+// ─── 错误分类契约（实现见 ai/errors）─────────────────────────────
+export { AgentErrorCategory } from './errors';
+
+// ─── Telemetry: 轻量可观测性契约（实现侧经 RuntimeOptions 注入）────
+export { noopTelemetry } from './telemetry';
+export type {
+  Telemetry,
+  ErrorClass,
+  RunStartTelemetryInfo,
+  RunTelemetryInfo,
+  ToolTelemetryInfo,
+  ModelTelemetryInfo,
+  RetryTelemetryInfo,
+  PermissionDeniedTelemetryInfo,
+  ApprovalPendingTelemetryInfo,
+  ApprovalResolvedTelemetryInfo,
+  CompactionTelemetryInfo,
+  HookErrorTelemetryInfo,
+} from './telemetry';
+
 // ─── Tapable: 事件钩子系统 ─────────────────────────────────────────
 export {
   SyncHook,

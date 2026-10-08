@@ -5,7 +5,7 @@
  * 提供 Result 构建和流式结果聚合。
  */
 
-import { ResultBuilder, createResult, createErrorResult } from '../core';
+import { ResultBuilder } from '../core';
 import type { Result, ResultChunk } from '../core';
 import type { Message, AssistantMessage, ToolResultMessage, ContentBlock } from '../core';
 import { extractText } from '../core';
@@ -168,5 +168,3 @@ export class ResultAggregator {
     return this.chunkCount;
   }
 }
-
-export { ResultBuilder, createResult, createErrorResult } from '../core';

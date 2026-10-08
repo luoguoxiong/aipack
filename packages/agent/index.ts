@@ -3,24 +3,64 @@
  *
  * 独立框架，不依赖 src/。
  * 所有功能通过 Transformer、Extension 等机制扩展。
+ *
+ * 公共导出面采用显式清单（不再 `export * from './core'`）：
+ * 仅暴露稳定契约与公共 API；tapable 钩子实现类 / TaskGraphImpl /
+ * TaskGraphBuilder / ContextResourceBuilder 等内部机制不再进入公共 API，
+ * 内部重构不再构成 breaking change。深路径导入（如 'aipack/core'）不受影响。
  */
 
-// ─── 核心契约层 ───────────────────────────────────────────────────
-export * from './core';
+// ─── 核心契约：消息/内容/模型/工具类型与工具函数 ─────────────────
+export type {
+  TextContent,
+  ImageContent,
+  ToolCallContent,
+  ThinkingContent,
+  ContentBlock,
+  BaseMessage,
+  UserMessage,
+  AssistantMessage,
+  ToolResultMessage,
+  SystemMessage,
+  Message,
+  Usage,
+  Model,
+  ToolResult,
+  Tool,
+  Context,
+  StreamOptions,
+  StreamEvent,
+  StreamResult,
+  StreamFn,
+  AgentState,
+  ThinkingLevel,
+} from './core';
+export {
+  extractText,
+  extractToolCalls,
+  createTextContent,
+  createEmptyUsage,
+} from './core';
 
 // ─── Runtime: 编排层 ──────────────────────────────────────────────
 export { AgentRuntime, createRuntime } from './runtime';
+export type { Runtime, Compilation, RuntimeOptions, CompactionOptions } from './core';
 
-// ─── SessionManager: 多会话共享 Runtime 门面 ───────────────────────
-export { SessionManager, createSessionManager } from './session-manager';
-export type { SessionManagerOptions } from './session-manager';
+// ─── Tapable: 钩子失败策略（实现类为内部机制，不导出） ────────────
+export { setTapFailurePolicy, getTapFailurePolicy, setTapErrorHandler } from './core/tapable';
+export type { TapFailurePolicy, TapErrorInfo, TapErrorHandler } from './core/tapable';
 
 // ─── Request: 请求入口 ────────────────────────────────────────────
-// createRequest / RequestBuilder / validateRequest / normalizeRequest
-// 均已通过 `export * from './core'` 重导出（core/index.ts re-export 自
-// ./request），此处无需再重复列出 validateRequest / normalizeRequest。
+export { RequestBuilder, createRequest } from './core';
+export type { Request, RequestType } from './core';
 
 // ─── ContextResource: 上下文资源 ──────────────────────────────────
+export {
+  createMessageResource,
+  createToolCallResource,
+  createToolResultResource,
+} from './core';
+export type { ContextResource, ResourceType, ResourceRole } from './core';
 export {
   messageToResource,
   messagesToResources,
@@ -30,7 +70,9 @@ export {
   extractTextFromResource,
 } from './context-resource';
 
-// ─── TaskGraph: 任务依赖图 ────────────────────────────────────────
+// ─── TaskGraph: 任务依赖图（Builder/Impl 为内部实现） ──────────────
+export { createTaskGraph } from './core';
+export type { TaskGraph, GraphNode } from './core';
 export {
   buildTaskGraph,
   graphToMessages,
@@ -40,6 +82,8 @@ export {
 } from './task-graph';
 
 // ─── ContextTransformer: 上下文转换器 ─────────────────────────────
+export type { ContextTransformer, TransformContext, TransformRuntime, TransformerOptions } from './core';
+export { BaseTransformer } from './core';
 export {
   ToolPairingTransformer,
   StateSnapshotTransformer,
@@ -51,6 +95,8 @@ export {
 } from './transformer';
 
 // ─── Extension: 扩展插件 ─────────────────────────────────────────
+export { BaseExtension, ExtensionManager } from './core';
+export type { Extension, ExtensionContext, RuntimeHooks } from './core';
 export {
   LoggingExtension,
   EventCaptureExtension,
@@ -62,16 +108,30 @@ export {
   createToolHookExtension,
 } from './extension';
 
+// ─── Tool Hooks: 工具调用钩子 ─────────────────────────────────────
+export { isErrorToolResult } from './core';
+export type {
+  ToolCallContext,
+  AfterToolCallContext,
+  BeforeToolCallResult,
+  AfterToolCallResult,
+  BeforeToolCallDecision,
+  AfterToolCallDecision,
+} from './core';
+
 // ─── Result: 运行结果 ────────────────────────────────────────────
+export { ResultBuilder, createResult, createErrorResult } from './core';
+export type { Result, ResultChunk } from './core';
 export {
   buildResultFromMessages,
   buildResultFromAssistantMessage,
   buildResultWithResources,
   ResultAggregator,
-  ResultBuilder,
-  createResult,
-  createErrorResult,
 } from './result';
+
+// ─── SessionManager: 多会话共享 Runtime 门面 ───────────────────────
+export { SessionManager, createSessionManager } from './session-manager';
+export type { SessionManagerOptions } from './session-manager';
 
 // ─── Session: 会话存储实现 ────────────────────────────────────────
 export {
@@ -80,8 +140,43 @@ export {
   FileSessionStorage,
   createFileSessionStorage,
 } from './session';
+export { SESSION_VERSION } from './core';
+export type {
+  SessionModel,
+  StoredSession,
+  SessionStorage,
+  StorageLock,
+  FileSessionStorageOptions,
+  MemorySessionStorageOptions,
+} from './core';
 
-// ─── Approval: 审批持久化实现（Phase 2，契约见 core 的 ApprovalStore）───
+// ─── PermissionPolicy / Approval: 框架级工具权限层 ────────────────
+export {
+  createPermissionPolicy,
+  createAllowListPolicy,
+  createDenyAllPolicy,
+  createAllowAllPolicy,
+  hasPermission,
+  createApprovalManager,
+  toStoredApproval,
+  fromStoredApproval,
+} from './core';
+export type {
+  PermissionDecision,
+  PermissionRequest,
+  PermissionPolicy,
+  PermissionRule,
+  CreatePermissionPolicyOptions,
+  PendingApproval,
+  ApprovalOutcome,
+  ApprovalOutcomeStatus,
+  ApprovalCreateOptions,
+  ApprovalManager,
+  CreateApprovalManagerOptions,
+  StoredApproval,
+  ApprovalAuditRecord,
+  ApprovalStore,
+} from './core';
 export {
   FileApprovalStore,
   defaultApprovalDir,
@@ -117,4 +212,6 @@ export type {
   PermissionDeniedTelemetryInfo,
   ApprovalPendingTelemetryInfo,
   ApprovalResolvedTelemetryInfo,
+  CompactionTelemetryInfo,
+  HookErrorTelemetryInfo,
 } from './telemetry';

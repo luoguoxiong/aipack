@@ -1,7 +1,8 @@
 /**
  * PermissionPolicy 框架级权限层测试：
  * - 内置策略单元：createPermissionPolicy / createAllowListPolicy / denyAll / allowAll / hasPermission
- * - Runtime 集成：deny → blocked 结果、confirm 批准/拒绝、未配置放行、流式同样生效、
+ * - Runtime 集成：deny → blocked 结果、confirm 批准/拒绝、未配置默认 fail-closed
+ *   / permissionFailOpen 显式放行、流式同样生效、
  *   telemetry onPermissionDenied 上报、工具 permissions 声明传递
  * - 异步审批（pending 决策 + ApprovalManager）：挂起/批准/驳回/超时/取消/abort 传导/遥测
  */
@@ -220,15 +221,28 @@ describe('PermissionPolicy 内置策略', () => {
 // ─── Runtime 集成测试 ─────────────────────────────────────────────
 
 describe('Runtime PermissionPolicy 集成', () => {
-  it('未配置策略时工具正常执行（向后兼容）', async () => {
+  it('未配置策略时默认拒绝工具执行（fail-closed 安全默认）', async () => {
     const probe = makeProbeTool('echo_tool');
     const runtime = createRuntime({
       streamFn: mockToolStreamFn([{ id: 't1', name: 'echo_tool', args: {} }]),
       tools: [probe],
     });
     const result = await runtime.run({ message: 'hi', type: 'message' });
+    assert.equal(result.success, true, '工具被拒只是 blocked 结果，run 不失败');
+    assert.equal(probe.calls(), 0, '未配置策略时工具不应执行（fail-closed）');
+    await runtime.close();
+  });
+
+  it('permissionFailOpen: true 显式 opt-in 后未配置策略放行工具（旧行为）', async () => {
+    const probe = makeProbeTool('echo_tool');
+    const runtime = createRuntime({
+      streamFn: mockToolStreamFn([{ id: 't1', name: 'echo_tool', args: {} }]),
+      tools: [probe],
+      permissionFailOpen: true,
+    });
+    const result = await runtime.run({ message: 'hi', type: 'message' });
     assert.equal(result.success, true);
-    assert.equal(probe.calls(), 1, '未配置策略应放行工具执行');
+    assert.equal(probe.calls(), 1, '显式 opt-in 后未配置策略应放行工具执行');
     await runtime.close();
   });
 

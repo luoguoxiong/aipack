@@ -9,26 +9,17 @@
 import { BaseTransformer } from '../core';
 import type { ContextResource, TransformContext } from '../core';
 import type { Message, ToolCallContent, ContentBlock } from '../core';
-import { extractToolCalls } from '../core';
+import { extractToolCalls, estimateTextTokens } from '../core';
 import { messagesToResources, resourcesToMessages } from '../context-resource';
 
-// ─── token 估算 ───────────────────────────────────────────────────
-
-/**
- * 粗略 token 估算：约 4 字符/token（对中英文混合近似可用）。
- * 不引入 tokenizer 依赖；若需要精确计数，使用方可注入自定义转换器替换。
- */
-function estimateTokens(text: string): number {
-  if (!text) return 0;
-  return Math.ceil(text.length / 4);
-}
+// ─── token 估算（单一实现见 core/tokens.ts：约 4 字符/token） ──────
 
 /** 估算单个资源的 token 数（序列化内容后计数） */
 function estimateResourceTokens(resource: ContextResource): number {
   const content = resource.content;
-  if (typeof content === 'string') return estimateTokens(content);
+  if (typeof content === 'string') return estimateTextTokens(content);
   try {
-    return estimateTokens(JSON.stringify(content ?? ''));
+    return estimateTextTokens(JSON.stringify(content ?? ''));
   } catch {
     return 0;
   }

@@ -81,8 +81,13 @@ export interface ExtensionContext {
   readonly config: Record<string, unknown>;
   /** 工作区路径 */
   readonly workspace: string;
-  /** 会话标识 */
-  readonly sessionKey: string;
+  /**
+   * 会话标识：run/stream 进入会话时由 Runtime 更新为本次真实会话键
+   * （此前恒为创建时刻的默认值 'default'）。
+   * 注意：跨会话共享单例，多会话并发时为最近激活的会话；
+   * 需要精确会话请使用 ToolCallContext.sessionKey / Request.sessionKey。
+   */
+  sessionKey: string;
   /** 共享状态（Extension 间通信） */
   readonly shared: Map<string, unknown>;
   /**

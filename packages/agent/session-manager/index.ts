@@ -88,6 +88,16 @@ export class SessionManager {
     return this._runtime.getMessages(sessionKey);
   }
 
+  /** 异步读取指定会话的消息历史：内存未命中（LRU 淘汰）时回落存储恢复 */
+  loadMessages(sessionKey?: string): Promise<Message[]> {
+    return this._runtime.loadMessages(sessionKey);
+  }
+
+  /** 指定会话消息的只读视图（高频轮询用，不做深拷贝；调用方不得修改） */
+  peekMessages(sessionKey?: string): readonly Message[] {
+    return this._runtime.peekMessages(sessionKey);
+  }
+
   /** 中止指定会话的运行 */
   abort(sessionKey?: string): void {
     this._runtime.abort(sessionKey);

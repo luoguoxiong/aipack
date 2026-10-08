@@ -17,19 +17,11 @@
  */
 
 // ─── 分类常量 ──────────────────────────────────────────────────────
+// 契约（常量 + 类型）定义在 core/errors.ts（供 telemetry 等各层单向依赖），
+// 此处 re-export 保持 './errors' 导入路径兼容（绑定同时含值与类型）。
 
-export const AgentErrorCategory = {
-  RETRYABLE: 'retryable',
-  TIMEOUT: 'timeout',
-  AUTH: 'auth',
-  CONTEXT_OVERFLOW: 'context-overflow',
-  RATE_LIMIT: 'rate-limit',
-  INVALID_REQUEST: 'invalid-request',
-  UNKNOWN: 'unknown',
-} as const;
-
-export type AgentErrorCategory =
-  (typeof AgentErrorCategory)[keyof typeof AgentErrorCategory];
+import { AgentErrorCategory } from '../core/errors';
+export { AgentErrorCategory };
 
 // ─── AgentError 类 ─────────────────────────────────────────────────
 

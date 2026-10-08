@@ -16,7 +16,7 @@ import type { ContextResource } from './context-resource';
 import type { TaskGraph } from './task-graph';
 import type { ExtensionManager, RuntimeHooks } from './extension';
 import type { SessionStorage } from './session';
-import type { Telemetry } from '../telemetry';
+import type { Telemetry } from './telemetry';
 
 // ─── Compilation - 单次编译上下文 ──────────────────────────────────
 
@@ -103,6 +103,19 @@ export interface Runtime {
 
   /** 获取指定会话的消息列表（默认会话；会话不存在返回空数组） */
   getMessages(sessionKey?: string): Message[];
+
+  /**
+   * 异步读取指定会话的消息列表：内存未命中（如被 LRU 淘汰）时回落存储恢复。
+   * 同步 getMessages 无法等待异步 load，需确定读取时用本方法。
+   */
+  loadMessages(sessionKey?: string): Promise<Message[]>;
+
+  /**
+   * 指定会话消息的只读视图（高频轮询用）：浅拷贝数组、共享消息对象，
+   * 避免每次深拷贝整个会话历史；调用方不得修改内容。
+   * 需要可变副本时用 getMessages()（深拷贝）。
+   */
+  peekMessages(sessionKey?: string): readonly Message[];
 
   /** 终止指定会话的运行（默认会话） */
   abort(sessionKey?: string): void;
@@ -202,9 +215,15 @@ export interface RuntimeOptions {
   contextBudgetRatio?: number;
   /** 内置摘要压缩配置（可选）。未配置时保持旧行为（仅硬截断，向后兼容） */
   compaction?: CompactionOptions;
-  /** 框架级工具权限策略（可选）。未配置时工具全部放行（向后兼容）；
+  /** 框架级工具权限策略（可选）。未配置时默认 fail-closed（工具被拒绝）；
    *  生产环境建议配置 createPermissionPolicy / createAllowListPolicy / createDenyAllPolicy。 */
   permissionPolicy?: import('./permission').PermissionPolicy;
+  /**
+   * 未配置 permissionPolicy 时是否放行工具执行（显式 opt-in，默认 false = 拒绝）。
+   * 安全姿态：agent 框架默认不应裸奔执行任意工具；确需旧行为（全部放行）
+   * 时显式设为 true，或直接配置 createAllowAllPolicy()。
+   */
+  permissionFailOpen?: boolean;
   /** 审批管理器（可选）。policy.check() 返回 'pending' 时挂起工具调用，
    *  等待外部通过 ApprovalManager.resolve() 批准 / 驳回后继续（异步 Human-in-the-loop）。
    *  未配置时 'pending' 决策视为 deny（保守，向后兼容）。 */

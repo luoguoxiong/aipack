@@ -1,6 +1,4 @@
-# 源码目录散落的 tsc 编译产物
-# 合法构建产物输出在 dist/（已被根 .gitignore 的 dist/ 规则忽略）
-# 防止误运行 `tsc`（非 --noEmit）后散落产物被提交
-*.js
-*.js.map
-*.d.ts
+# （历史规则已移除：此前 tsconfig noEmit: false 导致裸跑 tsc 散落 .js/.d.ts，
+# 只能用 *.js 一刀切兜底。现 tsconfig 已改为 noEmit: true，构建产物统一经
+# tsup 输出到 dist/（已被根 .gitignore 的 dist/ 规则忽略），
+# 本目录未来可合法包含 .js 资产，不再一刀切忽略。）

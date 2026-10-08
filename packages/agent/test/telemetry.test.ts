@@ -158,6 +158,7 @@ describe('Telemetry: onToolCall', () => {
   it('工具执行后触发，携带 toolName/args/durationMs/result', async () => {
     const onToolCall = mock.fn(() => undefined);
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn(),
       tools: [echoTool],
       telemetry: { onToolCall },
@@ -231,6 +232,7 @@ describe('Telemetry: S1 turnCount / 工具状态', () => {
   it('工具循环 2 轮上报 turnCount=2', async () => {
     const onRunEnd = mock.fn(() => undefined);
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn(),
       tools: [echoTool],
       telemetry: { onRunEnd },
@@ -244,6 +246,7 @@ describe('Telemetry: S1 turnCount / 工具状态', () => {
   it('onToolCall 携带 success=true / status=ok / traceId / spanId', async () => {
     const onToolCall = mock.fn(() => undefined);
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn(),
       tools: [echoTool],
       telemetry: { onToolCall },
@@ -268,6 +271,7 @@ describe('Telemetry: S1 turnCount / 工具状态', () => {
       },
     };
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn(),
       tools: [throwingTool],
       telemetry: { onToolCall },
@@ -283,6 +287,7 @@ describe('Telemetry: S1 turnCount / 工具状态', () => {
   it('权限拒绝时 onPermissionDenied 携带 traceId', async () => {
     const denied = mock.fn(() => undefined);
     const runtime = createRuntime({
+      permissionFailOpen: true,
       streamFn: mockToolStreamFn(),
       tools: [echoTool],
       permissionPolicy: { check: async () => 'deny' },
