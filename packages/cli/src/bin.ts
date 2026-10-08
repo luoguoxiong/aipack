@@ -6,6 +6,21 @@
  */
 import { main } from './cli.js';
 
+// 管道下游提前退出（如 `aipack -p ... | head`）触发 EPIPE：
+// 静默退出而非打印"致命错误"栈（输出被截断是用户的预期行为）
+process.stdout?.on?.('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE') {
+    process.exit(0);
+  }
+  throw err;
+});
+process.stderr?.on?.('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE') {
+    process.exit(0);
+  }
+  throw err;
+});
+
 main(process.argv.slice(2))
   .then(code => process.exit(code))
   .catch(err => {

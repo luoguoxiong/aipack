@@ -2,7 +2,7 @@
  * 交互模式：REPL + 斜杠命令。
  *
  * 输入非斜杠开头的行 → 发送给 runtime 流式执行；
- * 流式期间可继续输入（提示排队/丢弃），Ctrl+C 中断当前运行，连按两次退出。
+ * 流式期间输入自动排队，本轮结束后依次处理，Ctrl+C 中断当前运行，连按两次退出。
  *
  * 权限确认期间关闭主 readline，由 select 选择器（方向键）接管终端，
  * 确认结束重建 readline。
@@ -24,11 +24,13 @@ import type {
 } from '@aipack-ai/agent';
 import type { Args } from '../args.js';
 import type { ResolvedModel } from '../builder.js';
-import { listSessionsByRecency } from '../builder.js';
+import { listSessionsByRecency, buildCustomModel } from '../builder.js';
 import type { McpPlugin } from '@aipack-ai/mcp';
+import type { ContextCompressionTransformer } from '@aipack-ai/compression';
 import { ChunkRenderer } from './render.js';
 import { ask } from '../prompt.js';
 import { printStartupBanner } from '../banner.js';
+import { buildInitialMessage, extractFileRefs } from '../initial-message.js';
 
 export interface InteractiveOptions {
   runtime: Runtime;
@@ -39,8 +41,14 @@ export interface InteractiveOptions {
   approvalManager?: ApprovalManager;
   /** MCP 插件（/mcp 命令用；无 .mcp.json 配置时为 undefined） */
   mcp?: McpPlugin;
+  /** 五级压缩转换器（覆盖 L5 handoff 钩子实现真正的会话切换） */
+  compressionTransformer?: ContextCompressionTransformer;
   /** 启动时的初始消息（aipack "帮我..."） */
   initialMessages?: string[];
+  /** 启动时的初始媒体附件（@图片，交互模式此前被丢弃） */
+  initialMedia?: string[];
+  /** /model 切换后同步压缩链使用的模型 */
+  setCompressionModel?: (aiModel: import('@aipack-ai/agent').AiModel) => void;
   /** confirm 委托（cli.ts 创建；此处包装为"关 rl → select → 重建 rl"后生效） */
   confirmRef?: { fn: (req: PermissionRequest) => Promise<boolean> };
   /** 基础确认逻辑（含"总是允许"会话记忆），由 cli.ts 注入 */
@@ -62,6 +70,9 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
   const renderer = new ChunkRenderer();
   let busy = false;
   let sigintCount = 0;
+
+  /** busy 期间排队的输入（本轮结束后依次处理） */
+  let queued: string[] = [];
 
   /** 多行输入缓存：行尾以 \ 续行时累加，直至遇到普通行 */
   let pendingMultiline: string[] = [];
@@ -130,8 +141,17 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
   /** 会话内累计 token（跨多次 send） */
   let usageTotal = { input: 0, output: 0 };
 
-  async function send(text: string): Promise<void> {
-    if (!text.trim()) return;
+  // L5 新会话交接：真正切换 activeKey（而非仅打印提示后继续写旧会话）
+  opts.compressionTransformer?.setHandoffHook(({ handoff }) => {
+    console.warn(
+      chalk.yellow(`[aipack] 上下文已达极限，已切换到新会话 ${handoff.newSessionId}（旧会话已归档）`),
+    );
+    activeKey = handoff.newSessionId;
+    usageTotal = { input: 0, output: 0 };
+  });
+
+  async function send(text: string, media?: string[]): Promise<void> {
+    if (!text.trim() && !(media && media.length > 0)) return;
     busy = true;
     sigintCount = 0;
     renderer.reset();
@@ -142,6 +162,7 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
       channel: 'cli',
       sessionKey: activeKey,
       ephemeral: args.noSession,
+      ...(media && media.length > 0 ? { media } : {}),
     };
 
     let turnUsage = { input: 0, output: 0 };
@@ -161,10 +182,18 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
       }
       printTurnStats(turnUsage, toolsUsed);
     } catch (err) {
+      // 复位渲染器（停止 spinner 等），避免异常时动画残留在终端
+      renderer.reset();
       console.log(chalk.red(`错误: ${err instanceof Error ? err.message : String(err)}`));
     } finally {
       busy = false;
-      rl.prompt();
+      // 依次处理 busy 期间排队的输入；无排队才回到提示符
+      const next = queued.shift();
+      if (next !== undefined) {
+        void onLine(next);
+      } else {
+        rl.prompt();
+      }
     }
   }
 
@@ -218,15 +247,22 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
         const provider = slash === -1 ? model.aiModel.provider : rest.slice(0, slash);
         const id = slash === -1 ? rest : rest.slice(slash + 1);
         const found = getBuiltinModels(provider).find(m => m.id === id);
-        if (!found) {
-          console.log(chalk.yellow(`未找到内置模型 ${provider}/${id}，可用:`));
-          console.log(getBuiltinModels(provider).map(m => `  ${m.id}`).join('\n') || '  (无)');
-          break;
+        if (found) {
+          runtime.setModel(adaptAiModel(found));
+          model.aiModel = found;
+          model.custom = false;
+          opts.setCompressionModel?.(found);
+          console.log(chalk.green(`已切换到 ${provider}/${id}`));
+        } else {
+          // 目录外自定义模型：按提供商 API 推断构造（上下文窗口为保守默认值）
+          const custom = buildCustomModel(provider, id);
+          runtime.setModel(adaptAiModel(custom));
+          model.aiModel = custom;
+          model.custom = true;
+          opts.setCompressionModel?.(custom);
+          console.log(chalk.green(`已切换到自定义模型 ${provider}/${id}（不在内置目录，参数按提供商推断）`));
+          console.log(chalk.dim(`内置模型可用: ${getBuiltinModels(provider).map(m => m.id).join(', ') || '(无)'}`));
         }
-        runtime.setModel(adaptAiModel(found));
-        model.aiModel = found;
-        model.custom = false;
-        console.log(chalk.green(`已切换到 ${provider}/${id}`));
         break;
       }
 
@@ -250,11 +286,14 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
         break;
       }
 
-      case '/session':
+      case '/session': {
         console.log(`会话 key: ${chalk.cyan(activeKey)}`);
-        console.log(`消息数: ${runtime.getMessages(activeKey).length}`);
+        // 异步 loadMessages：同步 getMessages 在会话被 LRU 淘汰后返回空数组，显示错误数据
+        const messages = await runtime.loadMessages(activeKey);
+        console.log(`消息数: ${messages.length}`);
         console.log(`持久化: ${args.noSession ? chalk.yellow('否（--no-session）') : chalk.green(storage ? '是' : '否（无存储）')}`);
         break;
+      }
 
       case '/sessions': {
         if (!storage) {
@@ -267,7 +306,20 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
           break;
         }
         console.log(sessions.slice(0, 10).map((s, i) => `${s === activeKey ? chalk.green('▸ ') : '  '}${i + 1}. ${s}`).join('\n'));
-        console.log(chalk.dim('切换: 退出后用 aipack --session <key> 恢复'));
+        // /sessions <n>：直接切换到列表中的会话（此前只能看不能切，跨会话续聊要退出重进）
+        const idx = Number.parseInt(rest, 10);
+        if (Number.isInteger(idx) && idx >= 1 && idx <= Math.min(sessions.length, 10)) {
+          const target = sessions[idx - 1];
+          if (target === activeKey) {
+            console.log(chalk.dim('已是当前会话'));
+            break;
+          }
+          activeKey = target;
+          usageTotal = { input: 0, output: 0 };
+          console.log(chalk.green(`已切换到会话 ${target}`));
+        } else {
+          console.log(chalk.dim('切换: /sessions <编号>（如 /sessions 2）；退出后也可用 aipack --session <key> 恢复'));
+        }
         break;
       }
 
@@ -283,7 +335,9 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
         if (mode === null) {
           console.log(chalk.yellow('无可压缩内容（消息过少或压缩已通过 --no-compaction 关闭）'));
         } else {
-          console.log(chalk.green(`已完成${mode === 'summary' ? '摘要压缩' : '截断压缩'}，消息数: ${runtime.getMessages(activeKey).length}`));
+          // 异步 loadMessages：同步 getMessages 在 LRU 淘汰后给出错误数量
+          const count = (await runtime.loadMessages(activeKey)).length;
+          console.log(chalk.green(`已完成${mode === 'summary' ? '摘要压缩' : '截断压缩'}，消息数: ${count}`));
         }
         break;
       }
@@ -367,7 +421,7 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
   ${chalk.green('/thinking <级别>')}         ${chalk.dim('off/minimal/low/medium/high/max')}
   ${chalk.green('/system <文本>')}           替换系统提示词
   ${chalk.green('/session')}                  当前会话信息
-  ${chalk.green('/sessions')}                 列出历史会话
+  ${chalk.green('/sessions [编号]')}             列出历史会话 / 切换到指定会话
   ${chalk.green('/clear')}                    清空当前会话（仅内存）
   ${chalk.green('/compact')}                  手动压缩会话历史（释放上下文空间）
   ${chalk.green('/tools')}                    查看工具集与权限配置
@@ -412,13 +466,32 @@ ${chalk.dim('输入提示:')}
     rl.setPrompt(buildPrompt());
 
     if (busy) {
-      console.log(chalk.dim('（运行中，输入被忽略；Ctrl+C 中断）'));
-      rl.prompt();
+      queued.push(full);
+      console.log(chalk.dim('（运行中，输入已排队，本轮结束后处理）'));
       return;
     }
     if (full.startsWith('/')) {
       await handleCommand(full);
       rl.prompt();
+      return;
+    }
+    // REPL 行内 @文件 引用：展开为文件上下文（图片走 media 多模态）
+    const refs = extractFileRefs(full);
+    if (refs.files.length > 0) {
+      const built = await buildInitialMessage(
+        refs.text ? [refs.text] : [],
+        refs.files,
+        undefined,
+      );
+      // 图片附件 + 非视觉模型：提前警告并跳过（API 原始报错难定位）
+      let media = built.media;
+      if (media.length > 0 && !model.aiModel.input.includes('image')) {
+        console.log(chalk.yellow(
+          `当前模型 ${model.aiModel.provider}/${model.aiModel.id} 不支持图片输入，${media.length} 个图片附件已忽略（/model 可切换视觉模型）`,
+        ));
+        media = [];
+      }
+      await send(built.text, media);
       return;
     }
     await send(full);
@@ -450,7 +523,7 @@ ${chalk.dim('输入提示:')}
 
   // ── 初始消息 ──
   if (opts.initialMessages && opts.initialMessages.length > 0) {
-    await send(opts.initialMessages.join('\n'));
+    await send(opts.initialMessages.join('\n'), opts.initialMedia);
   }
 
   // 保持存活直至用户退出（rl close → cleanup → resolve）

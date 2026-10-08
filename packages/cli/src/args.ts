@@ -30,6 +30,10 @@ export interface Args {
   listModels?: string | true;
   /** 保守模式：写文件与 shell 全部人工确认 */
   safe?: boolean;
+  /** 自动批准一切（含危险命令），CI/管道用 */
+  yes?: boolean;
+  /** 单次请求最大 agentic 回合数（默认 50） */
+  maxTurns?: number;
   /** 关闭上下文压缩（内置摘要压缩与五级压缩 transformer 均不启用） */
   noCompaction?: boolean;
   /** 压缩配置文件路径（JSON，DeepPartial<CompressionConfig> 结构，叠加在默认配置上） */
@@ -54,84 +58,118 @@ export function parseArgs(args: string[]): Args {
     diagnostics: [],
   };
 
+  /** 带值选项 → 处理函数（调用时值已保证存在） */
+  const valueFlags: Record<string, (v: string) => void> = {
+    '--mode': v => {
+      if (v === 'text' || v === 'json') result.mode = v;
+      else result.diagnostics.push({ type: 'error', message: `无效的 mode: ${v}（可选 text / json）` });
+    },
+    '--provider': v => { result.provider = v; },
+    '--model': v => { result.model = v; },
+    '--api-key': v => {
+      result.apiKey = v;
+      // 命令行参数对 ps 等进程列表可见，提示改用环境变量（仍允许使用，CI 场景需要）
+      result.diagnostics.push({
+        type: 'warning',
+        message: '命令行传入 --api-key 会暴露在进程列表中，建议改用环境变量（如 DEEPSEEK_API_KEY）',
+      });
+    },
+    '--system-prompt': v => { result.systemPrompt = v; },
+    '--append-system-prompt': v => { (result.appendSystemPrompt ??= []).push(v); },
+    '--thinking': v => {
+      if (isValidThinkingLevel(v)) result.thinking = v;
+      else {
+        // 与 --mode 的无效值处理一致：报错退出（而非降级警告后继续跑错配置）
+        result.diagnostics.push({
+          type: 'error',
+          message: `无效的思考级别 "${v}"。可选: ${VALID_THINKING_LEVELS.join(', ')}`,
+        });
+      }
+    },
+    '--name': v => { result.name = v; },
+    '--session': v => { result.session = v; },
+    '--session-dir': v => { result.sessionDir = v; },
+    '--tools': v => { result.tools = v.split(',').map(s => s.trim()).filter(Boolean); },
+    '--exclude-tools': v => { result.excludeTools = v.split(',').map(s => s.trim()).filter(Boolean); },
+    '--max-turns': v => {
+      const n = Number.parseInt(v, 10);
+      if (Number.isInteger(n) && n > 0) result.maxTurns = n;
+      else result.diagnostics.push({ type: 'error', message: `无效的 --max-turns: ${v}（需为正整数）` });
+    },
+    '--compaction-config': v => { result.compactionConfig = v; },
+  };
+
+  /** 短选项 → 等价长选项（带值） */
+  const shortWithValue: Record<string, string> = {
+    '-n': '--name',
+    '-t': '--tools',
+    '-xt': '--exclude-tools',
+  };
+
   for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
+    let arg = args[i];
+    // `--` 之后全部视为位置消息（可传递以 - 开头的消息，如 "aipack -- '-p 参数说明'"）
+    if (arg === '--') {
+      result.messages.push(...args.slice(i + 1));
+      break;
+    }
+    let inlineValue: string | undefined;
+    // 支持 --opt=value 形式
+    if (arg.startsWith('--')) {
+      const eq = arg.indexOf('=');
+      if (eq !== -1) {
+        inlineValue = arg.slice(eq + 1);
+        arg = arg.slice(0, eq);
+      }
+    }
+    const flag = shortWithValue[arg] ?? arg;
 
     if (arg === '--help' || arg === '-h') {
       result.help = true;
     } else if (arg === '--version' || arg === '-v') {
       result.version = true;
-    } else if (arg === '--mode' && i + 1 < args.length) {
-      const mode = args[++i];
-      if (mode === 'text' || mode === 'json') {
-        result.mode = mode;
-      } else {
-        result.diagnostics.push({ type: 'error', message: `无效的 mode: ${mode}（可选 text / json）` });
-      }
     } else if (arg === '--continue' || arg === '-c') {
       result.continue = true;
     } else if (arg === '--resume' || arg === '-r') {
       result.resume = true;
-    } else if (arg === '--provider' && i + 1 < args.length) {
-      result.provider = args[++i];
-    } else if (arg === '--model' && i + 1 < args.length) {
-      result.model = args[++i];
-    } else if (arg === '--api-key' && i + 1 < args.length) {
-      result.apiKey = args[++i];
-    } else if (arg === '--system-prompt' && i + 1 < args.length) {
-      result.systemPrompt = args[++i];
-    } else if (arg === '--append-system-prompt' && i + 1 < args.length) {
-      result.appendSystemPrompt = result.appendSystemPrompt ?? [];
-      result.appendSystemPrompt.push(args[++i]);
-    } else if (arg === '--thinking' && i + 1 < args.length) {
-      const level = args[++i];
-      if (isValidThinkingLevel(level)) {
-        result.thinking = level;
-      } else {
-        result.diagnostics.push({
-          type: 'warning',
-          message: `无效的思考级别 "${level}"。可选: ${VALID_THINKING_LEVELS.join(', ')}`,
-        });
-      }
-    } else if (arg === '--name' || arg === '-n') {
-      if (i + 1 < args.length) {
-        result.name = args[++i];
-      } else {
-        result.diagnostics.push({ type: 'error', message: '--name 需要一个值' });
-      }
     } else if (arg === '--no-session') {
       result.noSession = true;
-    } else if (arg === '--session' && i + 1 < args.length) {
-      result.session = args[++i];
-    } else if (arg === '--session-dir' && i + 1 < args.length) {
-      result.sessionDir = args[++i];
-    } else if ((arg === '--tools' || arg === '-t') && i + 1 < args.length) {
-      result.tools = args[++i].split(',').map(s => s.trim()).filter(Boolean);
-    } else if ((arg === '--exclude-tools' || arg === '-xt') && i + 1 < args.length) {
-      result.excludeTools = args[++i].split(',').map(s => s.trim()).filter(Boolean);
     } else if (arg === '--no-tools' || arg === '-nt') {
       result.noTools = true;
     } else if (arg === '--safe') {
       result.safe = true;
     } else if (arg === '--no-compaction') {
       result.noCompaction = true;
-    } else if (arg === '--compaction-config' && i + 1 < args.length) {
-      result.compactionConfig = args[++i];
+    } else if (arg === '--yes' || arg === '-y') {
+      result.yes = true;
+    } else if (valueFlags[flag]) {
+      // `--` 是选项/消息分隔符，不能作为选项值被消费（否则其后消息全部丢失）
+      const next = i + 1 < args.length ? args[i + 1] : undefined;
+      const v = inlineValue ?? (next !== undefined && next !== '--' ? args[++i] : undefined);
+      if (v === undefined) {
+        result.diagnostics.push({ type: 'error', message: `选项 ${arg} 需要一个值` });
+      } else {
+        valueFlags[flag](v);
+      }
     } else if (arg === '--print' || arg === '-p') {
       result.print = true;
-      const next = args[i + 1];
-      if (next !== undefined && !next.startsWith('@') && !next.startsWith('-')) {
-        result.messages.push(next);
-        i++;
-      }
+      // 内联值优先（--print=消息）；否则吞并紧随的非选项消息
+      const v = inlineValue ?? (() => {
+        const next = args[i + 1];
+        return next !== undefined && next !== '--' && !next.startsWith('@') && !next.startsWith('-')
+          ? (i++, next)
+          : undefined;
+      })();
+      if (v !== undefined) result.messages.push(v);
     } else if (arg === '--list-models') {
-      const next = args[i + 1];
-      if (next !== undefined && !next.startsWith('-') && !next.startsWith('@')) {
-        result.listModels = next;
-        i++;
-      } else {
-        result.listModels = true;
-      }
+      // 内联值优先（--list-models=搜索词）
+      const v = inlineValue ?? (() => {
+        const next = args[i + 1];
+        return next !== undefined && next !== '--' && !next.startsWith('-') && !next.startsWith('@')
+          ? (i++, next)
+          : undefined;
+      })();
+      result.listModels = v ?? true;
     } else if (arg.startsWith('@')) {
       result.fileArgs.push(arg.slice(1));
     } else if (arg.startsWith('--')) {
@@ -141,6 +179,32 @@ export function parseArgs(args: string[]): Args {
     } else {
       result.messages.push(arg);
     }
+  }
+
+  // ── 选项冲突/组合检查（静默忽略某一侧会让用户误以为配置生效）──
+  if (result.print && result.mode === 'json') {
+    result.diagnostics.push({
+      type: 'warning',
+      message: '同时指定 --print 与 --mode json，将以 JSON 模式运行（事件流输出到 stdout，不再输出纯文本）',
+    });
+  }
+  if (result.continue && result.session) {
+    result.diagnostics.push({
+      type: 'warning',
+      message: `同时指定 --continue 与 --session，将使用 --session "${result.session}"（忽略 --continue）`,
+    });
+  }
+  if (result.noSession && result.sessionDir) {
+    result.diagnostics.push({
+      type: 'warning',
+      message: '--no-session 与 --session-dir 同用时不会持久化会话（--session-dir 被忽略）',
+    });
+  }
+  if (result.yes && result.safe) {
+    result.diagnostics.push({
+      type: 'warning',
+      message: '--yes 与 --safe 同用时 --yes 优先生效（全部自动批准，含危险命令）',
+    });
   }
 
   return result;
@@ -157,6 +221,7 @@ export function printHelp(): void {
 
 ${head('用法:')}
   ${c.cyan(APP_NAME)} ${c.dim('[选项]')} ${c.yellow('[@文件...]')} ${c.dim('[消息...]')}
+  ${c.dim('消息以 - 开头时用')} ${c.yellow('--')} ${c.dim('分隔选项与消息，如: aipack -- "-p 是什么参数"')}
 
 ${head('子命令:')}
 ${opt('approvals list', '列出未决审批单')}
@@ -188,6 +253,7 @@ ${opt('--tools, -t <列表>', '工具白名单（逗号分隔）')}
 ${opt('--exclude-tools, -xt <列表>', '工具黑名单（逗号分隔）')}
 ${opt('--no-tools, -nt', '禁用全部工具')}
 ${opt('--safe', '保守模式：写文件/shell 全部人工确认')}
+${opt('--yes, -y', '自动批准一切（含危险命令），CI/管道用')}
 
   ${c.dim('内置工具:')} read · write · edit · bash · find · grep · ls
   ${c.dim('默认权限:')} 读/写文件静默放行（工作区范围）；bash 仅危险命令需确认
@@ -198,6 +264,7 @@ ${opt('--no-compaction', '关闭上下文压缩（长会话可能溢出）')}
 ${opt('--compaction-config <文件>', '压缩配置 JSON（覆盖默认阈值）')}
 
 ${head('其他:')}
+${opt('--max-turns <n>', '单次请求最大 agentic 回合数（默认 50）')}
 ${opt('--system-prompt <文本>', '替换默认系统提示词')}
 ${opt('--append-system-prompt <文本>', '追加系统提示词（可多次）')}
 ${opt('--help, -h', '显示本帮助')}

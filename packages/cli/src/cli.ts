@@ -17,6 +17,11 @@ import { createToolConfirmHandler } from './confirm.js';
 import { createRequest } from '@aipack-ai/agent';
 import { VERSION } from './version.js';
 
+/** 模型是否支持图片输入（input 能力缺失时保守视为不支持） */
+function supportsImage(input?: readonly string[]): boolean {
+  return Array.isArray(input) && input.includes('image');
+}
+
 export async function main(argv: string[]): Promise<number> {
   // ── 子命令：approvals ──
   if (argv[0] === 'approvals' || argv[0] === 'approval') {
@@ -51,23 +56,35 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   // ── 管道 stdin（print / json 模式）──
+  // 无 -p/--mode json 却从管道读入（如 `echo ... | aipack` 忘了 -p）：
+  // 交互模式的 readline 会立即收到 EOF 而退出（可能中断正在进行的运行），
+  // 自动降级为 print 模式并提示
+  let printMode = args.print;
+  if (!printMode && args.mode !== 'json' && !process.stdin.isTTY) {
+    printMode = true;
+    console.error(chalk.yellow('检测到管道 stdin 且未指定 -p，自动以 print 模式运行（如需交互请直接运行 aipack）'));
+  }
+
   let stdinText: string | undefined;
-  if ((args.print || args.mode === 'json') && !process.stdin.isTTY) {
+  if ((printMode || args.mode === 'json') && !process.stdin.isTTY) {
     stdinText = await readStreamAll(process.stdin);
   }
 
   // ── 初始消息 ──
   const initial = await buildInitialMessage(args.messages, args.fileArgs, stdinText);
 
-  const isNonInteractive = args.print || args.mode === 'json';
+  const isNonInteractive = printMode || args.mode === 'json';
   if (isNonInteractive && !initial.text.trim() && initial.media.length === 0) {
     console.error(chalk.red('非交互模式需要提供消息（位置参数、@文件或管道 stdin）'));
     return 1;
   }
 
   // ── confirm 委托：选择式确认（方向键），交互模式接管后包装 rl 重建 ──
-  // 默认自动放行非危险命令；--safe 时全部人工确认
-  const toolConfirm = createToolConfirmHandler({ autoApproveSafe: !args.safe });
+  // 默认自动放行非危险命令；--safe 时全部人工确认；--yes 时全部自动放行
+  const toolConfirm = createToolConfirmHandler({
+    autoApproveSafe: !args.safe,
+    yes: args.yes === true,
+  });
   const confirmRef: { fn: (req: PermissionRequest) => Promise<boolean> } = {
     fn: req => toolConfirm(req),
   };
@@ -85,7 +102,31 @@ export async function main(argv: string[]): Promise<number> {
     return 1;
   }
 
+  // -c 未命中历史会话时明确提示（避免用户以为在继续旧会话）
+  if (args.continue && !built.resumed) {
+    console.error(chalk.yellow('当前目录无历史会话，已新建会话'));
+  }
+
+  // --provider 与 --model provider/id 冲突时明确告知（此前被静默忽略）
+  if (args.provider && args.model && args.model.includes('/')) {
+    const modelProvider = args.model.slice(0, args.model.indexOf('/'));
+    if (modelProvider !== args.provider) {
+      console.error(chalk.yellow(
+        `--provider ${args.provider} 已被 --model 中的 "${modelProvider}/" 前缀覆盖`,
+      ));
+    }
+  }
+
   // ── 模式分发 ──
+  // 图片附件 + 非视觉模型预检：提前给出可定位的警告（否则 API 原始报错难以排查）
+  if (initial.media.length > 0 && !supportsImage(built.model.aiModel.input)) {
+    console.error(chalk.yellow(
+      `当前模型 ${built.model.aiModel.provider}/${built.model.aiModel.id} 不支持图片输入，` +
+      `${initial.media.length} 个图片附件将被忽略（可换用 --model 指定视觉模型）`,
+    ));
+    initial.media = [];
+  }
+
   try {
     if (args.mode === 'json') {
       const request = createRequest(initial.text || '(空)', {
@@ -95,7 +136,7 @@ export async function main(argv: string[]): Promise<number> {
         media: initial.media,
       });
       await runJsonMode(built.runtime, request);
-    } else if (args.print) {
+    } else if (printMode) {
       const request = createRequest(initial.text || '(空)', {
         channel: 'cli',
         sessionKey: built.sessionKey,
@@ -112,15 +153,28 @@ export async function main(argv: string[]): Promise<number> {
         storage: built.storage,
         approvalManager: built.approvalManager,
         mcp: built.mcp,
-        initialMessages: args.messages.length > 0 ? [initial.text] : [],
+        // 有文本或媒体附件（@文件/@图片）均作为初始消息发送；
+        // 此前仅有位置参数消息时才发送，纯 @文件 会被静默丢弃
+        initialMessages:
+          initial.text.trim() || initial.media.length > 0
+            ? [initial.text.trim() || '（见附件）']
+            : [],
+        initialMedia: initial.media,
+        compressionTransformer: built.compressionTransformer,
+        setCompressionModel: built.setCompressionModel,
         confirmRef,
         baseConfirm: toolConfirm,
       });
     }
   } finally {
-    built.approvalManager?.close();
-    await built.mcp?.dispose().catch(() => {});
-    await built.runtime.close();
+    // 资源收尾兜底：单个清理失败不应吞掉主流程结果
+    try {
+      built.approvalManager?.close();
+      await built.mcp?.dispose().catch(() => {});
+      await built.runtime.close();
+    } catch (err) {
+      console.error(chalk.red(`资源清理失败: ${err instanceof Error ? err.message : String(err)}`));
+    }
   }
 
   return process.exitCode === 1 ? 1 : 0;

@@ -24,14 +24,6 @@ import {
   createApprovalManager,
   FileApprovalStore,
 } from '@aipack-ai/agent';
-import {
-  createCompressionTransformer,
-  loadCompressionConfig,
-  type CompressionConfig,
-  type ContextCompressionTransformer,
-} from '@aipack-ai/compression';
-import { createMcpPlugin, loadMcpConfig } from '@aipack-ai/mcp';
-import type { McpPlugin } from '@aipack-ai/mcp';
 import type {
   Runtime,
   Tool,
@@ -40,10 +32,19 @@ import type {
   PermissionRequest,
   AiModel,
   PermissionPolicy,
+  StreamFn,
 } from '@aipack-ai/agent';
+import {
+  createCompressionTransformer,
+  loadCompressionConfig,
+  type CompressionConfig,
+  type ContextCompressionTransformer,
+} from '@aipack-ai/compression';
+import { createMcpPlugin, loadMcpConfig } from '@aipack-ai/mcp';
+import type { McpPlugin } from '@aipack-ai/mcp';
 import type { Args } from './args.js';
-import { selectTools } from './tools.js';
-import { defaultSessionDir, defaultConfigDir, VERSION } from './version.js';
+import { selectTools, BUILTIN_TOOLS } from './tools.js';
+import { defaultSessionDir, defaultConfigDir, legacyEncodeDir, VERSION } from './version.js';
 
 // ─── 配置文件 ─────────────────────────────────────────────────────
 
@@ -60,6 +61,8 @@ export interface AipackCliConfig {
     permission?: string;
     decision: 'allow' | 'deny' | 'confirm' | 'pending';
   }>;
+  /** 单次请求最大 agentic 回合数（默认 50） */
+  maxTurns?: number;
 }
 
 export async function loadConfig(cwd: string): Promise<AipackCliConfig> {
@@ -67,11 +70,19 @@ export async function loadConfig(cwd: string): Promise<AipackCliConfig> {
     const full = path.join(cwd, file);
     try {
       await fs.access(full);
+    } catch {
+      continue; // 文件不存在 → 尝试下一个
+    }
+    try {
       const mod = await import(pathToFileURL(full).href);
       const config = (mod.default ?? mod) as AipackCliConfig;
       return config ?? {};
-    } catch {
-      // 文件不存在或加载失败 → 继续尝试 / 返回空配置
+    } catch (err) {
+      // 配置文件存在但加载/解析失败：明确告警（不能静默回退默认配置，否则用户以为生效了）
+      console.warn(
+        `[aipack] 配置文件加载失败（${file}），已忽略该文件:`,
+        err instanceof Error ? err.message : String(err),
+      );
     }
   }
   return {};
@@ -119,9 +130,16 @@ function detectDefaultProvider(): { id: string; modelId: string } {
 }
 
 /** 为目录外模型构造最小可用的 ai Model（推断 API 类型与 baseUrl） */
-function buildCustomModel(providerId: string, modelId: string): AiModel {
+export function buildCustomModel(providerId: string, modelId: string): AiModel {
   const meta = BUILTIN_PROVIDERS.find(p => p.id === providerId);
   const api = providerId === 'anthropic' ? 'anthropic-messages' : 'openai-completions';
+  // 输入能力推断：取该提供商内置模型中最常见的能力集（此前硬编码 ['text']，
+  // 自定义视觉模型也会被误判为纯文本）
+  const providerModels = getBuiltinModels(providerId);
+  const withImage = providerModels.filter(m => m.input.includes('image')).length;
+  const input = withImage > 0 && withImage >= providerModels.length / 2
+    ? ['text', 'image']
+    : ['text'];
   return {
     id: modelId,
     name: modelId,
@@ -129,7 +147,7 @@ function buildCustomModel(providerId: string, modelId: string): AiModel {
     api,
     baseUrl: meta?.baseUrl,
     reasoning: false,
-    input: ['text'],
+    input,
     contextWindow: 128000,
     maxTokens: 16384,
   } as AiModel;
@@ -157,8 +175,9 @@ export interface SessionChoice {
 /** 列出存储中按 updatedAt 降序的会话 key（最多 50 个） */
 export async function listSessionsByRecency(storage: SessionStorage): Promise<string[]> {
   const keys = await storage.list();
+  // 上限 50：展示（10/15 个）与 -c（1 个）场景足够，避免全量 load 造成无谓开销
   const entries = await Promise.all(
-    keys.slice(0, 200).map(async key => {
+    keys.slice(0, 50).map(async key => {
       const s = await storage.load(key);
       return { key, updatedAt: s?.updatedAt ?? '' };
     }),
@@ -173,7 +192,19 @@ export async function resolveSessionKey(
   storage: SessionStorage | undefined,
 ): Promise<SessionChoice> {
   if (args.noSession) return { sessionKey: `ephemeral-${Date.now().toString(36)}`, resumed: false };
-  if (args.session) return { sessionKey: sanitizeKey(args.session), resumed: true };
+  if (args.session) {
+    const key = sanitizeKey(args.session);
+    // 存在性校验：--session 指向不存在的 key 时明确提示（与 -c 未命中行为一致），
+    // 避免"以为在恢复旧会话、实际在新建"
+    if (storage) {
+      const existing = await storage.load(key);
+      if (!existing) {
+        console.warn(`[aipack] 会话 "${key}" 不存在，将新建会话`);
+        return { sessionKey: key, resumed: false };
+      }
+    }
+    return { sessionKey: key, resumed: true };
+  }
   if (args.name) return { sessionKey: sanitizeKey(args.name), resumed: false };
 
   if (args.continue && storage) {
@@ -185,8 +216,13 @@ export async function resolveSessionKey(
   return { sessionKey: `s-${Date.now().toString(36)}`, resumed: false };
 }
 
+/**
+ * 会话 key 安全化：ASCII 安全字符保留，其余字符 percent-encode。
+ * 旧实现把非安全字符统一折叠为 "_"，"我的项目" 与 "你的项目" 碰撞成同一 key "___"；
+ * percent-encode 后互不冲突。纯 ASCII 旧 key 编码不变（向后兼容）。
+ */
 function sanitizeKey(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_\-:.]/g, '_');
+  return name.replace(/[^a-zA-Z0-9_\-:.]/g, ch => encodeURIComponent(ch));
 }
 
 // ─── 权限策略 ─────────────────────────────────────────────────────
@@ -203,12 +239,21 @@ export interface BuildRuntimeOptions {
 export interface BuiltRuntime {
   runtime: Runtime;
   sessionKey: string;
+  /** 是否复用了已存在的会话（--continue 命中 / --session） */
+  resumed: boolean;
   storage?: SessionStorage;
   approvalManager?: ApprovalManager;
   model: ResolvedModel;
   config: AipackCliConfig;
   /** 五级压缩转换器（--no-compaction 时为 undefined） */
   compressionTransformer?: ContextCompressionTransformer;
+  /**
+   * 更新压缩链使用的模型（/model 切换时调用）。
+   * 压缩 transformer 持有构造时的 streamFn/model 闭包，不更新会导致
+   * 切换模型后 L2/L3/L5 的摘要请求仍走旧模型。
+   * 注意：contextWindow 在构造时固定，切换后由 runtime 内置压缩兜底。
+   */
+  setCompressionModel: (aiModel: AiModel) => void;
   /** MCP 插件（/mcp 命令用；无 .mcp.json 配置时为 undefined） */
   mcp?: McpPlugin;
 }
@@ -244,6 +289,10 @@ async function loadCompressionSettings(
 /**
  * 构建五级压缩转换器（L1 裁剪 → L2 摘要 → L3 状态提取 → L4 检查点 → L5 新会话交接）。
  * 作为第一级 transformer 加入 runtime 降级链：五级压缩 → runtime 内置摘要压缩 → 硬截断。
+ *
+ * streamFn 用"委托"实现：transformer 构造后持有闭包，无法替换；
+ * 委托函数每次调用时读取最新的 compressionAiModel，/model 切换后
+ * L2/L3/L5 的摘要请求跟随当前模型（而非构造时的旧模型）。
  */
 async function buildCompressionTransformer(opts: {
   args: Args;
@@ -251,19 +300,33 @@ async function buildCompressionTransformer(opts: {
   model: ResolvedModel;
   streamFn: ReturnType<typeof createStreamFnFromAi>;
   storage?: SessionStorage;
-}): Promise<ContextCompressionTransformer | undefined> {
+}): Promise<{
+  transformer: ContextCompressionTransformer;
+  setModel: (aiModel: AiModel) => void;
+} | undefined> {
   if (opts.args.noCompaction) return undefined;
 
   const compressionConfig = await loadCompressionSettings(opts.args, opts.config);
+
+  // 可变模型引用：setCompressionModel 更新，委托 streamFn 读取
+  let compressionAiModel = opts.model.aiModel;
+  const apiKey = opts.args.apiKey;
+  const delegatingStreamFn: StreamFn = async function* (_m, context, streamOptions) {
+    // 忽略 transformer 传入的（构造时闭包捕获的旧）model，始终使用当前模型
+    const fn = createStreamFnFromAi(compressionAiModel, { apiKey });
+    yield* fn(adaptAiModel(compressionAiModel), context, streamOptions);
+  };
+
   const transformer = createCompressionTransformer({
     config: compressionConfig,
     model: adaptAiModel(opts.model.aiModel),
-    streamFn: opts.streamFn,
+    streamFn: delegatingStreamFn,
     sessionStorage: opts.storage,
     contextWindow: opts.model.aiModel.contextWindow,
   });
 
-  // L5 交接钩子：runtime 暂无 switchSession API，先输出提示（历史会话已归档保留）
+  // L5 交接钩子：默认仅提示（交互模式会覆盖此钩子以真正切换 activeKey；
+  // print/json 单次请求模式下会话随进程结束，提示即足够）
   transformer.setHandoffHook(({ handoff }) => {
     console.warn(
       `[aipack] 上下文已达极限，已生成交接文档并切换到新会话 ${handoff.newSessionId}。` +
@@ -271,7 +334,10 @@ async function buildCompressionTransformer(opts: {
     );
   });
 
-  return transformer;
+  return {
+    transformer,
+    setModel: (aiModel: AiModel) => { compressionAiModel = aiModel; },
+  };
 }
 
 const DEFAULT_APPROVAL_CAPABILITIES = ['fs:write', 'shell:exec'];
@@ -287,17 +353,27 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
   });
 
   // ── 工具 ──
-  const tools: Tool[] = selectTools({
+  const toolSelection = selectTools({
     tools: args.tools,
     excludeTools: args.excludeTools,
     noTools: args.noTools,
   });
+  const tools: Tool[] = toolSelection.tools;
+  if (toolSelection.unknown.length > 0) {
+    // 白/黑名单中的未知工具名：拼错即静默失效（黑名单拼错 = 权限范围意外扩大）
+    console.warn(
+      `[aipack] --tools/--exclude-tools 中的未知工具名（已忽略）: ${toolSelection.unknown.join(', ')}` +
+      `；可用工具: ${BUILTIN_TOOLS.map(t => t.name).join(', ')}`,
+    );
+  }
 
   // ── 会话存储 ──
+  // 目录编码兼容：旧编码（非安全字符统一折叠为 _，存在 /a/b 与 /a.b 碰撞）→ 新编码（encodeURIComponent，无碰撞）。
+  // 旧目录已存在而新目录尚未创建时继续沿用旧目录，避免存量会话"消失"。
   const storage = args.noSession
     ? undefined
     : createFileSessionStorage({
-        baseDir: args.sessionDir ?? defaultSessionDir(cwd),
+        baseDir: args.sessionDir ?? await resolveSessionDir(cwd),
       });
   const session = await resolveSessionKey(args, storage);
 
@@ -336,7 +412,7 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
   const systemPrompt = buildSystemPrompt(args);
 
   // ── 上下文压缩（五级 transformer + runtime 内置摘要兜底）──
-  const compressionTransformer = await buildCompressionTransformer({
+  const compression = await buildCompressionTransformer({
     args,
     config,
     model,
@@ -356,8 +432,9 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
     thinkingLevel: args.thinking,
     permissionPolicy: policy,
     approvals: approvalManager,
-    maxTurns: 50,
-    transformers: compressionTransformer ? [compressionTransformer] : [],
+    // 回合数上限：--max-turns > aipack.config.js > 默认 50
+    maxTurns: args.maxTurns ?? config.maxTurns ?? 50,
+    transformers: compression ? [compression.transformer] : [],
     // MCP 插件：beforeRun 懒连接，工具一经包装即获得权限/超时/钩子能力
     ...(mcp ? { extensions: [...mcp.extensions] } : {}),
     // --no-compaction 时一并关闭内置摘要压缩（仅保留硬截断兜底）
@@ -367,13 +444,36 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
   return {
     runtime,
     sessionKey: session.sessionKey,
+    resumed: session.resumed,
     storage,
     approvalManager,
     model,
     config,
-    compressionTransformer,
+    compressionTransformer: compression?.transformer,
+    setCompressionModel: compression?.setModel ?? (() => {}),
     mcp,
   };
+}
+
+/**
+ * 解析会话存储目录：优先新编码目录；旧编码目录已存在且新目录不存在时
+ * 沿用旧目录（兼容存量会话，避免升级后 --continue 找不到历史）。
+ */
+async function resolveSessionDir(cwd: string): Promise<string> {
+  const modern = defaultSessionDir(cwd);
+  const legacy = path.join(defaultConfigDir(), 'cli-sessions', legacyEncodeDir(cwd));
+  if (modern === legacy) return modern;
+  try {
+    await fs.access(legacy);
+    try {
+      await fs.access(modern);
+    } catch {
+      return legacy; // 旧目录存在、新目录不存在 → 继续用旧目录
+    }
+  } catch {
+    // 旧目录不存在 → 新目录
+  }
+  return modern;
 }
 
 function buildPermissionPolicy(opts: {

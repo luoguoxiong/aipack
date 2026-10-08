@@ -84,6 +84,7 @@ JSON 模式输出示例：
 | `-xt, --exclude-tools <列表>` | 工具黑名单 |
 | `-nt, --no-tools` | 禁用全部工具 |
 | `--safe` | 保守模式：写文件与 shell 全部人工确认 |
+| `--yes, -y` | 自动批准一切（含危险命令），CI/管道用 |
 
 内置工具：
 
@@ -102,6 +103,7 @@ JSON 模式输出示例：
 |------|------|
 | `--system-prompt <文本>` | 替换默认系统提示词 |
 | `--append-system-prompt <文本>` | 追加系统提示词（可多次） |
+| `--max-turns <n>` | 单次请求最大 agentic 回合数（默认 50，也可在 `aipack.config.js` 配置 `maxTurns`） |
 | `-h, --help` / `-v, --version` | 帮助 / 版本 |
 
 ## 默认权限策略

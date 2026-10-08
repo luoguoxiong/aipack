@@ -20,13 +20,24 @@ export async function confirm(question: string): Promise<boolean> {
   return answer === 'y' || answer === 'Y' || answer === 'yes';
 }
 
-/** 读取可读流全部内容（管道 stdin） */
+/**
+ * 读取可读流全部内容（管道 stdin）。
+ * 流出错时上报 stderr 后返回已读内容（此前静默吞错，用户无感知内容不完整）。
+ */
 export function readStreamAll(stream: NodeJS.ReadableStream): Promise<string> {
   return new Promise(resolve => {
     let data = '';
+    let settled = false;
     stream.setEncoding?.('utf8');
     stream.on('data', chunk => { data += chunk; });
-    stream.on('end', () => resolve(data));
-    stream.on('error', () => resolve(data));
+    stream.on('end', () => {
+      if (!settled) { settled = true; resolve(data); }
+    });
+    stream.on('error', err => {
+      if (settled) return;
+      settled = true;
+      console.error(`[aipack] 读取 stdin 失败（内容可能不完整）: ${err instanceof Error ? err.message : String(err)}`);
+      resolve(data);
+    });
   });
 }
