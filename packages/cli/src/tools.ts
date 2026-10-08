@@ -8,6 +8,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type { Tool, ToolResult } from '@aipack-ai/agent';
+import { TASK_TOOL_NAME } from './subagents.js';
 
 /** 工作区根目录：文件路径解析的基准（防止越界访问任意路径） */
 export const workspaceRoot = process.cwd();
@@ -580,6 +581,7 @@ export const BUILTIN_TOOLS: Tool[] = [readTool, writeTool, editTool, bashTool, f
  * - noTools: 返回空数组
  * 返回选中的工具与未知工具名（白/黑名单中拼写错误静默失效会让用户误以为配置生效，
  * 黑名单拼错尤其危险——等于扩大了工具权限范围）
+ * 注：task（子 agent）工具由 builder 按依赖注入，此处仅参与名称校验与过滤。
  */
 export function selectTools(options: {
   tools?: string[];
@@ -587,7 +589,7 @@ export function selectTools(options: {
   noTools?: boolean;
 }): { tools: Tool[]; unknown: string[] } {
   if (options.noTools) return { tools: [], unknown: [] };
-  const builtinNames = new Set(BUILTIN_TOOLS.map(t => t.name));
+  const builtinNames = new Set([...BUILTIN_TOOLS.map(t => t.name), TASK_TOOL_NAME]);
   const unknown = new Set<string>();
   if (options.tools) {
     for (const name of options.tools) {

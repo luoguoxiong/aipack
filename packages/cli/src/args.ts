@@ -255,7 +255,9 @@ ${opt('--no-tools, -nt', '禁用全部工具')}
 ${opt('--safe', '保守模式：写文件/shell 全部人工确认')}
 ${opt('--yes, -y', '自动批准一切（含危险命令），CI/管道用')}
 
-  ${c.dim('内置工具:')} read · write · edit · bash · find · grep · ls
+  ${c.dim('内置工具:')} read · write · edit · bash · find · grep · ls · task
+  ${c.dim('task 工具:')} 启动子 agent（隔离上下文执行子任务并返回报告，
+            ${c.dim('同回合多个 task 并行；定义见 aipack.config.js 的 agents 字段）')}
   ${c.dim('默认权限:')} 读/写文件静默放行（工作区范围）；bash 仅危险命令需确认
             ${c.dim('（rm 删除、sudo、磁盘写入、远程脚本管道等；危险命令每次重确认）')}
 
@@ -272,7 +274,7 @@ ${opt('--version, -v', '显示版本')}
 
 ${head('交互模式:')}
   ${c.dim('· 多行输入：行尾以')} ${c.yellow('\\')} ${c.dim('续行，空行提交')}
-  ${c.dim('· 斜杠命令：/help /model /thinking /clear /compact /sessions /quit')}
+  ${c.dim('· 斜杠命令：/help /model /thinking /clear /compact /sessions /agents /quit')}
   ${c.dim('· Ctrl+C 中断运行，连按两次退出')}
 
 ${head('示例:')}

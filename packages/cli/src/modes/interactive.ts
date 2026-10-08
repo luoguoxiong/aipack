@@ -27,6 +27,7 @@ import type { Skill } from '@aipack-ai/skills';
 import type { Args } from '../args.js';
 import type { ResolvedModel } from '../builder.js';
 import { listSessionsByRecency, buildCustomModel } from '../builder.js';
+import type { SubagentDefinition } from '../subagents.js';
 import type { McpPlugin } from '@aipack-ai/mcp';
 import type { ContextCompressionTransformer } from '@aipack-ai/compression';
 import { ChunkRenderer } from './render.js';
@@ -48,6 +49,10 @@ export interface InteractiveOptions {
   memoryFiles?: string[];
   /** 已注册的 skills（/skills 与 /skill:name 命令用） */
   skills?: Skill[];
+  /** 可用子 agent 定义（/agents 命令展示；始终含内置 general-purpose） */
+  subagents?: Map<string, SubagentDefinition>;
+  /** task（子 agent）工具是否启用（/agents 提示排除方式） */
+  taskEnabled?: boolean;
   /** 五级压缩转换器（覆盖 L5 handoff 钩子实现真正的会话切换） */
   compressionTransformer?: ContextCompressionTransformer;
   /** 启动时的初始消息（aipack "帮我..."） */
@@ -401,9 +406,27 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
       }
 
       case '/tools':
-        console.log(chalk.dim('内置工具: read, write, edit, bash, find, grep, ls'));
+        console.log(chalk.dim('内置工具: read, write, edit, bash, find, grep, ls, task'));
         console.log(chalk.dim('通过 --tools / --exclude-tools / --no-tools 配置启停'));
         break;
+
+      case '/agents': {
+        const defs = opts.subagents ?? new Map<string, SubagentDefinition>();
+        if (!opts.taskEnabled) {
+          console.log(chalk.yellow('task（子 agent）工具未启用（--no-tools / -xt task / --tools 白名单会排除它）'));
+        }
+        if (defs.size === 0) {
+          console.log(chalk.dim('（无可用子 agent）'));
+          break;
+        }
+        console.log(chalk.bold('可用子 agent（通过 task 工具调用）:'));
+        for (const [name, def] of defs) {
+          const model = def.model ? chalk.dim(`  [${def.model}]`) : '';
+          console.log(`  ${chalk.cyan(name)}  ${def.description}${model}`);
+        }
+        console.log(chalk.dim('定义: aipack.config.js 的 agents 字段；同一回合多个 task 调用并行执行'));
+        break;
+      }
 
       case '/mcp': {
         if (!mcp) {
@@ -483,6 +506,7 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
   ${chalk.green('/clear')}                    清空当前会话（仅内存）
   ${chalk.green('/compact')}                  手动压缩会话历史（释放上下文空间）
   ${chalk.green('/tools')}                    查看工具集与权限配置
+  ${chalk.green('/agents')}                   查看可用子 agent（task 工具）
   ${chalk.green('/memory')}                   查看已加载的项目记忆文件
   ${chalk.green('/init')}                     扫描项目并生成 AIPACK.md 项目记忆
   ${chalk.green('/skills')}                   查看已注册 skills

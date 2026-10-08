@@ -46,6 +46,8 @@ import { createMcpPlugin, loadMcpConfig } from '@aipack-ai/mcp';
 import type { McpPlugin } from '@aipack-ai/mcp';
 import type { Args } from './args.js';
 import { selectTools, BUILTIN_TOOLS } from './tools.js';
+import { createTaskTool, loadSubagentConfigs, TASK_TOOL_NAME, TASK_TOOL_TIMEOUT_MS } from './subagents.js';
+import type { SubagentDefinition } from './subagents.js';
 import { defaultSessionDir, defaultConfigDir, legacyEncodeDir, VERSION } from './version.js';
 import { createUserHooksExtension, type UserHooksConfig } from './hooks.js';
 import { loadMemoryFiles } from './memory.js';
@@ -73,6 +75,11 @@ export interface AipackCliConfig {
   hooks?: UserHooksConfig;
   /** 单次请求最大 agentic 回合数（默认 50） */
   maxTurns?: number;
+  /**
+   * 子 agent 定义（task 工具）：{ [名称]: { description, prompt, tools?, model?, maxTurns? } }。
+   * 内置 general-purpose 始终可用；同名定义覆盖内置。校验失败的项告警后跳过。
+   */
+  agents?: Record<string, SubagentDefinition>;
 }
 
 export async function loadConfig(cwd: string): Promise<AipackCliConfig> {
@@ -270,6 +277,10 @@ export interface BuiltRuntime {
   memoryFiles: string[];
   /** 已注册的 skills（/skills 与 /skill:name 命令用；无 skill 时为空数组） */
   skills: Skill[];
+  /** 可用子 agent 定义（/agents 命令展示；始终含内置 general-purpose） */
+  subagents: Map<string, SubagentDefinition>;
+  /** task（子 agent）工具是否已启用（被 --no-tools/-xt task/--tools 白名单排除时为 false） */
+  taskEnabled: boolean;
 }
 
 // ─── 上下文压缩 ───────────────────────────────────────────────────
@@ -377,9 +388,13 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
     // 白/黑名单中的未知工具名：拼错即静默失效（黑名单拼错 = 权限范围意外扩大）
     console.warn(
       `[aipack] --tools/--exclude-tools 中的未知工具名（已忽略）: ${toolSelection.unknown.join(', ')}` +
-      `；可用工具: ${BUILTIN_TOOLS.map(t => t.name).join(', ')}`,
+      `；可用工具: ${[...BUILTIN_TOOLS.map(t => t.name), TASK_TOOL_NAME].join(', ')}`,
     );
   }
+  // task（子 agent）工具：跟随白/黑名单语义（-xt task 可单独禁用）
+  const taskEnabled = !args.noTools
+    && !(args.excludeTools?.includes(TASK_TOOL_NAME))
+    && (!args.tools || args.tools.includes(TASK_TOOL_NAME));
 
   // ── 会话存储 ──
   // 目录编码兼容：旧编码（非安全字符统一折叠为 _，存在 /a/b 与 /a.b 碰撞）→ 新编码（encodeURIComponent，无碰撞）。
@@ -430,6 +445,36 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
   // ── 项目记忆文件（用户级 + 项目级，@import 展开；无文件零改动）──
   const memory = await loadMemoryFiles(cwd);
 
+  // ── 子 agent / task 工具（定义来自 aipack.config.js agents 字段 + 内置 general-purpose）──
+  // 依赖权限策略与记忆内容，故在两者就绪后构建；子 agent 基础工具集为当前内置工具快照
+  const subagents = loadSubagentConfigs(config.agents, BUILTIN_TOOLS.map(t => t.name));
+  for (const w of subagents.warnings) {
+    console.warn(`[aipack] ${w}`);
+  }
+  if (taskEnabled) {
+    const subagentBaseTools = [...tools];
+    /** 子 agent model 覆盖解析：provider/id（无 provider 前缀时沿用主模型提供商） */
+    const resolveAgentModelSpec = (spec: string): AiModel | undefined => {
+      const slash = spec.indexOf('/');
+      const provider = slash !== -1 ? spec.slice(0, slash) : model.aiModel.provider;
+      const id = slash !== -1 ? spec.slice(slash + 1) : spec;
+      if (!id) return undefined;
+      return getBuiltinModel(provider, id) ?? buildCustomModel(provider, id);
+    };
+    tools.push(createTaskTool({
+      getModel: () => model.aiModel,
+      resolveModelSpec: resolveAgentModelSpec,
+      apiKey: args.apiKey,
+      cwd,
+      tools: subagentBaseTools,
+      definitions: subagents.definitions,
+      permissionPolicy: policy,
+      approvals: approvalManager,
+      memoryContent: memory.content,
+      thinkingLevel: args.thinking,
+    }));
+  }
+
   // ── 系统提示词 ──
   const systemPrompt = buildSystemPrompt(args, memory.content);
 
@@ -464,6 +509,9 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
     approvals: approvalManager,
     // 回合数上限：--max-turns > aipack.config.js > 默认 50
     maxTurns: args.maxTurns ?? config.maxTurns ?? 50,
+    // task 工具启用时抬高单工具超时兜底：子 agent 完整运行受主 runtime 的
+    // 单工具超时约束（默认 120s 不够），10 分钟与 bash 超时上限对齐
+    ...(taskEnabled ? { toolTimeoutMs: TASK_TOOL_TIMEOUT_MS } : {}),
     transformers: compression ? [compression.transformer] : [],
     // MCP 插件 + 用户 hooks + skills：Extension 零侵入接入
     ...(extensions.length > 0 ? { extensions } : {}),
@@ -484,6 +532,8 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
     mcp,
     memoryFiles: memory.files,
     skills,
+    subagents: subagents.definitions,
+    taskEnabled,
   };
 }
 

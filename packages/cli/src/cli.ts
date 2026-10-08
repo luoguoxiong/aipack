@@ -155,6 +155,8 @@ export async function main(argv: string[]): Promise<number> {
         mcp: built.mcp,
         memoryFiles: built.memoryFiles,
         skills: built.skills,
+        subagents: built.subagents,
+        taskEnabled: built.taskEnabled,
         // 有文本或媒体附件（@文件/@图片）均作为初始消息发送；
         // 此前仅有位置参数消息时才发送，纯 @文件 会被静默丢弃
         initialMessages:
