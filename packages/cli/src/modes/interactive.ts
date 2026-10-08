@@ -22,6 +22,8 @@ import type {
   ThinkingLevel,
   PermissionRequest,
 } from '@aipack-ai/agent';
+import { expandSkillCommand } from '@aipack-ai/skills';
+import type { Skill } from '@aipack-ai/skills';
 import type { Args } from '../args.js';
 import type { ResolvedModel } from '../builder.js';
 import { listSessionsByRecency, buildCustomModel } from '../builder.js';
@@ -31,6 +33,7 @@ import { ChunkRenderer } from './render.js';
 import { ask } from '../prompt.js';
 import { printStartupBanner } from '../banner.js';
 import { buildInitialMessage, extractFileRefs } from '../initial-message.js';
+import { INIT_COMMAND_PROMPT } from '../memory.js';
 
 export interface InteractiveOptions {
   runtime: Runtime;
@@ -41,6 +44,10 @@ export interface InteractiveOptions {
   approvalManager?: ApprovalManager;
   /** MCP 插件（/mcp 命令用；无 .mcp.json 配置时为 undefined） */
   mcp?: McpPlugin;
+  /** 已加载的项目记忆文件（/memory 命令展示） */
+  memoryFiles?: string[];
+  /** 已注册的 skills（/skills 与 /skill:name 命令用） */
+  skills?: Skill[];
   /** 五级压缩转换器（覆盖 L5 handoff 钩子实现真正的会话切换） */
   compressionTransformer?: ContextCompressionTransformer;
   /** 启动时的初始消息（aipack "帮我..."） */
@@ -227,10 +234,61 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
     const cmd = (spaceIdx === -1 ? line : line.slice(0, spaceIdx)).toLowerCase();
     const rest = spaceIdx === -1 ? '' : line.slice(spaceIdx + 1).trim();
 
+    // /skill:<name> [args]：显式触发 skill（不区分大小写的 cmd 已被还原，用原文匹配）
+    if (cmd.startsWith('/skill:')) {
+      const expanded = expandSkillCommand(line, opts.skills ?? []);
+      if (expanded) {
+        await send(expanded);
+      } else {
+        const name = line.slice('/skill:'.length).split(' ')[0];
+        const known = (opts.skills ?? []).map(s => s.name).join(', ');
+        console.log(chalk.yellow(
+          `未知 skill: ${name}（可用: ${known || '（无；在 .aipack/skills/<name>/SKILL.md 或 ~/.aipack/skills/ 创建）'}）`,
+        ));
+      }
+      return;
+    }
+
     switch (cmd) {
       case '/help':
         printSlashHelp();
         break;
+
+      case '/init': {
+        console.log(chalk.dim('正在扫描项目并生成 AIPACK.md（可用 Ctrl+C 中断）...'));
+        await send(INIT_COMMAND_PROMPT);
+        return;
+      }
+
+      case '/memory': {
+        const files = opts.memoryFiles ?? [];
+        if (files.length === 0) {
+          console.log(chalk.dim('未加载任何项目记忆文件'));
+          console.log(chalk.dim(`记忆文件查找: 项目根 AIPACK.md > AGENTS.md > CLAUDE.md（另支持 ~/.aipack/AIPACK.md 用户级）`));
+          console.log(chalk.dim('运行 /init 由 AI 扫描项目并生成 AIPACK.md'));
+          break;
+        }
+        console.log(chalk.bold('已加载的项目记忆:'));
+        for (const f of files) console.log(`  ${chalk.cyan(f)}`);
+        console.log(chalk.dim('内容已注入系统提示词；编辑后重启会话生效'));
+        break;
+      }
+
+      case '/skills': {
+        const skills = opts.skills ?? [];
+        if (skills.length === 0) {
+          console.log(chalk.dim('（无已注册 skill）'));
+          console.log(chalk.dim('创建 skill: .aipack/skills/<name>/SKILL.md（frontmatter 提供 name/description），或放入 ~/.aipack/skills/'));
+          break;
+        }
+        console.log(chalk.bold('已注册 skills:'));
+        for (const s of skills) {
+          const flag = s.disableModelInvocation ? chalk.yellow('手动') : chalk.green('自动');
+          console.log(`  ${chalk.cyan(s.name)}  ${chalk.dim(`[${flag}${s.source ? ' ' + s.source : ''}]`)}  ${s.description}`);
+        }
+        console.log(chalk.dim('模型自动按需加载（skill 工具）；显式触发: /skill:<名称> [参数]'));
+        break;
+      }
 
       case '/quit':
       case '/exit':
@@ -425,6 +483,10 @@ export async function runInteractiveMode(opts: InteractiveOptions): Promise<void
   ${chalk.green('/clear')}                    清空当前会话（仅内存）
   ${chalk.green('/compact')}                  手动压缩会话历史（释放上下文空间）
   ${chalk.green('/tools')}                    查看工具集与权限配置
+  ${chalk.green('/memory')}                   查看已加载的项目记忆文件
+  ${chalk.green('/init')}                     扫描项目并生成 AIPACK.md 项目记忆
+  ${chalk.green('/skills')}                   查看已注册 skills
+  ${chalk.green('/skill:<名称> [参数]')}        显式触发 skill（展开全文发送）
   ${chalk.green('/mcp [refresh]')}            MCP server 状态 / 热刷新工具列表
   ${chalk.green('/approvals')}                未决审批单
   ${chalk.green('/approve <id>')}             批准

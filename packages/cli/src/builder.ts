@@ -34,6 +34,8 @@ import type {
   PermissionPolicy,
   StreamFn,
 } from '@aipack-ai/agent';
+import { createSkillsPlugin } from '@aipack-ai/skills';
+import type { Skill, SkillDiagnostic } from '@aipack-ai/skills';
 import {
   createCompressionTransformer,
   loadCompressionConfig,
@@ -45,6 +47,8 @@ import type { McpPlugin } from '@aipack-ai/mcp';
 import type { Args } from './args.js';
 import { selectTools, BUILTIN_TOOLS } from './tools.js';
 import { defaultSessionDir, defaultConfigDir, legacyEncodeDir, VERSION } from './version.js';
+import { createUserHooksExtension, type UserHooksConfig } from './hooks.js';
+import { loadMemoryFiles } from './memory.js';
 
 // ─── 配置文件 ─────────────────────────────────────────────────────
 
@@ -61,6 +65,12 @@ export interface AipackCliConfig {
     permission?: string;
     decision: 'allow' | 'deny' | 'confirm' | 'pending';
   }>;
+  /**
+   * 用户钩子（PreToolUse / PostToolUse / UserPromptSubmit / Stop）。
+   * 声明「matcher + shell 命令」，命令经 stdin 收 JSON 事件、退出码 2 或
+   * stdout JSON 返回决策；失败/超时仅告警不中断。详见 src/hooks.ts。
+   */
+  hooks?: UserHooksConfig;
   /** 单次请求最大 agentic 回合数（默认 50） */
   maxTurns?: number;
 }
@@ -256,6 +266,10 @@ export interface BuiltRuntime {
   setCompressionModel: (aiModel: AiModel) => void;
   /** MCP 插件（/mcp 命令用；无 .mcp.json 配置时为 undefined） */
   mcp?: McpPlugin;
+  /** 已加载的项目记忆文件（/memory 命令展示；无记忆文件时为空数组） */
+  memoryFiles: string[];
+  /** 已注册的 skills（/skills 与 /skill:name 命令用；无 skill 时为空数组） */
+  skills: Skill[];
 }
 
 // ─── 上下文压缩 ───────────────────────────────────────────────────
@@ -408,8 +422,16 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
   }
   const mcp = mcpConfig.servers.length > 0 ? createMcpPlugin({ servers: mcpConfig.servers }) : undefined;
 
+  // ── Skills 插件（@aipack-ai/skills：Extension 零侵入接入；user → project，同名先注册者胜）──
+  const skillsPlugin = createSkillsPlugin({ load: { cwd } });
+  reportSkillDiagnostics(skillsPlugin.diagnostics);
+  const skills = skillsPlugin.skills;
+
+  // ── 项目记忆文件（用户级 + 项目级，@import 展开；无文件零改动）──
+  const memory = await loadMemoryFiles(cwd);
+
   // ── 系统提示词 ──
-  const systemPrompt = buildSystemPrompt(args);
+  const systemPrompt = buildSystemPrompt(args, memory.content);
 
   // ── 上下文压缩（五级 transformer + runtime 内置摘要兜底）──
   const compression = await buildCompressionTransformer({
@@ -421,6 +443,14 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
   });
 
   // ── 组装 Runtime ──
+  // 用户 hooks（aipack.config.js 的 PreToolUse 等）：无配置时为 undefined，零开销
+  const userHooksExtension = createUserHooksExtension(config.hooks);
+  const extensions = [
+    ...(mcp?.extensions ?? []),
+    ...(userHooksExtension ? [userHooksExtension] : []),
+    ...skillsPlugin.extensions,
+  ];
+
   const runtime = await createRuntime({
     model: adaptAiModel(model.aiModel),
     streamFn,
@@ -435,8 +465,8 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
     // 回合数上限：--max-turns > aipack.config.js > 默认 50
     maxTurns: args.maxTurns ?? config.maxTurns ?? 50,
     transformers: compression ? [compression.transformer] : [],
-    // MCP 插件：beforeRun 懒连接，工具一经包装即获得权限/超时/钩子能力
-    ...(mcp ? { extensions: [...mcp.extensions] } : {}),
+    // MCP 插件 + 用户 hooks + skills：Extension 零侵入接入
+    ...(extensions.length > 0 ? { extensions } : {}),
     // --no-compaction 时一并关闭内置摘要压缩（仅保留硬截断兜底）
     compaction: args.noCompaction ? { enabled: false } : { enabled: true },
   });
@@ -452,7 +482,20 @@ export async function buildRuntime(options: BuildRuntimeOptions): Promise<BuiltR
     compressionTransformer: compression?.transformer,
     setCompressionModel: compression?.setModel ?? (() => {}),
     mcp,
+    memoryFiles: memory.files,
+    skills,
   };
+}
+
+/** skills 加载诊断告警（error / collision 可见，warning 静默） */
+function reportSkillDiagnostics(diagnostics: SkillDiagnostic[]): void {
+  for (const d of diagnostics) {
+    if (d.type === 'error') {
+      console.warn(`[aipack] skill 加载错误: ${d.message}${d.path ? `（${d.path}）` : ''}`);
+    } else if (d.type === 'collision') {
+      console.warn(`[aipack] skill 同名冲突: ${d.message}`);
+    }
+  }
 }
 
 /**
@@ -527,7 +570,7 @@ function buildPermissionPolicy(opts: {
   });
 }
 
-function buildSystemPrompt(args: Args): string {
+function buildSystemPrompt(args: Args, memoryContent: string): string {
   const base = args.systemPrompt ?? [
     '你是 aipack，一个终端里的 AI 编程助手。',
     '你可以使用工具读写文件、执行命令来完成用户的任务。',
@@ -535,5 +578,9 @@ function buildSystemPrompt(args: Args): string {
   ].join('\n');
 
   const appended = args.appendSystemPrompt ?? [];
-  return [base, ...appended].join('\n\n');
+  // 项目记忆注入尾部（--system-prompt 自定义时同样生效：记忆是项目事实，非人设）
+  const memory = memoryContent.trim()
+    ? ['以下项目记忆来自记忆文件（AIPACK.md / AGENTS.md / CLAUDE.md），是用户与团队的既定约定，请遵循：', memoryContent.trim()].join('\n')
+    : '';
+  return [base, ...appended, memory].filter(s => s !== '').join('\n\n');
 }

@@ -91,6 +91,8 @@ describe('SkillsExtension', () => {
       model: TEST_MODEL,
       streamFn,
       extensions: [new SkillsExtension([SKILL])],
+      // skill 工具为只读安全工具；测试环境显式放行（框架默认 fail-closed）
+      permissionFailOpen: true,
     });
 
     const result = await runtime.run({ message: 'load the pdf skill', type: 'message' });
@@ -121,6 +123,8 @@ describe('SkillsExtension', () => {
       model: TEST_MODEL,
       streamFn,
       extensions: [new SkillsExtension([SKILL, hidden])],
+      // 同上：skill 工具只读安全，测试显式放行（框架默认 fail-closed）
+      permissionFailOpen: true,
     });
 
     await runtime.run({ message: 'hi', type: 'message' });
