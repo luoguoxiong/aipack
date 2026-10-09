@@ -284,11 +284,16 @@ export const mcpSecurityCode = [
 ].join('\n');
 
 export const mcpCliCode = [
-  '# 项目根放置 .mcp.json 即自动生效（无需改代码）',
+  '# 项目根放置 .mcp.json 即自动生效（无需改代码；项目级优先于用户级 ~/.aipack/mcp.json）',
   '',
-  '# aipack 交互模式内置斜杠命令：',
+  '# aipack CLI 相关斜杠命令（完整总表见 CLI 工具页）：',
   '/mcp            # 列出各 server 连接状态（● 已连 / ○ 断开）、工具数、诊断',
   '/mcp refresh    # 热刷新：重连断开的 server + 完整移除已消失的工具',
+  '/agents         # 查看可用子 agent（task 工具）',
+  '/memory         # 查看已加载的项目记忆文件',
+  '/init           # 扫描项目并生成 AIPACK.md 项目记忆',
+  '/skills         # 查看已注册 skills',
+  '/skill:<名称>   # 显式触发 skill（展开全文发送）',
   '',
   '# 服务端方向：把当前会话工具反向暴露给外部 MCP 客户端',
   'node packages/mcp/dist/server/stdio-entry.js',

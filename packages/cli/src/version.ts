@@ -23,7 +23,16 @@ export function defaultSessionDir(cwd: string): string {
   return path.join(defaultConfigDir(), 'cli-sessions', encodeDir(cwd));
 }
 
-/** 将路径编码为安全目录名 */
+/**
+ * 将路径编码为安全目录名。
+ * encodeURIComponent 无碰撞（"/a/b" → "%2Fa%2Fb"），取代旧的非安全字符折叠为 "_" 的编码
+ * （旧编码下 "/a/b" 与 "/a.b" 均折叠为 "_a_b"，不同目录共享同一会话存储）。
+ */
 export function encodeDir(p: string): string {
+  return encodeURIComponent(p);
+}
+
+/** 旧版路径编码（非安全字符统一折叠为 _，存在碰撞），仅用于存量目录兼容探测 */
+export function legacyEncodeDir(p: string): string {
   return p.replace(/[^a-zA-Z0-9_-]/g, '_');
 }

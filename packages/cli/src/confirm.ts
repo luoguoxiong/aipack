@@ -18,8 +18,9 @@ export type { SelectOption } from './select.js';
 const DANGEROUS_PATTERNS: Array<[RegExp, string]> = [
   // 递归删除根/家目录（rm -rf /、rm -rf ~、rm -rf /* 等）——最严重，优先匹配
   [/rm\s+[^;|&]*[rf][^;|&]*\s+(\/|~|\$HOME)(\/?\*|\s|$)/, '递归删除根/家目录'],
-  // 任何 rm 删除（单文件 / 子目录递归）——删除不可撤销，一律确认
-  [/\brm\b/, '删除文件'],
+  // rm 作为独立命令（命令位置：行首 / ; & | ` $ ( 之后，或 sudo/xargs/time 等前缀命令后）。
+  // 不用 \brm\b：避免误报 "git rm"、"npm rm"、"echo rm"、文件名含 rm 等
+  [/(?:^|[;&|`$(]\s*|\b(?:sudo|xargs|nice|time|nohup|env)\s+)rm\b/, '删除文件'],
   [/\bsudo(\s|$)/, '提权执行'],
   [/\bmkfs(\s|\.)/, '格式化磁盘'],
   [/\bdd\s+[^;|]*of=\/dev\//, '写入磁盘设备'],
@@ -56,21 +57,28 @@ function summarizeArgs(req: PermissionRequest): string {
 export interface ToolConfirmHandlerOptions {
   /**
    * 自动放行低风险操作（默认 true）：
-   * - bash 的非危险命令静默放行，仅危险命令弹选择器
+   * - 仅内置 bash 工具的非危险命令静默放行，其余需确认的工具（如 MCP）弹选择器
    * - false（--safe）时全部弹选择器
    */
   autoApproveSafe?: boolean;
+  /**
+   * 自动批准一切（--yes，CI/管道用）：跳过所有确认，包括危险命令。
+   * 优先级最高，且在非 TTY 环境同样生效。
+   */
+  yes?: boolean;
 }
 
 export function createToolConfirmHandler(
   options: ToolConfirmHandlerOptions = {},
 ): (req: PermissionRequest) => Promise<boolean> {
   const autoApproveSafe = options.autoApproveSafe ?? true;
+  const yes = options.yes ?? false;
   /** 会话级"总是允许"记忆：key = 能力组合或工具名（仅对非危险操作生效） */
   const alwaysAllowed = new Set<string>();
 
   return async (req: PermissionRequest): Promise<boolean> => {
-    if (!process.stdin.isTTY) return false;
+    // --yes：无条件放行（包括非 TTY 管道场景）
+    if (yes) return true;
 
     const args = req.args as Record<string, unknown> | undefined;
     const command = typeof args?.command === 'string' ? args.command : '';
@@ -86,9 +94,14 @@ export function createToolConfirmHandler(
     // 非危险操作：会话级"总是允许"或默认模式静默放行
     if (!dangerReason) {
       if (alwaysAllowed.has(key)) return true;
-      // 默认模式：bash 非危险命令静默放行（command 非空即 bash 工具）
-      if (autoApproveSafe && command) return true;
+      // 默认模式：仅内置 bash 工具的非危险命令静默放行——不依赖 TTY，
+      // 管道 / -p 非交互场景同样生效（否则 print 模式下连 ls 都被拒绝）
+      // （不能只看参数里有没有 command 字段，否则 MCP 等带 command 参数的工具会被误放行）
+      if (autoApproveSafe && req.toolName === 'bash') return true;
     }
+
+    // 危险命令 / 其余需确认的工具：无 TTY 无法弹选择器，保守拒绝
+    if (!process.stdin.isTTY) return false;
 
     const summary = command || summarizeArgs(req);
     const question = dangerReason

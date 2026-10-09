@@ -35,6 +35,9 @@ export class ChunkRenderer {
           this.spinner.stop();
           this.inTool = false;
         }
+        // 本段思考已结束；复位标记使"文本→工具→再思考"场景中
+        // 第二段思考重新显示提示（否则静默无反馈，用户以为卡死）
+        this.thinkingShown = false;
         if (chunk.content) process.stdout.write(chunk.content);
         break;
 
@@ -75,6 +78,8 @@ export class ChunkRenderer {
             err.write(chunk.isError ? chalk.red(' ✗\n') : chalk.green(' ✓\n'));
           }
           this.inTool = false;
+          // 工具结束后常跟随新一段推理思考：复位以便再次显示提示
+          this.thinkingShown = false;
         }
         break;
 

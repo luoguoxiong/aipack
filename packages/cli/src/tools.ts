@@ -8,14 +8,49 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type { Tool, ToolResult } from '@aipack-ai/agent';
+import { TASK_TOOL_NAME } from './subagents.js';
 
 /** 工作区根目录：文件路径解析的基准（防止越界访问任意路径） */
 export const workspaceRoot = process.cwd();
 
-function resolveInWorkspace(p: string): string {
+/** 判断 target 是否位于 root 内部（含 root 本身） */
+function isInside(root: string, target: string): boolean {
+  const rel = path.relative(root, target);
+  return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel));
+}
+
+let cachedRealRoot: string | undefined;
+
+/**
+ * 将用户/模型提供的路径解析到工作区内。
+ * - 先按字面路径做 relative 校验（防止 ../ 逃逸与前缀绕过，如 aipack-evil）
+ * - 再做 realpath 校验（防止工作区内符号链接指向外部）
+ * - write 新建文件时目标尚不存在，回退校验最近存在的祖先目录
+ */
+export async function resolveInWorkspace(p: string): Promise<string> {
   const abs = path.resolve(workspaceRoot, p);
-  if (!abs.startsWith(workspaceRoot)) {
+  if (!isInside(workspaceRoot, abs)) {
     throw new Error(`路径越界：${p}（工作区：${workspaceRoot}）`);
+  }
+  const realRoot = (cachedRealRoot ??= await fs.realpath(workspaceRoot));
+  let real: string;
+  try {
+    real = await fs.realpath(abs);
+  } catch {
+    let dir = path.dirname(abs);
+    for (;;) {
+      try {
+        real = await fs.realpath(dir);
+        break;
+      } catch {
+        const parent = path.dirname(dir);
+        if (parent === dir) throw new Error(`路径不可达：${p}`);
+        dir = parent;
+      }
+    }
+  }
+  if (!isInside(realRoot, real)) {
+    throw new Error(`路径越界（符号链接）：${p} → ${real}`);
   }
   return abs;
 }
@@ -52,8 +87,13 @@ export const readTool: Tool = {
   async execute(_id, rawArgs) {
     const args = rawArgs as { file: string; offset?: number; limit?: number };
     try {
-      const abs = resolveInWorkspace(args.file);
-      let content = await fs.readFile(abs, 'utf8');
+      const abs = await resolveInWorkspace(args.file);
+      const buf = await fs.readFile(abs);
+      // 二进制检测（与 grep 一致）：避免图片/编译产物把乱码灌进上下文
+      if (buf.includes(0)) {
+        return errorResult(`${args.file} 是二进制文件，read 工具仅支持文本（图片请用 @引用 走多模态）`);
+      }
+      let content = buf.toString('utf8');
       if (args.offset !== undefined || args.limit !== undefined) {
         const lines = content.split('\n');
         const start = Math.max(0, (args.offset ?? 1) - 1);
@@ -87,7 +127,7 @@ export const writeTool: Tool = {
   async execute(_id, rawArgs) {
     const args = rawArgs as { file: string; content: string };
     try {
-      const abs = resolveInWorkspace(args.file);
+      const abs = await resolveInWorkspace(args.file);
       await fs.mkdir(path.dirname(abs), { recursive: true });
       await fs.writeFile(abs, args.content, 'utf8');
       return textResult(`已写入 ${args.file}（${args.content.length} 字符）`, { file: args.file });
@@ -115,7 +155,14 @@ export const editTool: Tool = {
   async execute(_id, rawArgs) {
     const args = rawArgs as { file: string; oldString: string; newString: string };
     try {
-      const abs = resolveInWorkspace(args.file);
+      // 空 oldString 防御：indexOf('') 恒为 0，会静默在文件头插入 newString
+      if (!args.oldString) {
+        return errorResult('oldString 不能为空（空串会匹配文件开头，请提供要替换的文本）');
+      }
+      if (args.oldString === args.newString) {
+        return errorResult('newString 与 oldString 相同，无需编辑');
+      }
+      const abs = await resolveInWorkspace(args.file);
       const content = await fs.readFile(abs, 'utf8');
       const first = content.indexOf(args.oldString);
       if (first === -1) {
@@ -135,32 +182,107 @@ export const editTool: Tool = {
 
 // ─── bash ─────────────────────────────────────────────────────────
 
+/** stdout/stderr 捕获上限：防止超长输出撑爆内存（结果输出另有截断） */
+const MAX_CAPTURE_BYTES = 1024 * 1024;
+
+/** bash 超时边界：低于下限立即被杀（无意义），高于上限等同永不超时 */
+const DEFAULT_TIMEOUT_MS = 60_000;
+const MIN_TIMEOUT_MS = 1_000;
+const MAX_TIMEOUT_MS = 600_000;
+
+/** 模型提供的 timeoutMs 钳制到合理区间（非法/缺省回退默认值） */
+function clampTimeout(v: number | undefined): number {
+  if (v === undefined || !Number.isFinite(v)) return DEFAULT_TIMEOUT_MS;
+  return Math.min(Math.max(Math.round(v), MIN_TIMEOUT_MS), MAX_TIMEOUT_MS);
+}
+
+/**
+ * 允许透传给子进程的环境变量白名单。
+ * 不再整体透传 process.env：API Key（OPENAI_API_KEY 等）会泄露给
+ * 任意被执行的 shell 命令（模型诱导 `env` 即可读走密钥）。
+ * 如需向命令暴露变量，用 AIPACK_ 前缀（自动透传）。
+ */
+const SAFE_ENV_KEYS = new Set([
+  // Unix 常用
+  'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'LC_CTYPE',
+  'TERM', 'TERM_PROGRAM', 'TERM_PROGRAM_VERSION', 'TZ', 'TMPDIR', 'TMP', 'TEMP',
+  // 网络代理（构建/下载依赖，URL 形式无密钥）
+  'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'ALL_PROXY',
+  // Windows 常用
+  'SYSTEMROOT', 'SYSTEMDRIVE', 'COMSPEC', 'PATHEXT', 'USERPROFILE', 'APPDATA',
+  'LOCALAPPDATA', 'PROGRAMDATA', 'PROGRAMFILES', 'COMMONPROGRAMFILES',
+  'OS', 'PROCESSOR_ARCHITECTURE', 'NUMBER_OF_PROCESSORS',
+  'HOMEDRIVE', 'HOMEPATH', 'WINDIR',
+]);
+
+function buildSafeEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    const upper = k.toUpperCase();
+    if (SAFE_ENV_KEYS.has(upper) || k.startsWith('AIPACK_')) env[k] = v;
+  }
+  env.AIPACK_CLI = 'true';
+  return env;
+}
+
+function pickShell(): string {
+  if (process.platform === 'win32') {
+    return process.env.ComSpec ?? 'cmd.exe';
+  }
+  return process.env.SHELL ?? '/bin/bash';
+}
+
 function runShell(command: string, timeoutMs: number): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise(resolve => {
+    // detached：独立进程组，超时可连同 shell 派生的子孙进程一并终止
     const child = spawn(command, {
-      shell: process.env.SHELL ?? '/bin/bash',
+      shell: pickShell(),
       cwd: workspaceRoot,
-      env: { ...process.env, AIPACK_CLI: 'true' },
+      env: buildSafeEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
     });
     let stdout = '';
     let stderr = '';
+    let stdoutDropped = false;
+    let stderrDropped = false;
     let settled = false;
+
+    /** 终止整个进程组（Windows 无进程组，退化为直接 kill） */
+    const killTree = (): void => {
+      if (process.platform !== 'win32' && child.pid) {
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+          return;
+        } catch {
+          // 进程组可能已退出 → 回退直接 kill
+        }
+      }
+      child.kill('SIGKILL');
+    };
 
     const timer = setTimeout(() => {
       if (!settled) {
         settled = true;
-        child.kill('SIGKILL');
+        killTree();
         resolve({ stdout, stderr: stderr + `\n[命令超时（${timeoutMs}ms）被终止]`, code: 124 });
       }
     }, timeoutMs);
 
-    child.stdout.on('data', d => { stdout += d.toString(); });
-    child.stderr.on('data', d => { stderr += d.toString(); });
+    child.stdout.on('data', d => {
+      if (stdout.length >= MAX_CAPTURE_BYTES) { stdoutDropped = true; return; }
+      stdout += d.toString();
+    });
+    child.stderr.on('data', d => {
+      if (stderr.length >= MAX_CAPTURE_BYTES) { stderrDropped = true; return; }
+      stderr += d.toString();
+    });
     child.on('close', code => {
       if (!settled) {
         settled = true;
         clearTimeout(timer);
+        if (stdoutDropped) stdout += '\n[输出超过捕获上限，已截断]';
+        if (stderrDropped) stderr += '\n[输出超过捕获上限，已截断]';
         resolve({ stdout, stderr, code: code ?? 0 });
       }
     });
@@ -181,14 +303,15 @@ export const bashTool: Tool = {
     type: 'object',
     properties: {
       command: { type: 'string', description: '要执行的命令' },
-      timeoutMs: { type: 'number', description: '超时毫秒数（默认 60000）' },
+      timeoutMs: { type: 'number', description: '超时毫秒数（默认 60000，钳制到 1000-600000）' },
     },
     required: ['command'],
   },
   permissions: ['shell:exec'],
   async execute(_id, rawArgs) {
     const args = rawArgs as { command: string; timeoutMs?: number };
-    const timeout = args.timeoutMs ?? 60_000;
+    // 钳制超时：模型可能传 0/负数（命令刚启动就被杀）或 Infinity（永不超时）
+    const timeout = clampTimeout(args.timeoutMs);
     try {
       const { stdout, stderr, code } = await runShell(args.command, timeout);
       const parts: string[] = [];
@@ -277,7 +400,7 @@ export const findTool: Tool = {
     const args = rawArgs as { pattern: string; path?: string; limit?: number };
     const limit = args.limit ?? 1000;
     try {
-      const root = resolveInWorkspace(args.path ?? '.');
+      const root = await resolveInWorkspace(args.path ?? '.');
       const re = globToRegExp(args.pattern);
       // 遍历上限与结果上限解耦：遍历足够多文件后再过滤，避免低匹配率时提前截断
       const files = await walkFiles(root, Math.max(limit * 10, 10_000));
@@ -325,7 +448,7 @@ export const grepTool: Tool = {
     const limit = args.limit ?? 100;
     const context = args.context ?? 0;
     try {
-      const target = resolveInWorkspace(args.path ?? '.');
+      const target = await resolveInWorkspace(args.path ?? '.');
       const re = new RegExp(
         args.literal ? args.pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : args.pattern,
         args.ignoreCase ? 'i' : '',
@@ -415,7 +538,7 @@ export const lsTool: Tool = {
     const args = rawArgs as { path?: string; limit?: number };
     const limit = args.limit ?? 500;
     try {
-      const abs = resolveInWorkspace(args.path ?? '.');
+      const abs = await resolveInWorkspace(args.path ?? '.');
       const stat = await fs.stat(abs);
       if (!stat.isDirectory()) {
         return textResult(path.relative(workspaceRoot, abs) || abs);
@@ -456,13 +579,29 @@ export const BUILTIN_TOOLS: Tool[] = [readTool, writeTool, editTool, bashTool, f
  * - tools: 仅保留白名单中的工具
  * - excludeTools: 移除黑名单中的工具
  * - noTools: 返回空数组
+ * 返回选中的工具与未知工具名（白/黑名单中拼写错误静默失效会让用户误以为配置生效，
+ * 黑名单拼错尤其危险——等于扩大了工具权限范围）
+ * 注：task（子 agent）工具由 builder 按依赖注入，此处仅参与名称校验与过滤。
  */
 export function selectTools(options: {
   tools?: string[];
   excludeTools?: string[];
   noTools?: boolean;
-}): Tool[] {
-  if (options.noTools) return [];
+}): { tools: Tool[]; unknown: string[] } {
+  if (options.noTools) return { tools: [], unknown: [] };
+  const builtinNames = new Set([...BUILTIN_TOOLS.map(t => t.name), TASK_TOOL_NAME]);
+  const unknown = new Set<string>();
+  if (options.tools) {
+    for (const name of options.tools) {
+      if (!builtinNames.has(name)) unknown.add(name);
+    }
+  }
+  if (options.excludeTools) {
+    for (const name of options.excludeTools) {
+      if (!builtinNames.has(name)) unknown.add(name);
+    }
+  }
+
   let selected = [...BUILTIN_TOOLS];
   if (options.tools && options.tools.length > 0) {
     const allow = new Set(options.tools);
@@ -472,5 +611,5 @@ export function selectTools(options: {
     const deny = new Set(options.excludeTools);
     selected = selected.filter(t => !deny.has(t.name));
   }
-  return selected;
+  return { tools: selected, unknown: [...unknown] };
 }

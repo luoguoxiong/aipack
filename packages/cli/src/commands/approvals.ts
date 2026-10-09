@@ -55,6 +55,7 @@ export async function handleApprovalsCommand(args: string[]): Promise<number> {
       return 1;
     }
     console.log(chalk.green(`已${sub === 'approve' ? '批准' : '驳回'} ${id}`));
+    console.log(chalk.dim('注意：等待中的运行进程不会被自动唤醒（跨进程无通知机制），其将在下次检查或超时后感知结果'));
     return 0;
   }
 

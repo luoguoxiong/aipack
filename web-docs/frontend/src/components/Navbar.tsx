@@ -14,6 +14,7 @@ import {
   TagsOutlined,
   DeploymentUnitOutlined,
   ExperimentOutlined,
+  ToolOutlined,
   DownOutlined,
 } from '@ant-design/icons';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -22,6 +23,7 @@ import Logo from './Logo';
 const navItems = [
   { path: '/', label: '首页', icon: <RocketOutlined /> },
   { path: '/quickstart', label: '快速开始', icon: <ThunderboltOutlined /> },
+  { path: '/cli', label: 'CLI 工具', icon: <ToolOutlined /> },
   { path: '/api', label: 'API 文档', icon: <BookOutlined /> },
   { path: '/extend', label: '扩展指南', icon: <CodeOutlined /> },
   { path: '/observability', label: '可观测性', icon: <LineChartOutlined /> },
@@ -37,7 +39,7 @@ const navItems = [
 const GITHUB_URL = 'https://github.com/luoguoxiong/aipack';
 
 // 桌面端导航拆分：高频页面平铺，其余收进「更多」下拉，避免头部拥挤
-const MORE_PATHS = ['/eval', '/mcp', '/multi-agent', '/examples', '/packages'];
+const MORE_PATHS = ['/eval', '/mcp', '/multi-agent', '/examples', '/packages', '/observability', '/memory'];
 const primaryNavItems = navItems.filter((item) => !MORE_PATHS.includes(item.path));
 const moreNavItems = navItems.filter((item) => MORE_PATHS.includes(item.path));
 

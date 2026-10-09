@@ -660,7 +660,7 @@ console.log('Google 可用:', hasProviderConfigured('google')); // 读 GOOGLE_AP
     name: 'CredentialStore 凭证存储',
     kind: 'interface',
     signature: 'interface CredentialStore { read(providerId) / list() / modify() / delete() }  ·  EnvCredentialStore / createEnvCredentialStore()',
-    description: 'API Key 凭证存储抽象：默认 EnvCredentialStore（读环境变量约定名），可注入 KMS / Vault 等自定义实现。createModels({ credentials }) 注入后，实际请求即使用该存储解析的 Key；getAuth() 与 resolveApiKey 遵循同一优先级：注入的 store → 环境变量 → 自定义 auth 解析器。',
+    description: 'API Key 凭证存储抽象：默认 EnvCredentialStore（读环境变量约定名），可注入 KMS / Vault 等自定义实现。createModels({ credentials }) 注入后，实际请求即使用该存储解析的 Key；getAuth() 与 resolveApiKey 遵循同一优先级：注入的 store → 环境变量 → 自定义 auth 解析器。注意：本条目属于 AI 深层 surface，需从子路径 @aipack-ai/agent/ai 导入（主入口 @aipack-ai/agent 不导出）。',
     category: 'AI 模型层',
     params: [
       { name: 'createEnvCredentialStore()', type: '() => CredentialStore', description: '默认实现：按约定名 <PROVIDER>_API_KEY 读取 process.env' },
@@ -898,6 +898,181 @@ if (result.success) {
 } else {
   console.error('运行失败:', result.error);
 }`,
+  },
+
+  // ========== TaskGraph 任务图 ==========
+  {
+    id: 'createTaskGraph',
+    name: 'createTaskGraph()',
+    kind: 'function',
+    signature: 'createTaskGraph(): TaskGraph',
+    description: '创建空的上下文资源任务依赖图。TaskGraph 以 ContextResource 为节点，按依赖关系（tool_call → tool_result、消息时序）组织，支持拓扑排序与统计分析。Runtime 内部用它构建任务图后再链式转换。',
+    category: 'TaskGraph 任务图',
+    returns: 'TaskGraph 实例（addNode / addEdge / setEntry / topologicalSort / getAll / getStats）',
+    example: `import { createTaskGraph, createMessageResource } from '@aipack-ai/agent';
+
+const graph = createTaskGraph();
+const a = createMessageResource({ role: 'user', content: [{ type: 'text', text: '查天气' }] });
+const b = createMessageResource({ role: 'assistant', content: [] });
+graph.addNode(a);
+graph.addNode(b);
+graph.addEdge(a.id, b.id, 'sequence');
+console.log(graph.topologicalSort());`,
+  },
+  {
+    id: 'buildTaskGraph',
+    name: 'buildTaskGraph()',
+    kind: 'function',
+    signature: 'buildTaskGraph(messages: Message[]): TaskGraph',
+    description: '从消息历史构建任务依赖图：自动补充 tool_call → tool_result 依赖边。配合 graphToMessages() 可做无损的图态往返（重排/重建消息序列）。',
+    category: 'TaskGraph 任务图',
+    params: [
+      { name: 'messages', type: 'Message[]', required: true, description: '消息历史（用户/助手/工具结果）' },
+    ],
+    returns: 'TaskGraph',
+    example: `import {
+  buildTaskGraph, graphToMessages,
+  analyzeToolChains, findOrphanedToolCalls, getGraphStats,
+} from '@aipack-ai/agent';
+
+const graph = buildTaskGraph(runtime.getMessages());
+
+// 分析工具调用链：每个 tool_call 是否有结果、是否错误
+analyzeToolChains(graph).forEach(c => {
+  console.log(c.toolName, c.hasResult, c.isError);
+});
+
+// 找出没有结果的孤儿 tool_call（中断恢复场景）
+console.log(findOrphanedToolCalls(graph));
+
+// 图统计：节点总数 / 按类型分布 / 孤儿数 / 是否含错误
+console.log(getGraphStats(graph));
+
+// 图 → 消息（拓扑排序后还原）
+const messages = graphToMessages(graph);`,
+  },
+
+  // ========== Tapable 钩子策略 ==========
+  {
+    id: 'setTapFailurePolicy',
+    name: 'setTapFailurePolicy()',
+    kind: 'function',
+    signature: "setTapFailurePolicy(policy: 'warn' | 'strict' | 'silent'): void",
+    description: '设置全局 Tapable 钩子失败策略：某个 tap（钩子监听器）抛错时的处理方式。strict 抛出中断、warn 告警继续（默认）、silent 静默继续。配套 getTapFailurePolicy() 读取当前策略；setTapErrorHandler() 注册全局错误处理器（Runtime 构造时用它接入 telemetry onHookError 上报），传 undefined 清除。',
+    category: 'Tapable 钩子策略',
+    params: [
+      { name: 'policy', type: "'warn' | 'strict' | 'silent'", required: true, description: '失败策略：warn 告警继续 / strict 抛出 / silent 静默' },
+    ],
+    example: `import { setTapFailurePolicy, setTapErrorHandler } from '@aipack-ai/agent';
+
+// 开发期严格模式：钩子抛错立即暴露
+setTapFailurePolicy('strict');
+
+// 生产期接遥测：所有 tap 失败上报 onHookError，不中断主流程
+setTapFailurePolicy('warn');
+setTapErrorHandler((info) => {
+  // info: { hook, tap, error }
+  reportToTelemetry(info);
+});`,
+  },
+
+  // ========== ContextResource 资源 ==========
+  {
+    id: 'createMessageResource',
+    name: 'createMessageResource()',
+    kind: 'function',
+    signature: 'createMessageResource(message: Message): ContextResource',
+    description: '把消息包装为上下文资源节点（ResourceRole: user/assistant/tool）。同族工厂还有 createToolCallResource() / createToolResultResource()（直接以 tool_call / tool_result 内容建节点）。资源是 Transformer 链的统一操作单元。',
+    category: 'ContextResource 资源',
+    params: [
+      { name: 'message', type: 'Message', required: true, description: '待包装的消息对象' },
+    ],
+    returns: 'ContextResource（含 id、type、role、payload、依赖元数据）',
+    example: `import {
+  messageToResource, resourceToMessage,
+  messagesToResources, resourcesToMessages,
+} from '@aipack-ai/agent';
+
+// 单条转换
+const resource = messageToResource(message);
+const back = resourceToMessage(resource);
+
+// 批量往返（buildTaskGraph 内部即用这对函数）
+const resources = messagesToResources(messages);
+const restored = resourcesToMessages(resources);
+
+// 从资源提取内容
+extractToolCallsFromResource(resource);  // ToolCallContent[]
+extractTextFromResource(resource);       // string`,
+  },
+
+  // ========== Result 结果 ==========
+  {
+    id: 'createResult',
+    name: 'createResult() / ResultBuilder',
+    kind: 'function',
+    signature: 'createResult(partial: Partial<Result>): Result',
+    description: '结果工厂：以默认值补全 Result 结构（content 空串、toolsUsed 空数组、success true 等）。createErrorResult() 一步构造失败结果；ResultBuilder 链式构建复杂结果；ResultAggregator 聚合多个部分结果（分块合并场景）。另有 buildResultFromMessages / buildResultFromAssistantMessage / buildResultWithResources 从消息/资源构建。',
+    category: 'Result 结果',
+    params: [
+      { name: 'partial', type: 'Partial<Result>', required: true, description: '结果字段（缺省部分自动补默认值）' },
+    ],
+    returns: '完整的 Result',
+    example: `import { createResult, createErrorResult, ResultAggregator } from '@aipack-ai/agent';
+
+const ok = createResult({ content: '完成' });
+const fail = createErrorResult(new Error('模型超时'), { stopReason: 'error' });
+
+// 聚合多个分块结果
+const agg = new ResultAggregator();
+agg.add(chunk1);
+agg.add(chunk2);
+const merged = agg.build();`,
+  },
+
+  // ========== AI 模型层 ==========
+  {
+    id: 'getBuiltinModels',
+    name: 'getBuiltinModels() / getBuiltinProviders()',
+    kind: 'function',
+    signature: "getBuiltinModels(providerId: string): AiModel[]  ·  getBuiltinProviders(): Array<{ id, name, baseUrl, ... }>",
+    description: '查询内置模型目录与提供商列表。BUILTIN_PROVIDERS 为常量数组；hasProviderConfigured(providerId) 检测对应 *_API_KEY 环境变量是否已配置（CLI 默认模型探测即基于它）。主入口重导出常用子集，完整 AI surface 见 @aipack-ai/agent/ai 子路径。',
+    category: 'AI 模型层',
+    params: [
+      { name: 'providerId', type: 'string', required: true, description: '提供商 id（deepseek / openai / anthropic / google ...）' },
+    ],
+    returns: 'AiModel[] / 提供商元信息数组',
+    example: `import {
+  getBuiltinProviders, getBuiltinModels,
+  hasProviderConfigured, getEnvApiKey, BUILTIN_PROVIDERS,
+} from '@aipack-ai/agent';
+
+// 已配置 Key 的提供商（CLI 默认模型探测逻辑）
+const configured = getBuiltinProviders().filter(p => hasProviderConfigured(p.id));
+
+// 某提供商的全部内置模型（含能力标注：input / reasoning / contextWindow）
+const models = getBuiltinModels('deepseek');
+models.forEach(m => console.log(m.id, m.input, m.contextWindow));
+
+console.log(BUILTIN_PROVIDERS.length); // 内置提供商总数
+console.log(getEnvApiKey('deepseek')); // 读取对应环境变量`,
+  },
+
+  // ========== 权限安全 ==========
+  {
+    id: 'createAllowAllPolicy',
+    name: 'createAllowAllPolicy()',
+    kind: 'function',
+    signature: 'createAllowAllPolicy(): PermissionPolicy',
+    description: '全部放行策略。与 createDenyAllPolicy()（全部拒绝）、createAllowListPolicy()（白名单）同族，适用于测试或显式信任场景；生产环境建议用 createPermissionPolicy() 声明规则。',
+    category: '权限安全',
+    returns: 'PermissionPolicy（所有请求决策 allow）',
+    example: `import { createAllowAllPolicy } from '@aipack-ai/agent';
+
+const runtime = createRuntime({
+  // ... 其他配置
+  permissionPolicy: createAllowAllPolicy(), // 测试场景：全部放行
+});`,
   },
 ];
 
