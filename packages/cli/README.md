@@ -1,6 +1,6 @@
 # @aipack-ai/cli
 
-基于 [`@aipack-ai/agent`](../agent) 的终端 AI 编程助手。支持交互 REPL、非交互管道与 JSON 事件流三种模式,内置文件读写与 shell 工具,默认权限策略对正常操作零打断、仅危险命令需确认。
+基于 [`@aipack-ai/agent`](../agent) 的终端 AI 编程助手。支持交互 REPL、非交互管道与 JSON 事件流三种模式,内置文件读写、shell、检索（find/grep/ls）与 task 子 agent 工具,支持项目记忆文件（AIPACK.md / AGENTS.md / CLAUDE.md）、Skills、MCP、Hooks 与五级上下文压缩;默认权限策略对正常操作零打断、仅危险命令需确认。
 
 ```bash
 npm install -g @aipack-ai/cli
@@ -90,12 +90,25 @@ JSON 模式输出示例：
 
 | 工具 | 能力 | 说明 |
 |------|------|------|
-| `read` | `fs:read` | 读文件，支持 offset/limit,超长截断 |
+| `read` | `fs:read` | 读文件，支持 offset/limit,超长截断;二进制文件明确报错 |
 | `write` | `fs:write` | 写文件，自动建父目录 |
 | `edit` | `fs:write` | 精确替换（oldString 唯一匹配） |
-| `bash` | `shell:exec` | 执行 shell 命令，60s 超时，输出截断 |
+| `bash` | `shell:exec` | 执行 shell 命令,默认 60s 超时（可传 `timeoutMs` 钳制到 1s–10min）,输出截断 |
+| `find` | `fs:read` | glob 模式查找文件（`**/*.ts`）,自动剪枝 node_modules/dist 等 |
+| `grep` | `fs:read` | 正则搜索内容,支持 glob 过滤、忽略大小写、上下文行数 |
+| `ls` | `fs:read` | 列出目录内容（目录在前,带 `/` 后缀） |
+| `task` | 继承子工具 | 启动子 agent 执行子任务（见[子 agent 与 task 工具](#子-agent-与-task-工具)） |
 
-所有文件工具限制在工作区内（越界路径直接拒绝）。
+所有文件工具限制在工作区内（越界路径与符号链接逃逸直接拒绝）。
+
+### 上下文压缩
+
+| 选项 | 说明 |
+|------|------|
+| `--no-compaction` | 关闭上下文压缩（内置摘要压缩与五级压缩 transformer 均不启用,仅保留硬截断兜底） |
+| `--compaction-config <文件>` | 压缩配置 JSON（叠加在默认配置之上,优先级高于 `aipack.config.js` 的 `compression` 字段） |
+
+默认启用五级压缩,作为 runtime 降级链的第一级(五级压缩 → 内置摘要压缩 → 硬截断):L1 历史裁剪 → L2 摘要 → L3 状态提取 → L4 检查点 → L5 生成交接文档并切换新会话(`aipack --session <新会话>` 可恢复)。`/model` 切换后压缩链自动跟随当前模型。
 
 ### 其他
 
@@ -144,6 +157,11 @@ JSON 模式输出示例：
 | `/clear` | 清空当前会话(仅内存) |
 | `/compact` | 手动压缩会话历史（释放上下文空间） |
 | `/tools` | 查看工具集与权限配置 |
+| `/agents` | 查看可用子 agent（task 工具） |
+| `/memory` | 查看已加载的项目记忆文件 |
+| `/init` | 扫描项目并生成 AIPACK.md 项目记忆 |
+| `/skills` | 查看已注册 skills |
+| `/skill:<名称> [参数]` | 显式触发 skill（展开全文发送） |
 | `/mcp [refresh]` | MCP server 状态 / 热刷新工具列表 |
 | `/approvals` | 列出未决审批单 |
 | `/approve <id>` / `/deny <id>` | 结算审批单 |
@@ -169,7 +187,7 @@ aipack approvals deny <id>     # 驳回
 
 ## 配置文件 `aipack.config.js`
 
-放在项目根目录(可选):
+放在项目根目录(可选,也支持 `aipack.config.mjs`):
 
 ```js
 export default {
@@ -184,10 +202,72 @@ export default {
     { toolName: 'write', decision: 'confirm' },   // write 工具全部确认
     { permission: 'fs:write', decision: 'allow' }, // 按能力放行
   ],
+  // 单次请求最大 agentic 回合数（--max-turns 优先于此值，均未设置时默认 50）
+  maxTurns: 30,
+  // 子 agent 定义（task 工具；见「子 agent 与 task 工具」）
+  agents: {
+    'code-reviewer': {
+      description: '只读代码审查',
+      prompt: '你是代码审查员，只读分析代码，不修改文件。',
+      tools: ['read', 'find', 'grep', 'ls'],
+      // model: 'anthropic/claude-sonnet-4-20250514',  // 可选,默认跟随主模型
+      maxTurns: 20,
+    },
+  },
+  // 用户钩子（见「Hooks」）
+  hooks: {
+    PreToolUse: [{ matcher: 'bash', command: './deny-dangerous.sh', timeoutMs: 10000 }],
+    PostToolUse: [{ command: './audit-log.sh' }],
+  },
+  // 上下文压缩配置（叠加默认阈值；--compaction-config 文件优先级更高）
+  compression: { /* DeepPartial<CompressionConfig> */ },
 };
 ```
 
 优先级:`approvals`(pending) > `--safe`(confirm) > 智能默认;`permissionRules` 永远最先匹配。
+
+## 项目记忆文件
+
+启动时自动加载并注入系统提示词尾部,让模型遵循项目既定约定:
+
+| 来源 | 路径 | 说明 |
+|------|------|------|
+| 用户级 | `~/.aipack/AIPACK.md` | 个人偏好,跨项目生效 |
+| 项目级 | `AIPACK.md` > `AGENTS.md` > `CLAUDE.md` | 取第一个存在的,兼容既有生态 |
+
+- 支持 `@path` 行级导入(相对被导入文件所在目录),深度限制 5 层、循环去重
+- 无记忆文件时零改动;`--system-prompt` 自定义时同样生效
+- 交互模式运行 `/init` 可让 AI 扫描项目自动生成 `AIPACK.md`;`/memory` 查看已加载文件
+
+## Skills
+
+以 `.aipack/skills/<name>/SKILL.md`(项目级)或 `~/.aipack/skills/`(用户级)组织的技能文件,frontmatter 提供 `name` / `description`:
+
+- 模型按 description 自动匹配调用;`disableModelInvocation: true` 时仅可手动触发
+- `/skills` 查看已注册列表,`/skill:<名称> [参数]` 显式展开全文发送
+
+## 子 agent 与 task 工具
+
+`task` 工具让模型启动**隔离上下文**的子 agent:子 Runtime 独立消息历史与系统提示词,运行结束后仅把最终报告返回主对话——检索/分析产生的大量工具输出不污染主上下文。
+
+- **并行**:同一回合的多个 task 调用由框架并行执行
+- **防递归**:子 agent 工具集永远不含 task 自身(固定一层)
+- **权限复用**:子 agent 的工具调用走与主 agent 相同的 PermissionPolicy / 审批
+- **内置** `general-purpose` 始终可用(继承主 agent 当前工具集);自定义定义写在 `aipack.config.js` 的 `agents` 字段(`description` / `prompt` 必填,`tools` / `model` / `maxTurns` 可选,默认 30 回合)
+- `/agents` 查看可用子 agent;`-xt task` / `--no-tools` 可禁用
+
+## Hooks
+
+通过 `aipack.config.js` 的 `hooks` 字段声明生命周期钩子(命名对齐 Claude Code),命令经 `/bin/sh -c` 执行、stdin 收 JSON 事件;退出码 2 阻断,stdout JSON(`decision` / `reason` / `args` / `terminate`)返回决策;失败或超时仅告警不中断:
+
+| 事件 | 时机 | 能力 |
+|------|------|------|
+| `PreToolUse` | 工具调用前 | block / 改写 args |
+| `PostToolUse` | 工具调用后 | terminate 整个 run |
+| `UserPromptSubmit` | 用户提交提示词时 | 改写 prompt |
+| `Stop` | run 结束 | 观察 |
+
+`matcher`(仅 PreToolUse / PostToolUse)按工具名正则或前缀过滤,`timeoutMs` 默认 60000。
 
 ## 环境变量
 
