@@ -95,9 +95,10 @@ export default function ExamplesPage() {
         <p style={{ lineHeight: 1.8, color: '#475569' }}>
           用 aipack-cli 而非写代码时，默认权限策略已开箱即用：读写文件静默放行，bash
           仅危险命令（sudo、rm -rf ~、磁盘写入等）弹出<b>方向键选择器</b>确认（允许 /
-          总是允许 / 拒绝）。通过 <code>aipack.config.js</code> 可自定义权限规则，或开启{' '}
-          <code>approvals.enabled</code> 将危险操作挂起为异步审批单（落盘持久化，
-          支持跨终端 <code>aipack approvals</code> 结算）。
+          总是允许 / 拒绝）。通过 <code>aipack.config.js</code> 可自定义权限规则、定义子 agent（task）、
+          配置 Hooks 与压缩，或开启 <code>approvals.enabled</code> 将危险操作挂起为异步审批单（落盘持久化，
+          支持跨终端 <code>aipack approvals</code> 结算）。完整能力见{' '}
+          <a href="/cli">CLI 工具页</a>。
         </p>
         <CodeBlock code={exCliConfigCode} />
       </div>

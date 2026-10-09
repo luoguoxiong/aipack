@@ -13,6 +13,32 @@ export const qsInstallCode = [
   'yarn add @aipack-ai/agent',
 ].join('\n');
 
+export const qsCliQuickstartCode = [
+  '# ===== 不想写代码？直接用 CLI =====',
+  '',
+  '# 全局安装',
+  'npm install -g @aipack-ai/cli',
+  '',
+  '# 配置任一提供商的 API Key',
+  'export DEEPSEEK_API_KEY=sk-xxx',
+  '',
+  '# 交互模式（REPL）：内置 8 个工具，斜杠命令 /help 查看',
+  'aipack "帮我看看这个项目"',
+  '',
+  '# 非交互单次提问（支持管道）',
+  'cat src/index.ts | aipack -p "这段代码有什么问题？"',
+  '',
+  '# 常用能力：',
+  'aipack --model deepseek/deepseek-chat "你好"   # 指定模型',
+  'aipack -c "聊到哪了？"                         # 继续最近会话',
+  'aipack @package.json "分析依赖"                # 附带文件上下文',
+  'aipack --safe                                  # 保守模式（写/shell 全确认）',
+  '',
+  '# 完整能力见 CLI 工具页：',
+  '#   内置工具 find/grep/ls/task（子 agent）、项目记忆文件、',
+  '#   Skills / MCP / Hooks、五级上下文压缩',
+].join('\n');
+
 export const qsEnvCode = [
   '# ======.env 或 shell 环境变量 ======',
   '# 变量命名规则：<PROVIDER_ID_UPPERCASE>_API_KEY',

@@ -21,6 +21,7 @@ import {
   CodeOutlined,
   WarningOutlined,
   CloudServerOutlined,
+  FilterOutlined,
 } from '@ant-design/icons';
 import CodeBlock from '../components/CodeBlock';
 import {
@@ -30,6 +31,9 @@ import {
   obsS2SetupCode,
   obsS2CollectorCode,
   obsS2RestApiCode,
+  obsSamplingCode,
+  obsW3cCode,
+  obsRedactCode,
 } from '../data/observabilityCode';
 import {
   obsServerQuickstartCode,
@@ -583,6 +587,43 @@ function SdkSection() {
         <Alert type="info" showIcon message="鉴权与存储可替换"
           description="上报采用 appId + appSecret 鉴权（收集端 OBS_APPS 白名单）。存储抽象为 TraceStore 接口（insert / query runs/spans/tool_calls），后续可换成 Elasticsearch 或对接 OTLP → Prometheus/Tempo，聚合器与 REST API 无需改动。指标口径与第 4 节一致，可直接对账。"
           style={{ marginTop: 16 }} />
+      </div>
+
+      <Divider />
+
+      {/* Phase 9：采样策略 */}
+      <div id="sampling" style={{ scrollMarginTop: 100 }}>
+        <h2 className="subsection-title"><FilterOutlined /> 6. 采样策略（Phase 9）</h2>
+        <p style={{ lineHeight: 1.8, color: '#475569' }}>
+          <code>sampleStrategy</code> 替代简单的 <code>sampleRate</code>（优先级更高）：错误/慢请求优先保留，
+          或按 traceId 一致性采样——同一 trace 的明细要么全采要么全弃。runs / permissions / events 始终全量上报。
+        </p>
+        <CodeBlock code={obsSamplingCode} language="typescript" />
+      </div>
+
+      <Divider style={{ margin: '40px 0' }} />
+
+      {/* Phase 9：W3C Trace Context */}
+      <div id="w3c" style={{ scrollMarginTop: 100 }}>
+        <h2 className="subsection-title"><NodeIndexOutlined /> 7. W3C Trace Context（Phase 9）</h2>
+        <p style={{ lineHeight: 1.8, color: '#475569' }}>
+          通过标准 <code>traceparent</code> 头打通跨系统调用链：入站配置上游 traceparent 让所有 run 挂到其子链路，
+          出站用 <code>obs.currentTraceparent()</code> 传给下游 HTTP 调用，面板可跨系统跳转。
+        </p>
+        <CodeBlock code={obsW3cCode} language="typescript" />
+      </div>
+
+      <Divider style={{ margin: '40px 0' }} />
+
+      {/* Phase 9：PII 脱敏 + OTLP */}
+      <div id="redact" style={{ scrollMarginTop: 100 }}>
+        <h2 className="subsection-title"><SafetyCertificateOutlined /> 8. PII 脱敏与 OTLP 导出（Phase 9）</h2>
+        <p style={{ lineHeight: 1.8, color: '#475569' }}>
+          内置 PII 脱敏默认启用（手机号 / 邮箱 / 身份证 / 银行卡 / IP），支持字段级动作覆盖
+          （mask 打码 / hash 哈希 / drop 丢弃）；OTLP/HTTP JSON 旁路导出可推 OpenTelemetry Collector，
+          失败不影响主上报。
+        </p>
+        <CodeBlock code={obsRedactCode} language="typescript" />
       </div>
 
       <Divider />

@@ -3,6 +3,7 @@ import Navbar from './components/Navbar';
 import DocsLayout from './components/DocsLayout';
 import HomePage from './pages/HomePage';
 import QuickstartPage from './pages/QuickstartPage';
+import CliPage from './pages/CliPage';
 import ApiPage from './pages/ApiPage';
 import ExtendPage from './pages/ExtendPage';
 import ExamplesPage from './pages/ExamplesPage';
@@ -32,6 +33,14 @@ export default function App() {
           element={
             <DocsLayout>
               <QuickstartPage />
+            </DocsLayout>
+          }
+        />
+        <Route
+          path="/cli"
+          element={
+            <DocsLayout>
+              <CliPage />
             </DocsLayout>
           }
         />

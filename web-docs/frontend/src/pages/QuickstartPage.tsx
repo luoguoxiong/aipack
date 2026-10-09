@@ -4,10 +4,12 @@ import {
   RocketOutlined,
   DatabaseOutlined,
   SafetyCertificateOutlined,
+  ToolOutlined,
 } from '@ant-design/icons';
 import CodeBlock from '../components/CodeBlock';
 import {
   qsInstallCode,
+  qsCliQuickstartCode,
   qsEnvCode,
   qsFirstAppCode,
   qsRunCode,
@@ -154,6 +156,24 @@ export default function QuickstartPage() {
           用 <code>TypeBox</code>（随 aipack/ai 导出）声明参数 Schema：
         </p>
         <CodeBlock code={qsToolCode} language="typescript" />
+      </div>
+
+      <Divider />
+
+      {/* 零代码路线：CLI */}
+      <div id="cli" style={{ scrollMarginTop: 100 }}>
+        <h2 className="subsection-title">
+          <ToolOutlined /> 零代码路线：CLI 命令行工具
+        </h2>
+        <p style={{ lineHeight: 1.8, color: '#475569' }}>
+          不想写代码？直接安装 <code>@aipack-ai/cli</code>，在终端获得一个带内置工具的 AI 编程助手：
+          交互 REPL、管道单次提问、JSON 事件流三种模式，内置 find / grep / ls / task（子 agent）
+          等工具，支持项目记忆文件（AIPACK.md）、Skills、MCP、Hooks 与五级上下文压缩。
+        </p>
+        <CodeBlock code={qsCliQuickstartCode} language="bash" />
+        <p style={{ lineHeight: 1.8, color: '#475569', marginTop: 16 }}>
+          完整文档见 <a href="/cli">CLI 工具页</a>。
+        </p>
       </div>
 
       <Divider />

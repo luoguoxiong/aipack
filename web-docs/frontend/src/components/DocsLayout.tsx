@@ -34,6 +34,7 @@ import {
   FolderOpenOutlined,
   BulbOutlined,
   WarningOutlined,
+  ToolOutlined,
 } from '@ant-design/icons';
 
 interface DocsLayoutProps {
@@ -68,6 +69,21 @@ const quickstartMenu: MenuItem[] = [
   { key: '/quickstart#first-app', label: '创建第一个应用', icon: <RocketOutlined /> },
   { key: '/quickstart#streaming', label: '流式响应', icon: <AimOutlined /> },
   { key: '/quickstart#multi-turn', label: '多轮对话', icon: <BoxPlotOutlined /> },
+];
+
+const cliMenu: MenuItem[] = [
+  { key: '/cli#overview', label: '总览', icon: <RocketOutlined /> },
+  { key: '/cli#quickstart', label: '1. 安装与快速开始', icon: <ThunderboltOutlined /> },
+  { key: '/cli#modes', label: '2. 三种运行模式', icon: <CodeOutlined /> },
+  { key: '/cli#tools', label: '3. 内置工具', icon: <ToolOutlined /> },
+  { key: '/cli#subagents', label: '4. 子 agent（task）', icon: <ApartmentOutlined /> },
+  { key: '/cli#memory', label: '5. 项目记忆文件', icon: <FileTextOutlined /> },
+  { key: '/cli#config', label: '6. aipack.config.js', icon: <SettingOutlined /> },
+  { key: '/cli#hooks', label: '7. Hooks', icon: <BulbOutlined /> },
+  { key: '/cli#compaction', label: '8. 上下文压缩', icon: <DatabaseOutlined /> },
+  { key: '/cli#commands', label: '9. 斜杠命令与会话', icon: <FolderOpenOutlined /> },
+  { key: '/cli#permissions', label: '10. 默认权限策略', icon: <SafetyCertificateOutlined /> },
+  { key: '/cli#api', label: '11. 可编程 API', icon: <ApiOutlined /> },
 ];
 
 const apiMenu: MenuItem[] = [
@@ -107,6 +123,9 @@ const observabilityMenu: MenuItem[] = [
       { key: '/observability#trace', label: '3. Trace 设计', icon: <NodeIndexOutlined /> },
       { key: '/observability#metrics', label: '4. 生产指标口径', icon: <AimOutlined /> },
       { key: '/observability#s2', label: '5. 埋点上报与后台收集', icon: <DatabaseOutlined /> },
+      { key: '/observability#sampling', label: '6. 采样策略（P9）', icon: <BulbOutlined /> },
+      { key: '/observability#w3c', label: '7. W3C Trace Context（P9）', icon: <NodeIndexOutlined /> },
+      { key: '/observability#redact', label: '8. PII 脱敏与 OTLP（P9）', icon: <SafetyCertificateOutlined /> },
     ],
   },
   // ── Server 部署（@aipack-ai/observability-server） ──
@@ -249,6 +268,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
     const path = location.pathname;
     let items: MenuItem[] = [];
     if (path === '/quickstart' || path.startsWith('/quickstart')) items = quickstartMenu;
+    else if (path === '/cli' || path.startsWith('/cli')) items = cliMenu;
     else if (path === '/api' || path.startsWith('/api')) items = apiMenu;
     else if (path === '/extend' || path.startsWith('/extend')) items = extendMenu;
     else if (path === '/observability' || path.startsWith('/observability')) items = observabilityMenu;
@@ -274,6 +294,7 @@ export default function DocsLayout({ children }: DocsLayoutProps) {
 
   const currentMenu = (() => {
     if (rootPath === '/quickstart') return quickstartMenu;
+    if (rootPath === '/cli') return cliMenu;
     if (rootPath === '/api') return apiMenu;
     if (rootPath === '/extend') return extendMenu;
     if (rootPath === '/observability') return observabilityMenu;
